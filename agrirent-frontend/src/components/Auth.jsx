@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { Mail, Lock, Phone, UserCircle, AlertCircle } from "lucide-react";
 import { authAPI } from "../services/api";
+import { Link } from 'react-router-dom';
 
 export default function Auth({ onLoginSuccess }) {
   const [isLogin, setIsLogin] = useState(true);
@@ -61,7 +62,7 @@ export default function Auth({ onLoginSuccess }) {
           <h1 className="text-4xl font-bold bg-gradient-to-r from-indigo-600 to-purple-600 bg-clip-text text-transparent mb-2">
             AgriRent
           </h1>
-          <p className="text-gray-600">Agricultural Equipment Rental</p>
+          <p className="text-gray-600">Location d'equipement Agricole</p>
         </div>
 
         <div className="flex gap-2 mb-6">
@@ -184,7 +185,7 @@ export default function Auth({ onLoginSuccess }) {
                 value={formData.email}
                 onChange={handleChange}
                 required
-                autoComplete="email"
+                
                 className="w-full border-2 border-gray-200 rounded-xl pl-12 pr-4 py-3 focus:border-indigo-500 focus:outline-none"
                 placeholder="your@email.com"
               />
@@ -272,16 +273,17 @@ export default function Auth({ onLoginSuccess }) {
           Sign in with Google
         </button>
 
-        {isLogin && (
-          <div className="mt-4 text-center">
-            <button
-              type="button"
-              className="text-sm text-indigo-600 hover:text-indigo-700 font-medium"
-            >
-              Forgot password?
-            </button>
-          </div>
-        )}
+
+{isLogin && (
+  <div className="mt-4 text-center">
+    <Link 
+      to="/forgot-password"
+      className="text-sm text-indigo-600 hover:text-indigo-700 font-medium"
+    >
+      Forgot password?
+    </Link>
+  </div>
+)}
 
         <div className="mt-6 text-center text-sm text-gray-600">
           {isLogin ? "Don't have an account? " : "Already have an account? "}

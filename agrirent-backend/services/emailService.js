@@ -64,4 +64,41 @@ const sendVerificationEmail = async (user, token) => {
   }
 };
 
+const sendPasswordResetEmail = async (user, token) => {
+  const resetUrl = `${process.env.FRONTEND_URL}/reset-password?token=${token}`;
+  
+  const mailOptions = {
+    from: process.env.EMAIL_FROM,
+    to: user.email,
+    subject: 'Password Reset Request - AgriRent',
+    html: `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+        <h1 style="color: #4F46E5;">Password Reset Request</h1>
+        <p>Hi ${user.firstName},</p>
+        <p>You requested to reset your password. Click the button below to set a new password:</p>
+        <a href="${resetUrl}" style="background-color: #4F46E5; color: white; padding: 12px 24px; text-decoration: none; border-radius: 8px; display: inline-block; margin: 20px 0;">
+          Reset Password
+        </a>
+        <p>Or copy this link: <br><code>${resetUrl}</code></p>
+        <p style="color: #666; font-size: 14px;">This link will expire in 1 hour.</p>
+        <p style="color: #666; font-size: 14px;">If you didn't request a password reset, please ignore this email and your password will remain unchanged.</p>
+      </div>
+    `
+  };
+
+  try {
+    await transporter.sendMail(mailOptions);
+    console.log('Password reset email sent to:', user.email);
+  } catch (error) {
+    console.error('Failed to send password reset email:', error.message);
+    throw error;
+  }
+};
+
+module.exports = { 
+  sendWelcomeEmail, 
+  sendVerificationEmail, 
+  sendPasswordResetEmail 
+};
+
 module.exports = { sendWelcomeEmail, sendVerificationEmail };

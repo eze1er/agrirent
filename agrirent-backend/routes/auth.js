@@ -4,7 +4,7 @@ const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
 const passport = require('../middleware/config/passport');
 const User = require('../models/User');
-const { sendWelcomeEmail, sendVerificationEmail } = require('../services/emailService');
+const { sendWelcomeEmail, sendVerificationEmail, sendPasswordResetEmail } = require('../services/emailService');
 
 // Traditional email/password registration
 router.post('/register', async (req, res) => {
@@ -180,4 +180,84 @@ router.get('/google/callback',
   }
 );
 
+
+
+// Request password reset
+router.post('/forgot-password', async (req, res) => {
+  try {
+    const { email } = req.body;
+    const user = await User.findOne({ email });
+    
+    if (!user) {
+      // Don't reveal if user exists or not for security
+      return res.json({ 
+        success: true, 
+        message: 'If an account with that email exists, a password reset link has been sent.' 
+      });
+    }
+    
+    // Generate reset token
+    const resetToken = crypto.randomBytes(32).toString('hex');
+    user.passwordResetToken = resetToken;
+    user.passwordResetExpires = Date.now() + 60 * 60 * 1000; // 1 hour
+    await user.save();
+    
+    // Send email
+    try {
+      await sendPasswordResetEmail(user, resetToken);
+    } catch (emailError) {
+      console.error('Failed to send password reset email:', emailError);
+      return res.status(500).json({ 
+        success: false, 
+        message: 'Failed to send password reset email. Please try again.' 
+      });
+    }
+    
+    res.json({ 
+      success: true, 
+      message: 'If an account with that email exists, a password reset link has been sent.' 
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// Reset password with token
+router.post('/reset-password/:token', async (req, res) => {
+  try {
+    const { password } = req.body;
+    
+    if (!password || password.length < 6) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Password must be at least 6 characters' 
+      });
+    }
+    
+    const user = await User.findOne({
+      passwordResetToken: req.params.token,
+      passwordResetExpires: { $gt: Date.now() }
+    });
+    
+    if (!user) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Password reset token is invalid or has expired' 
+      });
+    }
+    
+    // Update password
+    user.password = password;
+    user.passwordResetToken = undefined;
+    user.passwordResetExpires = undefined;
+    await user.save();
+    
+    res.json({ 
+      success: true, 
+      message: 'Password has been reset successfully. You can now log in with your new password.' 
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
 module.exports = router;

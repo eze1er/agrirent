@@ -9,6 +9,8 @@ const userSchema = new mongoose.Schema({
   isEmailVerified: { type: Boolean, default: false },
   emailVerificationToken: String,
   emailVerificationExpires: Date,
+  passwordResetToken: String,
+  passwordResetExpires: Date,
   // Google OAuth fields
   googleId: { type: String, sparse: true, unique: true },
   avatar: { type: String },
