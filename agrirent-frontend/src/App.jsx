@@ -381,50 +381,96 @@ export default function AgriRentApp() {
     );
   };
 
-  const MachineDetailScreen = () => {
-    if (!selectedMachine) return null;
-    return (
-      <div className="p-4">
-        <button
-          onClick={() => setCurrentView("machines")}
-          className="mb-4 text-blue-600 font-semibold"
-        >
-          ← Back
-        </button>
-        <img
-          src={
-            selectedMachine.images?.[0] ||
-            "https://images.unsplash.com/photo-1625246333195-78d9c38ad449?w=400"
-          }
-          alt={selectedMachine.name}
-          className="w-full h-64 object-cover rounded-2xl mb-4 shadow-lg"
+const MachineDetailScreen = () => {
+  const [currentImageIndex, setCurrentImageIndex] = useState(0);
+  
+  if (!selectedMachine) return null;
+  
+  const images = selectedMachine.images && selectedMachine.images.length > 0 
+    ? selectedMachine.images 
+    : ['https://images.unsplash.com/photo-1625246333195-78d9c38ad449?w=400'];
+
+  const nextImage = () => {
+    setCurrentImageIndex((prev) => (prev + 1) % images.length);
+  };
+
+  const prevImage = () => {
+    setCurrentImageIndex((prev) => (prev - 1 + images.length) % images.length);
+  };
+
+  return (
+    <div className="p-4">
+      <button onClick={() => setCurrentView('machines')} className="mb-4 text-indigo-600 font-semibold">← Back</button>
+      
+      {/* Image carousel */}
+      <div className="relative mb-4">
+        <img 
+          src={images[currentImageIndex]} 
+          alt={selectedMachine.name} 
+          className="w-full h-64 object-cover rounded-2xl shadow-lg" 
         />
-        <div className="bg-white rounded-2xl p-5 shadow-lg">
-          <h1 className="text-2xl font-bold">{selectedMachine.name}</h1>
-          <p className="text-gray-600 capitalize">
-            {selectedMachine.brand} • {selectedMachine.year}
-          </p>
-          {selectedMachine.description && (
-            <p className="text-gray-600 mt-3">{selectedMachine.description}</p>
-          )}
-          <div className="mt-4">
-            <div className="flex items-center gap-1 mb-4">
-              <Star size={20} className="text-amber-400 fill-amber-400" />
-              <span className="font-semibold">
-                {selectedMachine.rating?.average || 0}
-              </span>
+        
+        {/* Navigation arrows - only show if multiple images */}
+        {images.length > 1 && (
+          <>
+            <button 
+              onClick={prevImage}
+              className="absolute left-2 top-1/2 -translate-y-1/2 bg-black/50 text-white p-2 rounded-full hover:bg-black/70"
+            >
+              ←
+            </button>
+            <button 
+              onClick={nextImage}
+              className="absolute right-2 top-1/2 -translate-y-1/2 bg-black/50 text-white p-2 rounded-full hover:bg-black/70"
+            >
+              →
+            </button>
+            
+            {/* Image counter */}
+            <div className="absolute bottom-2 right-2 bg-black/50 text-white px-3 py-1 rounded-full text-sm">
+              {currentImageIndex + 1} / {images.length}
             </div>
-            <div className="text-4xl font-bold bg-gradient-to-r from-blue-600 to-cyan-600 bg-clip-text text-transparent">
-              ${selectedMachine.pricePerDay}/day
-            </div>
-            <p className="text-gray-600 mt-2">
-              {selectedMachine.specifications?.horsepower || 0} HP
-            </p>
+          </>
+        )}
+      </div>
+
+      {/* Thumbnail strip - optional */}
+      {images.length > 1 && (
+        <div className="flex gap-2 mb-4 overflow-x-auto pb-2">
+          {images.map((img, idx) => (
+            <img
+              key={idx}
+              src={img}
+              alt={`Thumbnail ${idx + 1}`}
+              onClick={() => setCurrentImageIndex(idx)}
+              className={`w-16 h-16 object-cover rounded-lg cursor-pointer flex-shrink-0 ${
+                idx === currentImageIndex ? 'ring-2 ring-indigo-600' : 'opacity-60'
+              }`}
+            />
+          ))}
+        </div>
+      )}
+
+      <div className="bg-white rounded-2xl p-5 shadow-lg">
+        <h1 className="text-2xl font-bold">{selectedMachine.name}</h1>
+        <p className="text-gray-600 capitalize">{selectedMachine.brand} • {selectedMachine.year}</p>
+        {selectedMachine.description && (
+          <p className="text-gray-600 mt-3">{selectedMachine.description}</p>
+        )}
+        <div className="mt-4">
+          <div className="flex items-center gap-1 mb-4">
+            <Star size={20} className="text-amber-400 fill-amber-400" />
+            <span className="font-semibold">{selectedMachine.rating?.average || 0}</span>
           </div>
+          <div className="text-4xl font-bold bg-gradient-to-r from-indigo-600 to-purple-600 bg-clip-text text-transparent">
+            ${selectedMachine.pricePerDay}/day
+          </div>
+          <p className="text-gray-600 mt-2">{selectedMachine.specifications?.horsepower || 0} HP</p>
         </div>
       </div>
-    );
-  };
+    </div>
+  );
+};
 
   const RentalsScreen = () => {
     if (loadingRentals) {
