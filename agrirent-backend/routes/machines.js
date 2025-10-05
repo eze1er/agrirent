@@ -26,24 +26,19 @@ router.get('/', async (req, res) => {
 // Create machine (protected - must be logged in)
 router.post('/', protect, async (req, res) => {
   try {
-    console.log('Creating machine with data:', req.body);
-    console.log('User:', req.user);
+    const user = await User.findById(req.user.id);
     
-    req.body.ownerId = req.user.id;
+    // Check if owner is verified
+    if (!user.isEmailVerified) {
+      return res.status(403).json({ 
+        success: false, 
+        message: 'Please verify your email before listing equipment' 
+      });
+    }
     
-    const machine = await Machine.create(req.body);
-    
-    res.status(201).json({
-      success: true,
-      message: 'Machine created successfully',
-      data: machine
-    });
+    // Rest of your machine creation code...
   } catch (error) {
-    console.error('Error creating machine:', error);
-    res.status(500).json({ 
-      success: false, 
-      message: error.message 
-    });
+    res.status(500).json({ success: false, message: error.message });
   }
 });
 
