@@ -51,7 +51,9 @@ export const uploadAPI = {
 export const rentalAPI = {
   getAll: () => api.get('/rentals'),
   create: (data) => api.post('/rentals', data),
-  updateStatus: (id, status) => api.patch(`/rentals/${id}/status`, { status })
+  updateStatus: (id, status) => api.patch(`/rentals/${id}/status`, { status }),
+  cancel: (id) => api.patch(`/rentals/${id}/cancel`),
+  complete: (id) => api.patch(`/rentals/${id}/complete`),
 };
 
 export const userAPI = {

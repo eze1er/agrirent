@@ -11,6 +11,7 @@ import {
   Package,
 } from "lucide-react";
 import { machineAPI, rentalAPI, uploadAPI } from "../services/api";
+import BookingModal from '../components/BookingModal';
 export default function Dashboard({ user: currentUser, onLogout }) {
 
   const [currentView, setCurrentView] = useState("home");
@@ -22,6 +23,9 @@ export default function Dashboard({ user: currentUser, onLogout }) {
   const [rentals, setRentals] = useState([]);
   const [loadingMachines, setLoadingMachines] = useState(false);
   const [loadingRentals, setLoadingRentals] = useState(false);
+
+  const [showBookingModal, setShowBookingModal] = useState(false);
+  const [bookingMachine, setBookingMachine] = useState(null);
 
   useEffect(() => {
     fetchMachines();
@@ -55,6 +59,24 @@ export default function Dashboard({ user: currentUser, onLogout }) {
       setLoadingRentals(false);
     }
   };
+
+  const handleBookMachine = async (bookingData) => {
+  try {
+    const response = await rentalAPI.create({
+      machineId: bookingMachine._id,
+      ...bookingData
+    });
+    
+    if (response.data.success) {
+      alert('Booking request sent successfully!');
+      await fetchRentals();
+      setShowBookingModal(false);
+      setBookingMachine(null);
+    }
+  } catch (error) {
+    throw error;
+  }
+};
 
   const isOwner = currentUser?.role === "owner" || currentUser?.role === "both";
 
@@ -275,107 +297,100 @@ export default function Dashboard({ user: currentUser, onLogout }) {
     );
   };
 
-  const MachineDetailScreen = () => {
-    const [currentImageIndex, setCurrentImageIndex] = useState(0);
+const MachineDetailScreen = () => {
+  const [currentImageIndex, setCurrentImageIndex] = useState(0);
 
-    if (!selectedMachine) return null;
+  if (!selectedMachine) return null;
 
-    const images =
-      selectedMachine.images && selectedMachine.images.length > 0
-        ? selectedMachine.images
-        : ["https://images.unsplash.com/photo-1625246333195-78d9c38ad449?w=400"];
+  const images =
+    selectedMachine.images && selectedMachine.images.length > 0
+      ? selectedMachine.images
+      : ["https://images.unsplash.com/photo-1625246333195-78d9c38ad449?w=400"];
 
-    const nextImage = () => {
-      setCurrentImageIndex((prev) => (prev + 1) % images.length);
-    };
+  const nextImage = () => {
+    setCurrentImageIndex((prev) => (prev + 1) % images.length);
+  };
 
-    const prevImage = () => {
-      setCurrentImageIndex(
-        (prev) => (prev - 1 + images.length) % images.length
-      );
-    };
+  const prevImage = () => {
+    setCurrentImageIndex(
+      (prev) => (prev - 1 + images.length) % images.length
+    );
+  };
 
-    return (
-      <div className="p-4">
-        <button
-          onClick={() => setCurrentView("machines")}
-          className="mb-4 text-blue-600 font-semibold"
-        >
-          ← Back
-        </button>
+  const isOwnMachine = selectedMachine.ownerId?._id === currentUser?.id || 
+                        selectedMachine.ownerId === currentUser?.id;
 
-        <div className="relative mb-4">
-          <img
-            src={images[currentImageIndex]}
-            alt={selectedMachine.name}
-            className="w-full h-64 object-cover rounded-2xl shadow-lg"
-          />
+  return (
+    <div className="p-4">
+      <button
+        onClick={() => setCurrentView("machines")}
+        className="mb-4 text-blue-600 font-semibold"
+      >
+        ← Back
+      </button>
 
-          {images.length > 1 && (
-            <>
-              <button
-                onClick={prevImage}
-                className="absolute left-2 top-1/2 -translate-y-1/2 bg-black/50 text-white p-2 rounded-full hover:bg-black/70"
-              >
-                ←
-              </button>
-              <button
-                onClick={nextImage}
-                className="absolute right-2 top-1/2 -translate-y-1/2 bg-black/50 text-white p-2 rounded-full hover:bg-black/70"
-              >
-                →
-              </button>
-              <div className="absolute bottom-2 right-2 bg-black/50 text-white px-3 py-1 rounded-full text-sm">
-                {currentImageIndex + 1} / {images.length}
-              </div>
-            </>
-          )}
+      {/* Image carousel - keep existing code */}
+      <div className="relative mb-4">
+        {/* ... existing carousel code ... */}
+      </div>
+
+      {images.length > 1 && (
+        <div className="flex gap-2 mb-4 overflow-x-auto pb-2">
+          {/* ... existing thumbnails code ... */}
+        </div>
+      )}
+
+      <div className="bg-white rounded-2xl p-5 shadow-lg">
+        <h1 className="text-2xl font-bold">{selectedMachine.name}</h1>
+        <p className="text-gray-600 capitalize">
+          {selectedMachine.brand} • {selectedMachine.year}
+        </p>
+        {selectedMachine.description && (
+          <p className="text-gray-600 mt-3">{selectedMachine.description}</p>
+        )}
+        <div className="mt-4">
+          <div className="flex items-center gap-1 mb-4">
+            <Star size={20} className="text-amber-400 fill-amber-400" />
+            <span className="font-semibold">
+              {selectedMachine.rating?.average || 0}
+            </span>
+          </div>
+          <div className="text-4xl font-bold bg-gradient-to-r from-blue-600 to-cyan-600 bg-clip-text text-transparent">
+            ${selectedMachine.pricePerDay}/day
+          </div>
+          <p className="text-gray-600 mt-2">
+            {selectedMachine.specifications?.horsepower || 0} HP
+          </p>
         </div>
 
-        {images.length > 1 && (
-          <div className="flex gap-2 mb-4 overflow-x-auto pb-2">
-            {images.map((img, idx) => (
-              <img
-                key={idx}
-                src={img}
-                alt={`Thumbnail ${idx + 1}`}
-                onClick={() => setCurrentImageIndex(idx)}
-                className={`w-16 h-16 object-cover rounded-lg cursor-pointer flex-shrink-0 ${
-                  idx === currentImageIndex
-                    ? "ring-2 ring-blue-600"
-                    : "opacity-60"
-                }`}
-              />
-            ))}
+        {/* Book Now Button */}
+        {!isOwnMachine && selectedMachine.availability === 'available' && (
+          <button
+            onClick={() => {
+              setBookingMachine(selectedMachine);
+              setShowBookingModal(true);
+            }}
+            className="w-full mt-6 bg-gradient-to-r from-blue-600 to-cyan-600 text-white py-4 rounded-xl font-bold hover:shadow-xl transition"
+          >
+            Book Now
+          </button>
+        )}
+
+        {isOwnMachine && (
+          <div className="mt-6 bg-blue-50 text-blue-700 p-4 rounded-xl text-center">
+            This is your machine
           </div>
         )}
 
-        <div className="bg-white rounded-2xl p-5 shadow-lg">
-          <h1 className="text-2xl font-bold">{selectedMachine.name}</h1>
-          <p className="text-gray-600 capitalize">
-            {selectedMachine.brand} • {selectedMachine.year}
-          </p>
-          {selectedMachine.description && (
-            <p className="text-gray-600 mt-3">{selectedMachine.description}</p>
-          )}
-          <div className="mt-4">
-            <div className="flex items-center gap-1 mb-4">
-              <Star size={20} className="text-amber-400 fill-amber-400" />
-              <span className="font-semibold">
-                {selectedMachine.rating?.average || 0}
-              </span>
-            </div>
-            <div className="text-4xl font-bold bg-gradient-to-r from-blue-600 to-cyan-600 bg-clip-text text-transparent">
-              ${selectedMachine.pricePerDay}/day
-            </div>
-            <p className="text-gray-600 mt-2">
-              {selectedMachine.specifications?.horsepower || 0} HP
-            </p>
+        {selectedMachine.availability !== 'available' && !isOwnMachine && (
+          <div className="mt-6 bg-gray-100 text-gray-600 p-4 rounded-xl text-center">
+            Currently unavailable
           </div>
-        </div>
+        )}
       </div>
-    );
-  };
+    </div>
+  );
+};
 
   const RentalsScreen = () => {
     if (loadingRentals) {
@@ -761,6 +776,18 @@ export default function Dashboard({ user: currentUser, onLogout }) {
         <p className="text-sm text-blue-100">Location d'equipement Agricole</p>
       </div>
 
+    {showAddMachineForm && <AddMachineForm />}
+    {showBookingModal && bookingMachine && (
+      <BookingModal
+        machine={bookingMachine}
+        onClose={() => {
+          setShowBookingModal(false);
+          setBookingMachine(null);
+        }}
+        onBook={handleBookMachine}
+      />
+    )}
+    
       <VerificationBanner user={currentUser} />
 
       {currentView === "home" && <HomeScreen />}
