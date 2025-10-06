@@ -59,23 +59,23 @@ export default function Dashboard({ user: currentUser, onLogout }) {
     }
   };
 
-  const handleBookMachine = async (bookingData) => {
-    try {
-      const response = await rentalAPI.create({
-        machineId: bookingMachine._id,
-        ...bookingData,
-      });
-
-      if (response.data.success) {
-        alert("Booking request sent successfully!");
-        await fetchRentals();
-        setShowBookingModal(false);
-        setBookingMachine(null);
-      }
-    } catch (error) {
-      throw error;
+const handleBookMachine = async (bookingData) => {
+  try {
+    const response = await rentalAPI.create({
+      machineId: bookingMachine._id,
+      ...bookingData
+    });
+    
+    if (response.data.success) {
+      alert('Booking request sent successfully!');
+      await fetchRentals();
+      setShowBookingModal(false);
+      setBookingMachine(null);
     }
-  };
+  } catch (error) {
+    throw error;
+  }
+};
 
   const isOwner = currentUser?.role === "owner" || currentUser?.role === "both";
 
