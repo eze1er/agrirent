@@ -11,9 +11,8 @@ import {
   Package,
 } from "lucide-react";
 import { machineAPI, rentalAPI, uploadAPI } from "../services/api";
-import BookingModal from '../components/BookingModal';
+import BookingModal from "../components/BookingModal";
 export default function Dashboard({ user: currentUser, onLogout }) {
-
   const [currentView, setCurrentView] = useState("home");
   const [selectedMachine, setSelectedMachine] = useState(null);
   const [selectedFilter, setSelectedFilter] = useState("All");
@@ -61,22 +60,22 @@ export default function Dashboard({ user: currentUser, onLogout }) {
   };
 
   const handleBookMachine = async (bookingData) => {
-  try {
-    const response = await rentalAPI.create({
-      machineId: bookingMachine._id,
-      ...bookingData
-    });
-    
-    if (response.data.success) {
-      alert('Booking request sent successfully!');
-      await fetchRentals();
-      setShowBookingModal(false);
-      setBookingMachine(null);
+    try {
+      const response = await rentalAPI.create({
+        machineId: bookingMachine._id,
+        ...bookingData,
+      });
+
+      if (response.data.success) {
+        alert("Booking request sent successfully!");
+        await fetchRentals();
+        setShowBookingModal(false);
+        setBookingMachine(null);
+      }
+    } catch (error) {
+      throw error;
     }
-  } catch (error) {
-    throw error;
-  }
-};
+  };
 
   const isOwner = currentUser?.role === "owner" || currentUser?.role === "both";
 
@@ -280,13 +279,46 @@ export default function Dashboard({ user: currentUser, onLogout }) {
                       • {machine.address?.city || "Location N/A"}
                     </span>
                   </div>
-                  <div className="flex justify-between items-center mt-4">
-                    <span className="text-2xl font-bold bg-gradient-to-r from-blue-600 to-cyan-600 bg-clip-text text-transparent">
-                      ${machine.pricePerDay}/day
-                    </span>
-                    <span className="text-sm text-gray-600 font-medium">
-                      {machine.specifications?.horsepower || 0} HP
-                    </span>
+                  {/* REPLACE the existing pricing div with this */}
+                  <div className="mt-4">
+                    {machine.pricingType === "daily" && (
+                      <div className="flex justify-between items-center mt-4">
+                        <span className="text-2xl font-bold bg-gradient-to-r from-blue-600 to-cyan-600 bg-clip-text text-transparent">
+                          ${machine.pricePerDay}/day
+                        </span>
+                        <span className="text-sm text-gray-600 font-medium">
+                          {machine.specifications?.horsepower || 0} HP
+                        </span>
+                      </div>
+                    )}
+
+                    {machine.pricingType === "per_hectare" && (
+                      <div className="flex justify-between items-center">
+                        <span className="text-2xl font-bold bg-gradient-to-r from-emerald-600 to-teal-600 bg-clip-text text-transparent">
+                          ${machine.pricePerHectare}/Ha
+                        </span>
+                        <span className="text-sm text-gray-600 font-medium">
+                          Min {machine.minimumHectares} Ha
+                        </span>
+                      </div>
+                    )}
+
+                    {machine.pricingType === "both" && (
+                      <div className="space-y-1">
+                        <div className="flex justify-between items-center">
+                          <span className="text-2xl font-bold bg-gradient-to-r from-blue-600 to-cyan-600 bg-clip-text text-transparent">
+                            ${machine.pricePerDay}/day
+                          </span>
+                          <span className="text-sm text-gray-600 font-medium">
+                            {machine.specifications?.horsepower || 0} HP
+                          </span>
+                        </div>
+                        <div className="text-sm text-gray-600 italic">
+                          or ${machine.pricePerHectare}/hectare (min{" "}
+                          {machine.minimumHectares} Ha)
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>
@@ -329,14 +361,46 @@ const MachineDetailScreen = () => {
         ← Back
       </button>
 
-      {/* Image carousel - keep existing code */}
+      {/* Image carousel */}
       <div className="relative mb-4">
-        {/* ... existing carousel code ... */}
+        <img
+          src={images[currentImageIndex]}
+          alt={selectedMachine.name}
+          className="w-full h-64 object-cover rounded-2xl"
+        />
+        {images.length > 1 && (
+          <>
+            <button
+              onClick={prevImage}
+              className="absolute left-2 top-1/2 -translate-y-1/2 bg-white/80 backdrop-blur-sm p-2 rounded-full shadow-lg hover:bg-white transition"
+            >
+              ←
+            </button>
+            <button
+              onClick={nextImage}
+              className="absolute right-2 top-1/2 -translate-y-1/2 bg-white/80 backdrop-blur-sm p-2 rounded-full shadow-lg hover:bg-white transition"
+            >
+              →
+            </button>
+          </>
+        )}
       </div>
 
       {images.length > 1 && (
         <div className="flex gap-2 mb-4 overflow-x-auto pb-2">
-          {/* ... existing thumbnails code ... */}
+          {images.map((img, idx) => (
+            <img
+              key={idx}
+              src={img}
+              alt={`${selectedMachine.name} ${idx + 1}`}
+              onClick={() => setCurrentImageIndex(idx)}
+              className={`w-20 h-20 object-cover rounded-lg cursor-pointer transition ${
+                idx === currentImageIndex
+                  ? "ring-2 ring-blue-500"
+                  : "opacity-60 hover:opacity-100"
+              }`}
+            />
+          ))}
         </div>
       )}
 
@@ -348,6 +412,7 @@ const MachineDetailScreen = () => {
         {selectedMachine.description && (
           <p className="text-gray-600 mt-3">{selectedMachine.description}</p>
         )}
+        
         <div className="mt-4">
           <div className="flex items-center gap-1 mb-4">
             <Star size={20} className="text-amber-400 fill-amber-400" />
@@ -355,9 +420,51 @@ const MachineDetailScreen = () => {
               {selectedMachine.rating?.average || 0}
             </span>
           </div>
-          <div className="text-4xl font-bold bg-gradient-to-r from-blue-600 to-cyan-600 bg-clip-text text-transparent">
-            ${selectedMachine.pricePerDay}/day
+
+          {/* UPDATED PRICING SECTION */}
+          <div className="bg-gradient-to-br from-blue-50 to-cyan-50 rounded-xl p-4 mb-4">
+            {selectedMachine.pricingType === 'daily' && (
+              <div>
+                <p className="text-sm text-gray-600 mb-1">Daily Rate</p>
+                <div className="text-4xl font-bold bg-gradient-to-r from-blue-600 to-cyan-600 bg-clip-text text-transparent">
+                  ${selectedMachine.pricePerDay}/day
+                </div>
+              </div>
+            )}
+
+            {selectedMachine.pricingType === 'per_hectare' && (
+              <div>
+                <p className="text-sm text-gray-600 mb-1">Per Hectare Rate</p>
+                <div className="text-4xl font-bold bg-gradient-to-r from-emerald-600 to-teal-600 bg-clip-text text-transparent">
+                  ${selectedMachine.pricePerHectare}/Ha
+                </div>
+                <p className="text-sm text-gray-600 mt-2">
+                  Minimum {selectedMachine.minimumHectares} hectares
+                </p>
+              </div>
+            )}
+
+            {selectedMachine.pricingType === 'both' && (
+              <div className="space-y-3">
+                <div>
+                  <p className="text-sm text-gray-600 mb-1">Daily Rate</p>
+                  <div className="text-3xl font-bold bg-gradient-to-r from-blue-600 to-cyan-600 bg-clip-text text-transparent">
+                    ${selectedMachine.pricePerDay}/day
+                  </div>
+                </div>
+                <div className="border-t border-gray-200 pt-3">
+                  <p className="text-sm text-gray-600 mb-1">Per Hectare Rate</p>
+                  <div className="text-3xl font-bold bg-gradient-to-r from-emerald-600 to-teal-600 bg-clip-text text-transparent">
+                    ${selectedMachine.pricePerHectare}/Ha
+                  </div>
+                  <p className="text-sm text-gray-600 mt-1">
+                    Minimum {selectedMachine.minimumHectares} hectares
+                  </p>
+                </div>
+              </div>
+            )}
           </div>
+
           <p className="text-gray-600 mt-2">
             {selectedMachine.specifications?.horsepower || 0} HP
           </p>
@@ -494,7 +601,10 @@ const MachineDetailScreen = () => {
       category: "",
       brand: "",
       year: "",
+      pricingType: "daily",
       pricePerDay: "",
+      pricePerHectare: "",
+      minimumHectares: "1",
       horsepower: "",
       description: "",
     });
@@ -510,7 +620,6 @@ const MachineDetailScreen = () => {
     const handleImageUpload = (e) => {
       const files = Array.from(e.target.files);
       setImageFiles([...imageFiles, ...files]);
-
       const previewUrls = files.map((file) => URL.createObjectURL(file));
       setLocalUploadedImages([...localUploadedImages, ...previewUrls]);
     };
@@ -537,7 +646,7 @@ const MachineDetailScreen = () => {
           category: formData.category.toLowerCase(),
           brand: formData.brand,
           year: parseInt(formData.year),
-          pricePerDay: parseFloat(formData.pricePerDay),
+          pricingType: formData.pricingType,
           specifications: {
             horsepower: parseInt(formData.horsepower || 0),
           },
@@ -553,8 +662,25 @@ const MachineDetailScreen = () => {
           images:
             imageUrls.length > 0
               ? imageUrls
-              : ["https://images.unsplash.com/photo-1625246333195-78d9c38ad449?w=400"],
+              : [
+                  "https://images.unsplash.com/photo-1625246333195-78d9c38ad449?w=400",
+                ],
         };
+
+        // Add pricing based on type
+        if (
+          formData.pricingType === "daily" ||
+          formData.pricingType === "both"
+        ) {
+          machineData.pricePerDay = parseFloat(formData.pricePerDay);
+        }
+        if (
+          formData.pricingType === "per_hectare" ||
+          formData.pricingType === "both"
+        ) {
+          machineData.pricePerHectare = parseFloat(formData.pricePerHectare);
+          machineData.minimumHectares = parseFloat(formData.minimumHectares);
+        }
 
         const response = await machineAPI.create(machineData);
 
@@ -576,7 +702,7 @@ const MachineDetailScreen = () => {
 
     return (
       <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50 overflow-y-auto">
-        <div className="bg-white rounded-2xl p-6 max-w-md w-full my-8 shadow-2xl">
+        <div className="bg-white rounded-2xl p-6 max-w-md w-full my-8 shadow-2xl max-h-[90vh] overflow-y-auto">
           <h2 className="text-2xl font-bold mb-4 bg-gradient-to-r from-blue-600 to-cyan-600 bg-clip-text text-transparent">
             Add New Machine
           </h2>
@@ -587,10 +713,7 @@ const MachineDetailScreen = () => {
             </div>
           )}
 
-          <form
-            onSubmit={handleSubmit}
-            className="space-y-4 max-h-96 overflow-y-auto pr-2"
-          >
+          <form onSubmit={handleSubmit} className="space-y-4">
             <div>
               <label className="block text-sm font-semibold mb-2">
                 Machine Name *
@@ -621,7 +744,6 @@ const MachineDetailScreen = () => {
                 <option value="tractor">Tractor</option>
                 <option value="harvester">Harvester</option>
                 <option value="planter">Planter</option>
-                <option value="desouche">Desoucheuse</option>
                 <option value="sprayer">Sprayer</option>
                 <option value="cultivator">Cultivator</option>
               </select>
@@ -660,6 +782,80 @@ const MachineDetailScreen = () => {
 
             <div>
               <label className="block text-sm font-semibold mb-2">
+                Pricing Type *
+              </label>
+              <select
+                name="pricingType"
+                value={formData.pricingType}
+                onChange={handleChange}
+                required
+                className="w-full border-2 border-gray-200 rounded-xl px-4 py-3 focus:border-blue-500 focus:outline-none"
+              >
+                <option value="daily">Daily Rental</option>
+                <option value="per_hectare">Per Hectare</option>
+                <option value="both">Both (Daily & Per Hectare)</option>
+              </select>
+            </div>
+
+            {(formData.pricingType === "daily" ||
+              formData.pricingType === "both") && (
+              <div>
+                <label className="block text-sm font-semibold mb-2">
+                  Price per Day ($) *
+                </label>
+                <input
+                  type="number"
+                  name="pricePerDay"
+                  value={formData.pricePerDay}
+                  onChange={handleChange}
+                  required={
+                    formData.pricingType === "daily" ||
+                    formData.pricingType === "both"
+                  }
+                  placeholder="450"
+                  className="w-full border-2 border-gray-200 rounded-xl px-4 py-3 focus:border-blue-500 focus:outline-none"
+                />
+              </div>
+            )}
+
+            {(formData.pricingType === "per_hectare" ||
+              formData.pricingType === "both") && (
+              <>
+                <div>
+                  <label className="block text-sm font-semibold mb-2">
+                    Price per Hectare ($) *
+                  </label>
+                  <input
+                    type="number"
+                    name="pricePerHectare"
+                    value={formData.pricePerHectare}
+                    onChange={handleChange}
+                    required={
+                      formData.pricingType === "per_hectare" ||
+                      formData.pricingType === "both"
+                    }
+                    placeholder="75"
+                    className="w-full border-2 border-gray-200 rounded-xl px-4 py-3 focus:border-blue-500 focus:outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-semibold mb-2">
+                    Minimum Hectares
+                  </label>
+                  <input
+                    type="number"
+                    name="minimumHectares"
+                    value={formData.minimumHectares}
+                    onChange={handleChange}
+                    placeholder="1"
+                    className="w-full border-2 border-gray-200 rounded-xl px-4 py-3 focus:border-blue-500 focus:outline-none"
+                  />
+                </div>
+              </>
+            )}
+
+            <div>
+              <label className="block text-sm font-semibold mb-2">
                 Horsepower
               </label>
               <input
@@ -668,21 +864,6 @@ const MachineDetailScreen = () => {
                 value={formData.horsepower}
                 onChange={handleChange}
                 placeholder="370"
-                className="w-full border-2 border-gray-200 rounded-xl px-4 py-3 focus:border-blue-500 focus:outline-none"
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-semibold mb-2">
-                Price per Day ($) *
-              </label>
-              <input
-                type="number"
-                name="pricePerDay"
-                value={formData.pricePerDay}
-                onChange={handleChange}
-                required
-                placeholder="450"
                 className="w-full border-2 border-gray-200 rounded-xl px-4 py-3 focus:border-blue-500 focus:outline-none"
               />
             </div>
@@ -776,18 +957,6 @@ const MachineDetailScreen = () => {
         <p className="text-sm text-blue-100">Location d'equipement Agricole</p>
       </div>
 
-    {showAddMachineForm && <AddMachineForm />}
-    {showBookingModal && bookingMachine && (
-      <BookingModal
-        machine={bookingMachine}
-        onClose={() => {
-          setShowBookingModal(false);
-          setBookingMachine(null);
-        }}
-        onBook={handleBookMachine}
-      />
-    )}
-    
       <VerificationBanner user={currentUser} />
 
       {currentView === "home" && <HomeScreen />}
@@ -796,7 +965,17 @@ const MachineDetailScreen = () => {
       {currentView === "rentals" && <RentalsScreen />}
       {currentView === "profile" && <ProfileScreen />}
 
-       {showAddMachineForm && <AddMachineForm />}
+      {showAddMachineForm && <AddMachineForm />}
+      {showBookingModal && bookingMachine && (
+        <BookingModal
+          machine={bookingMachine}
+          onClose={() => {
+            setShowBookingModal(false);
+            setBookingMachine(null);
+          }}
+          onBook={handleBookMachine}
+        />
+      )}
 
       <div className="fixed bottom-0 left-0 right-0 bg-white/80 backdrop-blur-lg border-t px-4 py-3 flex justify-around shadow-lg max-w-md mx-auto">
         <button

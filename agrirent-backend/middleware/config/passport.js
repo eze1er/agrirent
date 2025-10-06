@@ -6,51 +6,38 @@ console.log('=== CONFIGURING PASSPORT ===');
 console.log('Client ID:', process.env.GOOGLE_CLIENT_ID?.substring(0, 30) + '...');
 console.log('Callback URL:', process.env.GOOGLE_CALLBACK_URL);
 
-passport.use(
-  new GoogleStrategy(
-    {
-      clientID: process.env.GOOGLE_CLIENT_ID,
-      clientSecret: process.env.GOOGLE_CLIENT_SECRET,
-      callbackURL: process.env.GOOGLE_CALLBACK_URL,
-    },
-    async (accessToken, refreshToken, profile, done) => {
-      console.log('Google callback executing for:', profile.emails[0].value);
-      try {
-        let user = await User.findOne({ googleId: profile.id });
-
-        if (user) {
-          return done(null, user);
-        }
-
-        user = await User.findOne({ email: profile.emails[0].value });
-
-        if (user) {
-          user.googleId = profile.id;
-          user.avatar = profile.photos[0]?.value || user.avatar;
-          await user.save();
-          return done(null, user);
-        }
-
-        const nameParts = profile.displayName.split(' ');
-        user = await User.create({
-          googleId: profile.id,
-          email: profile.emails[0].value,
-          firstName: nameParts[0] || 'User',
-          lastName: nameParts.slice(1).join(' ') || '',
-          avatar: profile.photos[0]?.value,
-          isEmailVerified: true,
-        });
-
-        done(null, user);
-      } catch (error) {
-        console.error('Google OAuth error:', error);
-        done(error, null);
-      }
+passport.use(new GoogleStrategy({
+  clientID: process.env.GOOGLE_CLIENT_ID,
+  clientSecret: process.env.GOOGLE_CLIENT_SECRET,
+  callbackURL: process.env.GOOGLE_CALLBACK_URL
+}, async (accessToken, refreshToken, profile, done) => {
+  try {
+    let user = await User.findOne({ email: profile.emails[0].value });
+    
+    if (user) {
+      // Update existing user - mark as verified
+      user.isEmailVerified = true;
+      user.avatar = profile.photos?.[0]?.value;
+      await user.save();
+      return done(null, user);
     }
-  )
-);
-
-console.log('Passport strategy registered:', passport._strategies.google ? 'YES' : 'NO');
+    
+    // Create new user from Google
+    user = await User.create({
+      googleId: profile.id,
+      email: profile.emails[0].value,
+      firstName: profile.name.givenName,
+      lastName: profile.name.familyName,
+      avatar: profile.photos?.[0]?.value,
+      role: 'renter',
+      isEmailVerified: true  // Auto-verify Google users
+    });
+    
+    done(null, user);
+  } catch (error) {
+    done(error, null);
+  }
+}));
 
 passport.serializeUser((user, done) => {
   done(null, user.id);

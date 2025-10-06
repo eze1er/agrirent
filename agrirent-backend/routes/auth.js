@@ -163,23 +163,35 @@ router.get('/google', (req, res, next) => {
   scope: ['profile', 'email'] 
 }));
 
+// Google OAuth callback
 router.get('/google/callback',
   passport.authenticate('google', { 
     failureRedirect: 'http://localhost:5173/?error=auth_failed',
     session: false 
   }),
-  (req, res) => {
-    console.log('Google callback successful for user:', req.user?.email);
-    const token = jwt.sign(
-      { id: req.user._id }, 
-      process.env.JWT_SECRET, 
-      { expiresIn: '7d' }
-    );
-    
-    res.redirect(`http://localhost:5173/?token=${token}`);
+  async (req, res) => {
+    try {
+      console.log('Google callback successful for user:', req.user?.email);
+      
+      // Auto-verify email for Google OAuth users
+      if (req.user && !req.user.isEmailVerified) {
+        req.user.isEmailVerified = true;
+        await req.user.save();
+      }
+      
+      const token = jwt.sign(
+        { id: req.user._id }, 
+        process.env.JWT_SECRET, 
+        { expiresIn: '7d' }
+      );
+      
+      res.redirect(`http://localhost:5173/?token=${token}`);
+    } catch (error) {
+      console.error('Google callback error:', error);
+      res.redirect('http://localhost:5173/?error=auth_failed');
+    }
   }
 );
-
 
 
 // Request password reset
