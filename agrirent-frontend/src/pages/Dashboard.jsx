@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import { machineAPI, rentalAPI, uploadAPI } from "../services/api";
 import BookingModal from "../components/BookingModal";
+
 export default function Dashboard({ user: currentUser, onLogout }) {
   const [currentView, setCurrentView] = useState("home");
   const [selectedMachine, setSelectedMachine] = useState(null);
@@ -59,23 +60,23 @@ export default function Dashboard({ user: currentUser, onLogout }) {
     }
   };
 
-const handleBookMachine = async (bookingData) => {
-  try {
-    const response = await rentalAPI.create({
-      machineId: bookingMachine._id,
-      ...bookingData
-    });
-    
-    if (response.data.success) {
-      alert('Booking request sent successfully!');
-      await fetchRentals();
-      setShowBookingModal(false);
-      setBookingMachine(null);
+  const handleBookMachine = async (bookingData) => {
+    try {
+      const response = await rentalAPI.create({
+        machineId: bookingMachine._id,
+        ...bookingData,
+      });
+
+      if (response.data.success) {
+        alert("Booking request sent successfully!");
+        await fetchRentals();
+        setShowBookingModal(false);
+        setBookingMachine(null);
+      }
+    } catch (error) {
+      throw error;
     }
-  } catch (error) {
-    throw error;
-  }
-};
+  };
 
   const isOwner = currentUser?.role === "owner" || currentUser?.role === "both";
 
@@ -157,14 +158,31 @@ const handleBookMachine = async (bookingData) => {
             <Calendar size={28} />
             <span className="text-sm font-semibold">My Rentals</span>
           </button>
+          
           {isOwner && (
-            <button
-              onClick={() => setShowAddMachineForm(true)}
-              className="bg-gradient-to-br from-amber-500 to-orange-500 p-5 rounded-2xl shadow-lg flex flex-col items-center gap-3 hover:scale-105 transition text-white"
-            >
-              <Plus size={28} />
-              <span className="text-sm font-semibold">Add Machine</span>
-            </button>
+            <>
+              <button
+                onClick={() => setShowAddMachineForm(true)}
+                className="bg-gradient-to-br from-amber-500 to-orange-500 p-5 rounded-2xl shadow-lg flex flex-col items-center gap-3 hover:scale-105 transition text-white"
+              >
+                <Plus size={28} />
+                <span className="text-sm font-semibold">Add Machine</span>
+              </button>
+              <button
+                onClick={() => setCurrentView("myMachines")}
+                className="bg-gradient-to-br from-purple-500 to-pink-500 p-5 rounded-2xl shadow-lg flex flex-col items-center gap-3 hover:scale-105 transition text-white"
+              >
+                <Package size={28} />
+                <span className="text-sm font-semibold">My Machines</span>
+              </button>
+              <button
+                onClick={() => setCurrentView("requests")}
+                className="bg-gradient-to-br from-indigo-500 to-blue-500 p-5 rounded-2xl shadow-lg flex flex-col items-center gap-3 hover:scale-105 transition text-white"
+              >
+                <Calendar size={28} />
+                <span className="text-sm font-semibold">Rental Requests</span>
+              </button>
+            </>
           )}
         </div>
       </div>
@@ -279,10 +297,10 @@ const handleBookMachine = async (bookingData) => {
                       • {machine.address?.city || "Location N/A"}
                     </span>
                   </div>
-                  {/* REPLACE the existing pricing div with this */}
+
                   <div className="mt-4">
                     {machine.pricingType === "daily" && (
-                      <div className="flex justify-between items-center mt-4">
+                      <div className="flex justify-between items-center">
                         <span className="text-2xl font-bold bg-gradient-to-r from-blue-600 to-cyan-600 bg-clip-text text-transparent">
                           ${machine.pricePerDay}/day
                         </span>
@@ -329,175 +347,177 @@ const handleBookMachine = async (bookingData) => {
     );
   };
 
-const MachineDetailScreen = () => {
-  const [currentImageIndex, setCurrentImageIndex] = useState(0);
+  const MachineDetailScreen = () => {
+    const [currentImageIndex, setCurrentImageIndex] = useState(0);
 
-  if (!selectedMachine) return null;
+    if (!selectedMachine) return null;
 
-  const images =
-    selectedMachine.images && selectedMachine.images.length > 0
-      ? selectedMachine.images
-      : ["https://images.unsplash.com/photo-1625246333195-78d9c38ad449?w=400"];
+    const images =
+      selectedMachine.images && selectedMachine.images.length > 0
+        ? selectedMachine.images
+        : [
+            "https://images.unsplash.com/photo-1625246333195-78d9c38ad449?w=400",
+          ];
 
-  const nextImage = () => {
-    setCurrentImageIndex((prev) => (prev + 1) % images.length);
-  };
+    const nextImage = () => {
+      setCurrentImageIndex((prev) => (prev + 1) % images.length);
+    };
 
-  const prevImage = () => {
-    setCurrentImageIndex(
-      (prev) => (prev - 1 + images.length) % images.length
-    );
-  };
+    const prevImage = () => {
+      setCurrentImageIndex(
+        (prev) => (prev - 1 + images.length) % images.length
+      );
+    };
 
-  const isOwnMachine = selectedMachine.ownerId?._id === currentUser?.id || 
-                        selectedMachine.ownerId === currentUser?.id;
+    const isOwnMachine =
+      selectedMachine.ownerId?._id === currentUser?.id ||
+      selectedMachine.ownerId === currentUser?.id;
 
-  return (
-    <div className="p-4">
-      <button
-        onClick={() => setCurrentView("machines")}
-        className="mb-4 text-blue-600 font-semibold"
-      >
-        ← Back
-      </button>
+    return (
+      <div className="p-4">
+        <button
+          onClick={() => setCurrentView("machines")}
+          className="mb-4 text-blue-600 font-semibold"
+        >
+          ← Back
+        </button>
 
-      {/* Image carousel */}
-      <div className="relative mb-4">
-        <img
-          src={images[currentImageIndex]}
-          alt={selectedMachine.name}
-          className="w-full h-64 object-cover rounded-2xl"
-        />
-        {images.length > 1 && (
-          <>
-            <button
-              onClick={prevImage}
-              className="absolute left-2 top-1/2 -translate-y-1/2 bg-white/80 backdrop-blur-sm p-2 rounded-full shadow-lg hover:bg-white transition"
-            >
-              ←
-            </button>
-            <button
-              onClick={nextImage}
-              className="absolute right-2 top-1/2 -translate-y-1/2 bg-white/80 backdrop-blur-sm p-2 rounded-full shadow-lg hover:bg-white transition"
-            >
-              →
-            </button>
-          </>
-        )}
-      </div>
-
-      {images.length > 1 && (
-        <div className="flex gap-2 mb-4 overflow-x-auto pb-2">
-          {images.map((img, idx) => (
-            <img
-              key={idx}
-              src={img}
-              alt={`${selectedMachine.name} ${idx + 1}`}
-              onClick={() => setCurrentImageIndex(idx)}
-              className={`w-20 h-20 object-cover rounded-lg cursor-pointer transition ${
-                idx === currentImageIndex
-                  ? "ring-2 ring-blue-500"
-                  : "opacity-60 hover:opacity-100"
-              }`}
-            />
-          ))}
+        <div className="relative mb-4">
+          <img
+            src={images[currentImageIndex]}
+            alt={selectedMachine.name}
+            className="w-full h-64 object-cover rounded-2xl"
+          />
+          {images.length > 1 && (
+            <>
+              <button
+                onClick={prevImage}
+                className="absolute left-2 top-1/2 -translate-y-1/2 bg-white/80 backdrop-blur-sm p-2 rounded-full shadow-lg hover:bg-white transition"
+              >
+                ←
+              </button>
+              <button
+                onClick={nextImage}
+                className="absolute right-2 top-1/2 -translate-y-1/2 bg-white/80 backdrop-blur-sm p-2 rounded-full shadow-lg hover:bg-white transition"
+              >
+                →
+              </button>
+            </>
+          )}
         </div>
-      )}
 
-      <div className="bg-white rounded-2xl p-5 shadow-lg">
-        <h1 className="text-2xl font-bold">{selectedMachine.name}</h1>
-        <p className="text-gray-600 capitalize">
-          {selectedMachine.brand} • {selectedMachine.year}
-        </p>
-        {selectedMachine.description && (
-          <p className="text-gray-600 mt-3">{selectedMachine.description}</p>
-        )}
-        
-        <div className="mt-4">
-          <div className="flex items-center gap-1 mb-4">
-            <Star size={20} className="text-amber-400 fill-amber-400" />
-            <span className="font-semibold">
-              {selectedMachine.rating?.average || 0}
-            </span>
+        {images.length > 1 && (
+          <div className="flex gap-2 mb-4 overflow-x-auto pb-2">
+            {images.map((img, idx) => (
+              <img
+                key={idx}
+                src={img}
+                alt={`${selectedMachine.name} ${idx + 1}`}
+                onClick={() => setCurrentImageIndex(idx)}
+                className={`w-20 h-20 object-cover rounded-lg cursor-pointer transition ${
+                  idx === currentImageIndex
+                    ? "ring-2 ring-blue-500"
+                    : "opacity-60 hover:opacity-100"
+                }`}
+              />
+            ))}
           </div>
+        )}
 
-          {/* UPDATED PRICING SECTION */}
-          <div className="bg-gradient-to-br from-blue-50 to-cyan-50 rounded-xl p-4 mb-4">
-            {selectedMachine.pricingType === 'daily' && (
-              <div>
-                <p className="text-sm text-gray-600 mb-1">Daily Rate</p>
-                <div className="text-4xl font-bold bg-gradient-to-r from-blue-600 to-cyan-600 bg-clip-text text-transparent">
-                  ${selectedMachine.pricePerDay}/day
-                </div>
-              </div>
-            )}
+        <div className="bg-white rounded-2xl p-5 shadow-lg">
+          <h1 className="text-2xl font-bold">{selectedMachine.name}</h1>
+          <p className="text-gray-600 capitalize">
+            {selectedMachine.brand} • {selectedMachine.year}
+          </p>
+          {selectedMachine.description && (
+            <p className="text-gray-600 mt-3">{selectedMachine.description}</p>
+          )}
 
-            {selectedMachine.pricingType === 'per_hectare' && (
-              <div>
-                <p className="text-sm text-gray-600 mb-1">Per Hectare Rate</p>
-                <div className="text-4xl font-bold bg-gradient-to-r from-emerald-600 to-teal-600 bg-clip-text text-transparent">
-                  ${selectedMachine.pricePerHectare}/Ha
-                </div>
-                <p className="text-sm text-gray-600 mt-2">
-                  Minimum {selectedMachine.minimumHectares} hectares
-                </p>
-              </div>
-            )}
+          <div className="mt-4">
+            <div className="flex items-center gap-1 mb-4">
+              <Star size={20} className="text-amber-400 fill-amber-400" />
+              <span className="font-semibold">
+                {selectedMachine.rating?.average || 0}
+              </span>
+            </div>
 
-            {selectedMachine.pricingType === 'both' && (
-              <div className="space-y-3">
+            <div className="bg-gradient-to-br from-blue-50 to-cyan-50 rounded-xl p-4 mb-4">
+              {selectedMachine.pricingType === "daily" && (
                 <div>
                   <p className="text-sm text-gray-600 mb-1">Daily Rate</p>
-                  <div className="text-3xl font-bold bg-gradient-to-r from-blue-600 to-cyan-600 bg-clip-text text-transparent">
+                  <div className="text-4xl font-bold bg-gradient-to-r from-blue-600 to-cyan-600 bg-clip-text text-transparent">
                     ${selectedMachine.pricePerDay}/day
                   </div>
                 </div>
-                <div className="border-t border-gray-200 pt-3">
+              )}
+
+              {selectedMachine.pricingType === "per_hectare" && (
+                <div>
                   <p className="text-sm text-gray-600 mb-1">Per Hectare Rate</p>
-                  <div className="text-3xl font-bold bg-gradient-to-r from-emerald-600 to-teal-600 bg-clip-text text-transparent">
+                  <div className="text-4xl font-bold bg-gradient-to-r from-emerald-600 to-teal-600 bg-clip-text text-transparent">
                     ${selectedMachine.pricePerHectare}/Ha
                   </div>
-                  <p className="text-sm text-gray-600 mt-1">
+                  <p className="text-sm text-gray-600 mt-2">
                     Minimum {selectedMachine.minimumHectares} hectares
                   </p>
                 </div>
-              </div>
-            )}
+              )}
+
+              {selectedMachine.pricingType === "both" && (
+                <div className="space-y-3">
+                  <div>
+                    <p className="text-sm text-gray-600 mb-1">Daily Rate</p>
+                    <div className="text-3xl font-bold bg-gradient-to-r from-blue-600 to-cyan-600 bg-clip-text text-transparent">
+                      ${selectedMachine.pricePerDay}/day
+                    </div>
+                  </div>
+                  <div className="border-t border-gray-200 pt-3">
+                    <p className="text-sm text-gray-600 mb-1">
+                      Per Hectare Rate
+                    </p>
+                    <div className="text-3xl font-bold bg-gradient-to-r from-emerald-600 to-teal-600 bg-clip-text text-transparent">
+                      ${selectedMachine.pricePerHectare}/Ha
+                    </div>
+                    <p className="text-sm text-gray-600 mt-1">
+                      Minimum {selectedMachine.minimumHectares} hectares
+                    </p>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <p className="text-gray-600 mt-2">
+              {selectedMachine.specifications?.horsepower || 0} HP
+            </p>
           </div>
 
-          <p className="text-gray-600 mt-2">
-            {selectedMachine.specifications?.horsepower || 0} HP
-          </p>
+          {!isOwnMachine && selectedMachine.availability === "available" && (
+            <button
+              onClick={() => {
+                setBookingMachine(selectedMachine);
+                setShowBookingModal(true);
+              }}
+              className="w-full mt-6 bg-gradient-to-r from-blue-600 to-cyan-600 text-white py-4 rounded-xl font-bold hover:shadow-xl transition"
+            >
+              Book Now
+            </button>
+          )}
+
+          {isOwnMachine && (
+            <div className="mt-6 bg-blue-50 text-blue-700 p-4 rounded-xl text-center">
+              This is your machine
+            </div>
+          )}
+
+          {selectedMachine.availability !== "available" && !isOwnMachine && (
+            <div className="mt-6 bg-gray-100 text-gray-600 p-4 rounded-xl text-center">
+              Currently unavailable
+            </div>
+          )}
         </div>
-
-        {/* Book Now Button */}
-        {!isOwnMachine && selectedMachine.availability === 'available' && (
-          <button
-            onClick={() => {
-              setBookingMachine(selectedMachine);
-              setShowBookingModal(true);
-            }}
-            className="w-full mt-6 bg-gradient-to-r from-blue-600 to-cyan-600 text-white py-4 rounded-xl font-bold hover:shadow-xl transition"
-          >
-            Book Now
-          </button>
-        )}
-
-        {isOwnMachine && (
-          <div className="mt-6 bg-blue-50 text-blue-700 p-4 rounded-xl text-center">
-            This is your machine
-          </div>
-        )}
-
-        {selectedMachine.availability !== 'available' && !isOwnMachine && (
-          <div className="mt-6 bg-gray-100 text-gray-600 p-4 rounded-xl text-center">
-            Currently unavailable
-          </div>
-        )}
       </div>
-    </div>
-  );
-};
+    );
+  };
 
   const RentalsScreen = () => {
     if (loadingRentals) {
@@ -539,23 +559,338 @@ const MachineDetailScreen = () => {
                   </div>
                   <span
                     className={`px-4 py-2 rounded-xl text-xs font-bold capitalize ${
-                      rental.status === "active"
+                      rental.status === "pending"
+                        ? "bg-amber-100 text-amber-800"
+                        : rental.status === "approved"
                         ? "bg-emerald-100 text-emerald-800"
-                        : "bg-amber-100 text-amber-800"
+                        : "bg-gray-100 text-gray-800"
                     }`}
                   >
                     {rental.status}
                   </span>
                 </div>
-                <p className="text-sm text-gray-600">
-                  Start: {new Date(rental.startDate).toLocaleDateString()}
-                </p>
-                <p className="text-sm text-gray-600">
-                  End: {new Date(rental.endDate).toLocaleDateString()}
-                </p>
+                
+                {rental.rentalType === "daily" ? (
+                  <>
+                    <p className="text-sm text-gray-600">
+                      Start: {new Date(rental.startDate).toLocaleDateString()}
+                    </p>
+                    <p className="text-sm text-gray-600">
+                      End: {new Date(rental.endDate).toLocaleDateString()}
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <p className="text-sm text-gray-600">
+                      Work Date: {new Date(rental.workDate).toLocaleDateString()}
+                    </p>
+                    <p className="text-sm text-gray-600">
+                      Hectares: {rental.pricing?.numberOfHectares} Ha
+                    </p>
+                    <p className="text-sm text-gray-600">
+                      Location: {rental.fieldLocation}
+                    </p>
+                  </>
+                )}
+                
                 <p className="text-lg font-bold mt-2 bg-gradient-to-r from-blue-600 to-cyan-600 bg-clip-text text-transparent">
-                  ${rental.pricing?.totalPrice || 0}
+                  ${rental.pricing?.totalPrice?.toFixed(2) || 0}
                 </p>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  const MyMachinesScreen = () => {
+    const [myMachines, setMyMachines] = useState([]);
+    const [loading, setLoading] = useState(false);
+
+    useEffect(() => {
+      fetchMyMachines();
+    }, []);
+
+    const fetchMyMachines = async () => {
+      setLoading(true);
+      try {
+        const response = await machineAPI.getMyMachines();
+        if (response.data.success) {
+          setMyMachines(response.data.data);
+        }
+      } catch (error) {
+        console.error("Error fetching my machines:", error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    const handleDeleteMachine = async (machineId) => {
+      if (!window.confirm("Are you sure you want to delete this machine?")) return;
+
+      try {
+        await machineAPI.delete(machineId);
+        alert("Machine deleted successfully");
+        fetchMyMachines();
+      } catch (error) {
+        alert(error.response?.data?.message || "Failed to delete machine");
+      }
+    };
+
+    if (loading) {
+      return (
+        <div className="p-4 flex items-center justify-center h-64">
+          <div className="text-center">
+            <div className="w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+            <p className="text-gray-600">Loading your machines...</p>
+          </div>
+        </div>
+      );
+    }
+
+    return (
+      <div className="p-4">
+        <div className="flex justify-between items-center mb-4">
+          <h1 className="text-2xl font-bold bg-gradient-to-r from-blue-600 to-cyan-600 bg-clip-text text-transparent">
+            My Machines
+          </h1>
+          <button
+            onClick={() => setShowAddMachineForm(true)}
+            className="bg-gradient-to-r from-emerald-500 to-teal-500 text-white px-4 py-2 rounded-xl shadow-lg hover:shadow-xl transition"
+          >
+            <Plus size={20} className="inline mr-1" /> Add
+          </button>
+        </div>
+
+        {myMachines.length === 0 ? (
+          <div className="bg-white rounded-2xl p-8 shadow-lg text-center">
+            <Tractor size={48} className="mx-auto text-gray-400 mb-3" />
+            <p className="text-gray-600 mb-4">
+              You haven't listed any machines yet
+            </p>
+            <button
+              onClick={() => setShowAddMachineForm(true)}
+              className="px-6 py-2 bg-gradient-to-r from-blue-600 to-cyan-600 text-white rounded-xl font-semibold"
+            >
+              Add Your First Machine
+            </button>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            {myMachines.map((machine) => (
+              <div
+                key={machine._id}
+                className="bg-white rounded-2xl shadow-lg p-4"
+              >
+                <div className="flex gap-4">
+                  <img
+                    src={
+                      machine.images?.[0] ||
+                      "https://images.unsplash.com/photo-1625246333195-78d9c38ad449?w=400"
+                    }
+                    alt={machine.name}
+                    className="w-24 h-24 rounded-xl object-cover"
+                  />
+                  <div className="flex-1">
+                    <h3 className="font-bold text-lg">{machine.name}</h3>
+                    <p className="text-sm text-gray-500 capitalize">
+                      {machine.category} • {machine.brand}
+                    </p>
+
+                    {machine.pricingType === "daily" && (
+                      <p className="text-blue-600 font-semibold mt-1">
+                        ${machine.pricePerDay}/day
+                      </p>
+                    )}
+                    {machine.pricingType === "per_hectare" && (
+                      <p className="text-emerald-600 font-semibold mt-1">
+                        ${machine.pricePerHectare}/Ha
+                      </p>
+                    )}
+                    {machine.pricingType === "both" && (
+                      <div className="text-sm mt-1">
+                        <p className="text-blue-600 font-semibold">
+                          ${machine.pricePerDay}/day
+                        </p>
+                        <p className="text-emerald-600 font-semibold">
+                          ${machine.pricePerHectare}/Ha
+                        </p>
+                      </div>
+                    )}
+
+                    <span
+                      className={`inline-block mt-2 px-3 py-1 rounded-full text-xs font-bold ${
+                        machine.availability === "available"
+                          ? "bg-emerald-100 text-emerald-800"
+                          : "bg-amber-100 text-amber-800"
+                      }`}
+                    >
+                      {machine.availability}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="flex gap-2 mt-4">
+                  <button
+                    onClick={() => alert("Edit functionality coming soon")}
+                    className="flex-1 bg-blue-100 text-blue-700 py-2 rounded-xl font-semibold hover:bg-blue-200 transition"
+                  >
+                    Edit
+                  </button>
+                  <button
+                    onClick={() => handleDeleteMachine(machine._id)}
+                    className="flex-1 bg-rose-100 text-rose-700 py-2 rounded-xl font-semibold hover:bg-rose-200 transition"
+                  >
+                    Delete
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  const RentalRequestsScreen = () => {
+    const [requests, setRequests] = useState([]);
+    const [loading, setLoading] = useState(false);
+
+    useEffect(() => {
+      fetchRequests();
+    }, []);
+
+    const fetchRequests = async () => {
+      setLoading(true);
+      try {
+        const response = await rentalAPI.getAll();
+        if (response.data.success) {
+          // Filter to show only requests for machines I own
+          const myRequests = response.data.data.filter(
+            (rental) =>
+              rental.ownerId?._id === currentUser?.id ||
+              rental.ownerId === currentUser?.id
+          );
+          setRequests(myRequests);
+        }
+      } catch (error) {
+        console.error("Error fetching requests:", error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    const handleStatusUpdate = async (rentalId, status) => {
+      try {
+        await rentalAPI.updateStatus(rentalId, status);
+        alert(`Rental ${status} successfully`);
+        fetchRequests();
+      } catch (error) {
+        alert(error.response?.data?.message || "Failed to update rental");
+      }
+    };
+
+    if (loading) {
+      return (
+        <div className="p-4 flex items-center justify-center h-64">
+          <div className="text-center">
+            <div className="w-12 h-12 border-4 border-emerald-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+            <p className="text-gray-600">Loading requests...</p>
+          </div>
+        </div>
+      );
+    }
+
+    return (
+      <div className="p-4">
+        <h1 className="text-2xl font-bold mb-4 bg-gradient-to-r from-blue-600 to-cyan-600 bg-clip-text text-transparent">
+          Rental Requests
+        </h1>
+
+        {requests.length === 0 ? (
+          <div className="bg-white rounded-2xl p-8 shadow-lg text-center">
+            <Calendar size={48} className="mx-auto text-gray-400 mb-3" />
+            <p className="text-gray-600">No rental requests yet</p>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            {requests.map((rental) => (
+              <div
+                key={rental._id}
+                className="bg-white rounded-2xl p-5 shadow-lg"
+              >
+                <div className="flex justify-between items-start mb-3">
+                  <div>
+                    <h3 className="font-bold">{rental.machineId?.name}</h3>
+                    <p className="text-sm text-gray-600">
+                      Renter: {rental.renterId?.firstName}{" "}
+                      {rental.renterId?.lastName}
+                    </p>
+                    <p className="text-sm text-gray-600">
+                      Email: {rental.renterId?.email}
+                    </p>
+                  </div>
+                  <span
+                    className={`px-4 py-2 rounded-xl text-xs font-bold capitalize ${
+                      rental.status === "pending"
+                        ? "bg-amber-100 text-amber-800"
+                        : rental.status === "approved"
+                        ? "bg-emerald-100 text-emerald-800"
+                        : "bg-gray-100 text-gray-800"
+                    }`}
+                  >
+                    {rental.status}
+                  </span>
+                </div>
+
+                {rental.rentalType === "daily" ? (
+                  <>
+                    <p className="text-sm text-gray-600">
+                      Start: {new Date(rental.startDate).toLocaleDateString()}
+                    </p>
+                    <p className="text-sm text-gray-600">
+                      End: {new Date(rental.endDate).toLocaleDateString()}
+                    </p>
+                    <p className="text-sm text-gray-600">
+                      Days: {rental.pricing?.numberOfDays}
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <p className="text-sm text-gray-600">
+                      Work Date:{" "}
+                      {new Date(rental.workDate).toLocaleDateString()}
+                    </p>
+                    <p className="text-sm text-gray-600">
+                      Hectares: {rental.pricing?.numberOfHectares} Ha
+                    </p>
+                    <p className="text-sm text-gray-600">
+                      Location: {rental.fieldLocation}
+                    </p>
+                  </>
+                )}
+
+                <p className="text-lg font-bold mt-2 text-blue-600">
+                  Total: ${rental.pricing?.totalPrice?.toFixed(2)}
+                </p>
+
+                {rental.status === "pending" && (
+                  <div className="flex gap-2 mt-4">
+                    <button
+                      onClick={() => handleStatusUpdate(rental._id, "approved")}
+                      className="flex-1 bg-emerald-500 text-white py-2 rounded-xl font-semibold hover:bg-emerald-600 transition"
+                    >
+                      Approve
+                    </button>
+                    <button
+                      onClick={() => handleStatusUpdate(rental._id, "rejected")}
+                      className="flex-1 bg-rose-500 text-white py-2 rounded-xl font-semibold hover:bg-rose-600 transition"
+                    >
+                      Reject
+                    </button>
+                  </div>
+                )}
               </div>
             ))}
           </div>
@@ -964,7 +1299,8 @@ const MachineDetailScreen = () => {
       {currentView === "machineDetail" && <MachineDetailScreen />}
       {currentView === "rentals" && <RentalsScreen />}
       {currentView === "profile" && <ProfileScreen />}
-
+      {currentView === "myMachines" && <MyMachinesScreen />}
+      {currentView === "requests" && <RentalRequestsScreen />}
       {showAddMachineForm && <AddMachineForm />}
       {showBookingModal && bookingMachine && (
         <BookingModal

@@ -3,8 +3,9 @@ const mongoose = require('mongoose');
 const cors = require('cors');
 const session = require('express-session');
 const passport = require('passport');
-require('dotenv').config();
+const dotenv = require('dotenv');
 
+dotenv.config();
 // Initialize Passport configuration
 require('./middleware/config/passport');
 
@@ -62,6 +63,7 @@ const machineRoutes = require('./routes/machines');
 const rentalRoutes = require('./routes/rentals');
 const notificationRoutes = require('./routes/notifications');
 const uploadRoutes = require('./routes/upload');
+const testRoutes = require('./routes/test'); // ADD THIS LINE
 
 app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
@@ -69,6 +71,7 @@ app.use('/api/machines', machineRoutes);
 app.use('/api/rentals', rentalRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/upload', uploadRoutes);
+app.use('/api/test', testRoutes); // ADD THIS LINE
 
 // 404 handler
 app.use((req, res) => {
@@ -85,6 +88,10 @@ app.use((err, req, res, next) => {
     success: false, 
     message: 'Server Error'
   });
+});
+// Test route
+app.get('/', (req, res) => {
+  res.json({ message: 'AgriRent API is running' });
 });
 
 const PORT = process.env.PORT || 3001;

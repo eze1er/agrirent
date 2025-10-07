@@ -50,17 +50,12 @@ router.post('/', protect, async (req, res) => {
   }
 });
 
-// Get machine by ID
-router.get('/:id', async (req, res) => {
+// Get owner's machines
+router.get('/my-machines', protect, async (req, res) => {
   try {
-    const machine = await Machine.findById(req.params.id)
-      .populate('ownerId', 'firstName lastName email phoneNumber');
-    
-    if (!machine) {
-      return res.status(404).json({ success: false, message: 'Machine not found' });
-    }
-    
-    res.json({ success: true, data: machine });
+    const machines = await Machine.find({ ownerId: req.user.id })
+      .sort({ createdAt: -1 });
+    res.json({ success: true, data: machines });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }
@@ -79,13 +74,13 @@ router.put('/:id', protect, async (req, res) => {
       return res.status(403).json({ success: false, message: 'Not authorized' });
     }
     
-    const updatedMachine = await Machine.findByIdAndUpdate(
+    const updated = await Machine.findByIdAndUpdate(
       req.params.id,
       req.body,
       { new: true, runValidators: true }
     );
     
-    res.json({ success: true, data: updatedMachine });
+    res.json({ success: true, data: updated });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }
@@ -104,8 +99,20 @@ router.delete('/:id', protect, async (req, res) => {
       return res.status(403).json({ success: false, message: 'Not authorized' });
     }
     
-    await machine.deleteOne();
+    // Check if machine has active rentals
+    const activeRentals = await Rental.countDocuments({
+      machineId: req.params.id,
+      status: { $in: ['pending', 'approved', 'active'] }
+    });
     
+    if (activeRentals > 0) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Cannot delete machine with active rentals' 
+      });
+    }
+    
+    await Machine.findByIdAndDelete(req.params.id);
     res.json({ success: true, message: 'Machine deleted successfully' });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
