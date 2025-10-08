@@ -4,6 +4,7 @@ const { protect } = require('../middleware/auth');
 const Rental = require('../models/Rental');
 const Machine = require('../models/Machine');
 const User = require('../models/User');
+const Notification = require('../models/Notification'); // ✅ ADD THIS
 const { sendEmail } = require('../services/emailService');
 const twilio = require('twilio');
 
@@ -11,6 +12,22 @@ const twilioClient = twilio(
   process.env.TWILIO_ACCOUNT_SID,
   process.env.TWILIO_AUTH_TOKEN
 );
+
+// Helper function to create notification
+const createNotification = async (userId, type, title, message, relatedId, relatedModel) => {
+  try {
+    await Notification.create({
+      userId,
+      type,
+      title,
+      message,
+      relatedId,
+      relatedModel
+    });
+  } catch (error) {
+    console.error('Failed to create notification:', error);
+  }
+};
 
 // Get all rentals for current user
 router.get('/', protect, async (req, res) => {
@@ -34,13 +51,11 @@ router.post('/', protect, async (req, res) => {
   try {
     const { machineId, rentalType, startDate, endDate, hectares, workDate, fieldLocation } = req.body;
 
-    // Get machine
     const machine = await Machine.findById(machineId);
     if (!machine) {
       return res.status(404).json({ success: false, message: 'Machine not found' });
     }
 
-    // Check if user is trying to rent their own machine
     if (machine.ownerId.toString() === req.user.id) {
       return res.status(400).json({ success: false, message: 'You cannot rent your own machine' });
     }
@@ -55,7 +70,6 @@ router.post('/', protect, async (req, res) => {
     };
 
     if (rentalType === 'daily') {
-      // Validate daily rental
       if (!startDate || !endDate) {
         return res.status(400).json({ success: false, message: 'Start and end dates required' });
       }
@@ -77,7 +91,6 @@ router.post('/', protect, async (req, res) => {
         return res.status(400).json({ success: false, message: 'End date must be after start date' });
       }
 
-      // Check availability for these dates
       const conflictingRental = await Rental.findOne({
         machineId,
         rentalType: 'daily',
@@ -105,7 +118,6 @@ router.post('/', protect, async (req, res) => {
       };
 
     } else if (rentalType === 'per_hectare') {
-      // Validate per-hectare rental
       if (!hectares || !workDate || !fieldLocation) {
         return res.status(400).json({ success: false, message: 'Hectares, work date, and field location required' });
       }
@@ -129,7 +141,6 @@ router.post('/', protect, async (req, res) => {
         return res.status(400).json({ success: false, message: 'Work date cannot be in the past' });
       }
 
-      // Check if machine is available on this date
       const conflictingRental = await Rental.findOne({
         machineId,
         status: { $in: ['pending', 'active', 'approved'] },
@@ -163,7 +174,6 @@ router.post('/', protect, async (req, res) => {
     }
 
     rentalData.pricing = pricing;
-
     const rental = await Rental.create(rentalData);
 
     const populatedRental = await Rental.findById(rental._id)
@@ -181,149 +191,19 @@ router.post('/', protect, async (req, res) => {
   }
 });
 
-
-// Update rental status (approve/reject)
+// Update rental status (approve/reject) with rejection reason ✅
 router.patch('/:id/status', protect, async (req, res) => {
   try {
-    const { status } = req.body;
-    const rental = await Rental.findById(req.params.id);
-
-    if (!rental) {
-      return res.status(404).json({ 
-        success: false, 
-        message: 'Rental not found' 
-      });
-    }
-
-    // Only owner can approve/reject
-    if (rental.ownerId.toString() !== req.user.id) {
-      return res.status(403).json({ 
-        success: false, 
-        message: 'Not authorized' 
-      });
-    }
-
-    // Only pending rentals can be approved/rejected
-    if (rental.status !== 'pending') {
+    const { status, rejectionReason } = req.body;
+    
+    // Validate rejection reason if rejecting
+    if (status === 'rejected' && (!rejectionReason || rejectionReason.trim().length < 10)) {
       return res.status(400).json({ 
         success: false, 
-        message: 'Only pending rentals can be updated' 
+        message: 'Rejection reason is required and must be at least 10 characters' 
       });
     }
 
-    if (status === 'approved') {
-      rental.status = 'approved';
-      
-      // Update machine availability
-      const machine = await Machine.findById(rental.machineId);
-      machine.availability = 'rented';
-      await machine.save();
-    } else if (status === 'rejected') {
-      rental.status = 'rejected';
-    }
-
-    await rental.save();
-
-    const updatedRental = await Rental.findById(rental._id)
-      .populate('machineId', 'name images pricePerDay category')
-      .populate('renterId', 'firstName lastName email')
-      .populate('ownerId', 'firstName lastName email');
-
-    res.json({ success: true, data: updatedRental });
-  } catch (error) {
-    res.status(500).json({ success: false, message: error.message });
-  }
-});
-
-// Cancel rental
-router.patch('/:id/cancel', protect, async (req, res) => {
-  try {
-    const rental = await Rental.findById(req.params.id);
-
-    if (!rental) {
-      return res.status(404).json({ 
-        success: false, 
-        message: 'Rental not found' 
-      });
-    }
-
-    // Only renter can cancel
-    if (rental.renterId.toString() !== req.user.id) {
-      return res.status(403).json({ 
-        success: false, 
-        message: 'Not authorized' 
-      });
-    }
-
-    // Can only cancel pending or approved rentals
-    if (!['pending', 'approved'].includes(rental.status)) {
-      return res.status(400).json({ 
-        success: false, 
-        message: 'Cannot cancel this rental' 
-      });
-    }
-
-    rental.status = 'cancelled';
-    await rental.save();
-
-    // If was approved, make machine available again
-    if (rental.status === 'approved') {
-      const machine = await Machine.findById(rental.machineId);
-      machine.availability = 'available';
-      await machine.save();
-    }
-
-    res.json({ success: true, data: rental });
-  } catch (error) {
-    res.status(500).json({ success: false, message: error.message });
-  }
-});
-
-// Complete rental
-router.patch('/:id/complete', protect, async (req, res) => {
-  try {
-    const rental = await Rental.findById(req.params.id);
-
-    if (!rental) {
-      return res.status(404).json({ 
-        success: false, 
-        message: 'Rental not found' 
-      });
-    }
-
-    // Only owner can mark as completed
-    if (rental.ownerId.toString() !== req.user.id) {
-      return res.status(403).json({ 
-        success: false, 
-        message: 'Not authorized' 
-      });
-    }
-
-    if (rental.status !== 'approved') {
-      return res.status(400).json({ 
-        success: false, 
-        message: 'Only approved rentals can be completed' 
-      });
-    }
-
-    rental.status = 'completed';
-    await rental.save();
-
-    // Make machine available again
-    const machine = await Machine.findById(rental.machineId);
-    machine.availability = 'available';
-    await machine.save();
-
-    res.json({ success: true, data: rental });
-  } catch (error) {
-    res.status(500).json({ success: false, message: error.message });
-  }
-});
-
-// Update rental status (approve/reject)
-router.patch('/:id/status', protect, async (req, res) => {
-  try {
-    const { status } = req.body;
     const rental = await Rental.findById(req.params.id)
       .populate('machineId', 'name images pricePerDay pricePerHectare')
       .populate('renterId', 'firstName lastName email phone')
@@ -360,7 +240,17 @@ router.patch('/:id/status', protect, async (req, res) => {
       machine.availability = 'rented';
       await machine.save();
 
-      // Send approval email to renter
+      // Create notification
+      await createNotification(
+        rental.renterId._id,
+        'rental_accepted',
+        'Rental Request Approved',
+        `Your rental request for ${rental.machineId.name} has been approved!`,
+        rental._id,
+        'Rental'
+      );
+
+      // Send approval email
       const emailSubject = '✅ Your Rental Request Has Been Approved!';
       const emailHtml = `
         <!DOCTYPE html>
@@ -431,20 +321,6 @@ router.patch('/:id/status', protect, async (req, res) => {
                 </div>
               </div>
 
-              <div style="background: #fff3cd; border-left: 4px solid #ffc107; padding: 15px; border-radius: 5px; margin: 20px 0;">
-                <h4 style="margin-top: 0; color: #856404;">📋 Next Steps:</h4>
-                <ol style="margin: 10px 0; padding-left: 20px;">
-                  <li>The owner will contact you to arrange pickup/delivery</li>
-                  <li>Ensure payment is ready before pickup</li>
-                  <li>Inspect the equipment before accepting it</li>
-                  <li>Follow all safety guidelines during operation</li>
-                </ol>
-              </div>
-
-              <div style="text-align: center; margin: 30px 0;">
-                <a href="http://localhost:5173" class="button">View My Rentals</a>
-              </div>
-
               <p>If you have any questions, please contact the owner:</p>
               <p><strong>${rental.ownerId.firstName} ${rental.ownerId.lastName}</strong><br>
               Email: ${rental.ownerId.email}</p>
@@ -452,7 +328,6 @@ router.patch('/:id/status', protect, async (req, res) => {
               <p>Thank you for using AgriRent!</p>
             </div>
             <div class="footer">
-              <p>This is an automated message from AgriRent</p>
               <p>© ${new Date().getFullYear()} AgriRent. All rights reserved.</p>
             </div>
           </div>
@@ -460,15 +335,21 @@ router.patch('/:id/status', protect, async (req, res) => {
         </html>
       `;
 
-      // Send email
-      await sendEmail(rental.renterId.email, emailSubject, emailHtml);
+      console.log('📧 Sending approval email to:', rental.renterId.email);
+      
+      try {
+        await sendEmail(rental.renterId.email, emailSubject, emailHtml);
+        console.log('✅ Approval email sent successfully');
+      } catch (emailError) {
+        console.error('❌ Failed to send approval email:', emailError);
+      }
 
-      // Send SMS notification if phone number exists
+      // Send SMS if phone exists
       if (rental.renterId.phone) {
         try {
           const smsMessage = rental.rentalType === 'daily' 
-            ? `🎉 AgriRent: Your rental request for ${rental.machineId.name} has been APPROVED! Dates: ${new Date(rental.startDate).toLocaleDateString()} - ${new Date(rental.endDate).toLocaleDateString()}. Total: $${rental.pricing.totalPrice.toFixed(2)}. Check your email for details.`
-            : `🎉 AgriRent: Your rental request for ${rental.machineId.name} has been APPROVED! Work date: ${new Date(rental.workDate).toLocaleDateString()}, ${rental.pricing.numberOfHectares} Ha. Total: $${rental.pricing.totalPrice.toFixed(2)}. Check your email for details.`;
+            ? `🎉 AgriRent: Your rental request for ${rental.machineId.name} has been APPROVED! Dates: ${new Date(rental.startDate).toLocaleDateString()} - ${new Date(rental.endDate).toLocaleDateString()}. Total: $${rental.pricing.totalPrice.toFixed(2)}.`
+            : `🎉 AgriRent: Your rental request for ${rental.machineId.name} has been APPROVED! Work date: ${new Date(rental.workDate).toLocaleDateString()}, ${rental.pricing.numberOfHectares} Ha. Total: $${rental.pricing.totalPrice.toFixed(2)}.`;
 
           await twilioClient.messages.create({
             body: smsMessage,
@@ -476,17 +357,27 @@ router.patch('/:id/status', protect, async (req, res) => {
             to: rental.renterId.phone
           });
           
-          console.log('SMS sent successfully to:', rental.renterId.phone);
+          console.log('✅ SMS sent successfully');
         } catch (smsError) {
-          console.error('SMS sending failed:', smsError);
-          // Don't fail the whole request if SMS fails
+          console.error('❌ SMS sending failed:', smsError);
         }
       }
 
     } else if (status === 'rejected') {
       rental.status = 'rejected';
+      rental.rejectionReason = rejectionReason;
 
-      // Send rejection email
+      // Create notification
+      await createNotification(
+        rental.renterId._id,
+        'rental_rejected',
+        'Rental Request Declined',
+        `Your rental request for ${rental.machineId.name} was declined. Reason: ${rejectionReason}`,
+        rental._id,
+        'Rental'
+      );
+
+      // Send rejection email with reason
       const emailSubject = '❌ Rental Request Update';
       const emailHtml = `
         <!DOCTYPE html>
@@ -498,6 +389,7 @@ router.patch('/:id/status', protect, async (req, res) => {
             .header { background: linear-gradient(135deg, #f87171 0%, #ef4444 100%); color: white; padding: 30px; text-align: center; border-radius: 10px 10px 0 0; }
             .content { background: #f9f9f9; padding: 30px; border-radius: 0 0 10px 10px; }
             .button { display: inline-block; background: #3b82f6; color: white; padding: 12px 30px; text-decoration: none; border-radius: 5px; margin: 20px 0; }
+            .reason-box { background: #fee2e2; border-left: 4px solid #ef4444; padding: 15px; margin: 20px 0; border-radius: 5px; }
             .footer { text-align: center; padding: 20px; color: #666; font-size: 12px; }
           </style>
         </head>
@@ -511,16 +403,20 @@ router.patch('/:id/status', protect, async (req, res) => {
               
               <p>Unfortunately, your rental request for <strong>${rental.machineId.name}</strong> has been declined by the owner.</p>
               
+              <div class="reason-box">
+                <h4 style="margin-top: 0; color: #991b1b;">📝 Reason for Decline:</h4>
+                <p style="margin: 0;">${rejectionReason}</p>
+              </div>
+              
               <p>Don't worry! There are many other great machines available on AgriRent.</p>
 
               <div style="text-align: center; margin: 30px 0;">
-                <a href="http://localhost:5173" class="button">Browse Other Machines</a>
+                <a href="${process.env.FRONTEND_URL || 'http://localhost:5173'}" class="button">Browse Other Machines</a>
               </div>
               
               <p>Thank you for using AgriRent!</p>
             </div>
             <div class="footer">
-              <p>This is an automated message from AgriRent</p>
               <p>© ${new Date().getFullYear()} AgriRent. All rights reserved.</p>
             </div>
           </div>
@@ -528,18 +424,26 @@ router.patch('/:id/status', protect, async (req, res) => {
         </html>
       `;
 
-      await sendEmail(rental.renterId.email, emailSubject, emailHtml);
+      console.log('📧 Sending rejection email to:', rental.renterId.email);
+      
+      try {
+        await sendEmail(rental.renterId.email, emailSubject, emailHtml);
+        console.log('✅ Rejection email sent successfully');
+      } catch (emailError) {
+        console.error('❌ Failed to send rejection email:', emailError);
+      }
 
-      // Send rejection SMS if phone exists
+      // Send SMS if phone exists
       if (rental.renterId.phone) {
         try {
           await twilioClient.messages.create({
-            body: `AgriRent: Your rental request for ${rental.machineId.name} was not approved. Browse other available machines at AgriRent.`,
+            body: `AgriRent: Your rental request for ${rental.machineId.name} was declined. Reason: ${rejectionReason.substring(0, 100)}${rejectionReason.length > 100 ? '...' : ''}`,
             from: process.env.TWILIO_PHONE_NUMBER,
             to: rental.renterId.phone
           });
+          console.log('✅ SMS sent successfully');
         } catch (smsError) {
-          console.error('SMS sending failed:', smsError);
+          console.error('❌ SMS sending failed:', smsError);
         }
       }
     }
@@ -558,6 +462,86 @@ router.patch('/:id/status', protect, async (req, res) => {
     });
   } catch (error) {
     console.error('Error updating rental status:', error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// Cancel rental
+router.patch('/:id/cancel', protect, async (req, res) => {
+  try {
+    const rental = await Rental.findById(req.params.id);
+
+    if (!rental) {
+      return res.status(404).json({ 
+        success: false, 
+        message: 'Rental not found' 
+      });
+    }
+
+    if (rental.renterId.toString() !== req.user.id) {
+      return res.status(403).json({ 
+        success: false, 
+        message: 'Not authorized' 
+      });
+    }
+
+    if (!['pending', 'approved'].includes(rental.status)) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Cannot cancel this rental' 
+      });
+    }
+
+    rental.status = 'cancelled';
+    await rental.save();
+
+    if (rental.status === 'approved') {
+      const machine = await Machine.findById(rental.machineId);
+      machine.availability = 'available';
+      await machine.save();
+    }
+
+    res.json({ success: true, data: rental });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// Complete rental
+router.patch('/:id/complete', protect, async (req, res) => {
+  try {
+    const rental = await Rental.findById(req.params.id);
+
+    if (!rental) {
+      return res.status(404).json({ 
+        success: false, 
+        message: 'Rental not found' 
+      });
+    }
+
+    if (rental.ownerId.toString() !== req.user.id) {
+      return res.status(403).json({ 
+        success: false, 
+        message: 'Not authorized' 
+      });
+    }
+
+    if (rental.status !== 'approved') {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Only approved rentals can be completed' 
+      });
+    }
+
+    rental.status = 'completed';
+    await rental.save();
+
+    const machine = await Machine.findById(rental.machineId);
+    machine.availability = 'available';
+    await machine.save();
+
+    res.json({ success: true, data: rental });
+  } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }
 });

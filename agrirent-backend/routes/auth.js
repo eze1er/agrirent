@@ -6,86 +6,103 @@ const passport = require('../middleware/config/passport');
 const User = require('../models/User');
 const { sendWelcomeEmail, sendVerificationEmail, sendPasswordResetEmail } = require('../services/emailService');
 
-// Traditional email/password registration
-router.post('/register', async (req, res) => {
+// Validation helper
+const validateEmail = (email) => {
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  return emailRegex.test(email);
+};
+
+const validatePassword = (password) => {
+  return password && password.length >= 6;
+};
+
+// ============================================
+// DEBUG ROUTES (Remove in production!)
+// ============================================
+
+// Debug: List all users
+router.get('/debug/users', async (req, res) => {
   try {
-    const { firstName, lastName, email, password, phoneNumber, role } = req.body;
-    
-    const existingUser = await User.findOne({ email });
-    if (existingUser) {
-      return res.status(400).json({ success: false, message: 'User already exists' });
-    }
-    
-    // Generate verification token
-    const verificationToken = crypto.randomBytes(32).toString('hex');
-    
-    const user = await User.create({ 
-      firstName, 
-      lastName, 
-      email, 
-      password, 
-      phoneNumber, 
-      role: role || 'renter',
-      emailVerificationToken: verificationToken,
-      emailVerificationExpires: Date.now() + 24 * 60 * 60 * 1000 // 24 hours
-    });
-    
-    // Send emails (don't fail registration if emails fail)
-    try {
-      await sendVerificationEmail(user, verificationToken);
-      await sendWelcomeEmail(user);
-    } catch (emailError) {
-      console.error('Email sending failed:', emailError);
-    }
-    
-    const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, { expiresIn: '7d' });
-    
-    res.status(201).json({
-      success: true,
-      token,
-      user: { 
-        id: user._id, 
-        firstName: user.firstName, 
-        lastName: user.lastName, 
-        email: user.email, 
-        role: user.role 
-      },
-      message: 'Registration successful! Please check your email to verify your account.'
+    const users = await User.find({}).select('email firstName lastName role isEmailVerified');
+    res.json({ 
+      success: true, 
+      count: users.length,
+      users 
     });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }
 });
 
-// Traditional email/password login
-router.post('/login', async (req, res) => {
+// Debug: Reset password (bypass token)
+router.post('/debug/reset-password', async (req, res) => {
   try {
-    const { email, password } = req.body;
-    const user = await User.findOne({ email }).select('+password');
+    const { email, newPassword } = req.body;
     
-    if (!user || !(await user.comparePassword(password))) {
-      return res.status(401).json({ success: false, message: 'Invalid credentials' });
-    }
-    
-    // Require email verification only for owners
-    if ((user.role === 'owner' || user.role === 'both') && !user.isEmailVerified) {
-      return res.status(403).json({ 
+    if (!email || !newPassword) {
+      return res.status(400).json({ 
         success: false, 
-        message: 'Owners must verify their email before listing equipment. Please check your inbox.',
-        needsVerification: true,
-        email: user.email
+        message: 'Email and new password are required' 
+      });
+    }
+
+    if (!validatePassword(newPassword)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Password must be at least 6 characters'
       });
     }
     
-    const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, { expiresIn: '7d' });
-    res.json({
-      success: true,
-      token,
-      user: { 
-        id: user._id, 
-        firstName: user.firstName, 
-        email: user.email, 
-        role: user.role,
+    const user = await User.findOne({ email: email.toLowerCase() });
+    if (!user) {
+      return res.status(404).json({ success: false, message: 'User not found' });
+    }
+    
+    user.password = newPassword;
+    await user.save(); // This will auto-hash the password
+    
+    res.json({ 
+      success: true, 
+      message: 'Password reset successfully',
+      user: {
+        email: user.email,
+        firstName: user.firstName,
+        lastName: user.lastName
+      }
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// Debug: Verify email (bypass token)
+router.post('/debug/verify-me', async (req, res) => {
+  try {
+    const { email } = req.body;
+    
+    if (!email) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Email is required' 
+      });
+    }
+    
+    const user = await User.findOneAndUpdate(
+      { email: email.toLowerCase() },
+      { isEmailVerified: true },
+      { new: true }
+    ).select('-password');
+    
+    if (!user) {
+      return res.status(404).json({ success: false, message: 'User not found' });
+    }
+    
+    res.json({ 
+      success: true, 
+      message: 'Email verified successfully!',
+      user: {
+        email: user.email,
+        firstName: user.firstName,
         isEmailVerified: user.isEmailVerified
       }
     });
@@ -93,32 +110,240 @@ router.post('/login', async (req, res) => {
     res.status(500).json({ success: false, message: error.message });
   }
 });
-// Email verification endpoint
-router.get('/verify-email/:token', async (req, res) => {
+
+// Debug: Delete user
+router.delete('/debug/delete-user', async (req, res) => {
   try {
-    const user = await User.findOne({
-      emailVerificationToken: req.params.token,
-      emailVerificationExpires: { $gt: Date.now() }
-    });
+    const { email } = req.body;
     
-    if (!user) {
+    if (!email) {
       return res.status(400).json({ 
         success: false, 
-        message: 'Invalid or expired verification token' 
+        message: 'Email is required' 
       });
     }
     
+    const user = await User.findOneAndDelete({ email: email.toLowerCase() });
+    
+    if (!user) {
+      return res.status(404).json({ success: false, message: 'User not found' });
+    }
+    
+    res.json({ 
+      success: true, 
+      message: 'User deleted successfully',
+      deletedUser: {
+        email: user.email,
+        firstName: user.firstName
+      }
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// ============================================
+// REGULAR AUTH ROUTES
+// ============================================
+
+// Traditional email/password registration
+router.post('/register', async (req, res) => {
+  try {
+    const { firstName, lastName, email, password, phone, role } = req.body;
+
+    // Validation
+    if (!firstName || !lastName || !email || !password) {
+      return res.status(400).json({
+        success: false,
+        message: 'First name, last name, email, and password are required'
+      });
+    }
+
+    if (!validateEmail(email)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid email format'
+      });
+    }
+
+    if (!validatePassword(password)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Password must be at least 6 characters'
+      });
+    }
+
+    // Validate role
+    const validRoles = ['renter', 'owner', 'both'];
+    const userRole = role || 'renter';
+    if (!validRoles.includes(userRole)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid role. Must be renter, owner, or both'
+      });
+    }
+
+    const existingUser = await User.findOne({ email: email.toLowerCase() });
+    if (existingUser) {
+      return res.status(400).json({
+        success: false,
+        message: 'User already exists with this email'
+      });
+    }
+
+    // Generate verification token
+    const verificationToken = crypto.randomBytes(32).toString('hex');
+
+    const user = await User.create({
+      firstName: firstName.trim(),
+      lastName: lastName.trim(),
+      email: email.toLowerCase().trim(),
+      password,
+      phone: phone?.trim(),
+      role: userRole,
+      emailVerificationToken: verificationToken,
+      emailVerificationExpires: Date.now() + 24 * 60 * 60 * 1000
+    });
+
+    // Send emails asynchronously (don't wait)
+    Promise.all([
+      sendVerificationEmail(user, verificationToken),
+      sendWelcomeEmail(user)
+    ]).catch(emailError => {
+      console.error('Email sending failed:', emailError);
+    });
+
+    const token = jwt.sign(
+      { id: user._id, role: user.role },
+      process.env.JWT_SECRET,
+      { expiresIn: '7d' }
+    );
+
+    res.status(201).json({
+      success: true,
+      token,
+      user: {
+        id: user._id,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        email: user.email,
+        role: user.role,
+        isEmailVerified: user.isEmailVerified
+      },
+      message: 'Registration successful! Please check your email to verify your account.'
+    });
+  } catch (error) {
+    console.error('Registration error:', error);
+
+    if (error.code === 11000) {
+      return res.status(400).json({
+        success: false,
+        message: 'User already exists with this email'
+      });
+    }
+
+    res.status(500).json({
+      success: false,
+      message: 'Registration failed. Please try again.'
+    });
+  }
+});
+
+// Traditional email/password login
+router.post('/login', async (req, res) => {
+  try {
+    const { email, password } = req.body;
+
+    if (!email || !password) {
+      return res.status(400).json({
+        success: false,
+        message: 'Email and password are required'
+      });
+    }
+
+    const user = await User.findOne({ email: email.toLowerCase() }).select('+password');
+
+    if (!user) {
+      return res.status(401).json({
+        success: false,
+        message: 'Invalid credentials'
+      });
+    }
+
+    const isPasswordValid = await user.comparePassword(password);
+    if (!isPasswordValid) {
+      return res.status(401).json({
+        success: false,
+        message: 'Invalid credentials'
+      });
+    }
+
+    const token = jwt.sign(
+      { id: user._id, role: user.role },
+      process.env.JWT_SECRET,
+      { expiresIn: '7d' }
+    );
+
+    res.json({
+      success: true,
+      token,
+      user: {
+        id: user._id,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        email: user.email,
+        role: user.role,
+        isEmailVerified: user.isEmailVerified
+      }
+    });
+  } catch (error) {
+    console.error('Login error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Login failed. Please try again.'
+    });
+  }
+});
+
+// Email verification endpoint
+router.get('/verify-email/:token', async (req, res) => {
+  try {
+    const { token } = req.params;
+
+    if (!token) {
+      return res.status(400).json({
+        success: false,
+        message: 'Verification token is required'
+      });
+    }
+
+    const user = await User.findOne({
+      emailVerificationToken: token,
+      emailVerificationExpires: { $gt: Date.now() }
+    });
+
+    if (!user) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid or expired verification token'
+      });
+    }
+
     user.isEmailVerified = true;
     user.emailVerificationToken = undefined;
     user.emailVerificationExpires = undefined;
     await user.save();
-    
-    res.json({ 
-      success: true, 
-      message: 'Email verified successfully!' 
+
+    res.json({
+      success: true,
+      message: 'Email verified successfully!'
     });
   } catch (error) {
-    res.status(500).json({ success: false, message: error.message });
+    console.error('Email verification error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Email verification failed'
+    });
   }
 });
 
@@ -126,150 +351,175 @@ router.get('/verify-email/:token', async (req, res) => {
 router.post('/resend-verification', async (req, res) => {
   try {
     const { email } = req.body;
-    const user = await User.findOne({ email });
-    
+
+    if (!email) {
+      return res.status(400).json({
+        success: false,
+        message: 'Email is required'
+      });
+    }
+
+    const user = await User.findOne({ email: email.toLowerCase() });
+
     if (!user) {
-      return res.status(404).json({ success: false, message: 'User not found' });
+      return res.status(404).json({
+        success: false,
+        message: 'No account found with this email'
+      });
     }
-    
+
     if (user.isEmailVerified) {
-      return res.json({ success: true, message: 'Email already verified' });
+      return res.json({
+        success: true,
+        message: 'Your email is already verified'
+      });
     }
-    
+
     const verificationToken = crypto.randomBytes(32).toString('hex');
     user.emailVerificationToken = verificationToken;
     user.emailVerificationExpires = Date.now() + 24 * 60 * 60 * 1000;
     await user.save();
-    
-    await sendVerificationEmail(user, verificationToken);
-    
-    res.json({ 
-      success: true, 
-      message: 'Verification email sent successfully' 
+
+    try {
+      await sendVerificationEmail(user, verificationToken);
+    } catch (emailError) {
+      console.error('Failed to send verification email:', emailError);
+      return res.status(500).json({
+        success: false,
+        message: 'Failed to send verification email'
+      });
+    }
+
+    res.json({
+      success: true,
+      message: 'Verification email sent successfully'
     });
   } catch (error) {
-    res.status(500).json({ success: false, message: error.message });
+    console.error('Resend verification error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to resend verification email'
+    });
   }
 });
 
-// ============================================
-// GOOGLE OAUTH ROUTES
-// ============================================
-
-router.get('/google', (req, res, next) => {
-  console.log('Google route hit, strategies:', Object.keys(passport._strategies));
-  next();
-}, passport.authenticate('google', { 
-  scope: ['profile', 'email'] 
+// Google OAuth routes
+router.get('/google', passport.authenticate('google', {
+  scope: ['profile', 'email'],
+  session: false
 }));
 
-// Google OAuth callback
 router.get('/google/callback',
-  passport.authenticate('google', { 
-    failureRedirect: 'http://localhost:5173/?error=auth_failed',
-    session: false 
+  passport.authenticate('google', {
+    failureRedirect: `${process.env.FRONTEND_URL}/?error=auth_failed`,
+    session: false
   }),
-  async (req, res) => {
+  (req, res) => {
     try {
-      console.log('Google callback successful for user:', req.user?.email);
-      
-      // Auto-verify email for Google OAuth users
-      if (req.user && !req.user.isEmailVerified) {
-        req.user.isEmailVerified = true;
-        await req.user.save();
+      if (!req.user) {
+        return res.redirect(`${process.env.FRONTEND_URL}/?error=auth_failed`);
       }
-      
+
       const token = jwt.sign(
-        { id: req.user._id }, 
-        process.env.JWT_SECRET, 
+        { id: req.user._id, role: req.user.role },
+        process.env.JWT_SECRET,
         { expiresIn: '7d' }
       );
-      
-      res.redirect(`http://localhost:5173/?token=${token}`);
+
+      res.redirect(`${process.env.FRONTEND_URL}/?token=${token}`);
     } catch (error) {
       console.error('Google callback error:', error);
-      res.redirect('http://localhost:5173/?error=auth_failed');
+      res.redirect(`${process.env.FRONTEND_URL}/?error=auth_failed`);
     }
   }
 );
 
-
-// Request password reset
+// Forgot password
 router.post('/forgot-password', async (req, res) => {
   try {
     const { email } = req.body;
-    const user = await User.findOne({ email });
-    
-    if (!user) {
-      // Don't reveal if user exists or not for security
-      return res.json({ 
-        success: true, 
-        message: 'If an account with that email exists, a password reset link has been sent.' 
+
+    if (!email || !validateEmail(email)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Valid email is required'
       });
     }
-    
-    // Generate reset token
+
+    const user = await User.findOne({ email: email.toLowerCase() });
+
+    if (!user) {
+      return res.json({
+        success: true,
+        message: 'If an account exists, a reset link has been sent'
+      });
+    }
+
     const resetToken = crypto.randomBytes(32).toString('hex');
     user.passwordResetToken = resetToken;
-    user.passwordResetExpires = Date.now() + 60 * 60 * 1000; // 1 hour
+    user.passwordResetExpires = Date.now() + 60 * 60 * 1000;
     await user.save();
-    
-    // Send email
+
     try {
       await sendPasswordResetEmail(user, resetToken);
     } catch (emailError) {
       console.error('Failed to send password reset email:', emailError);
-      return res.status(500).json({ 
-        success: false, 
-        message: 'Failed to send password reset email. Please try again.' 
-      });
     }
-    
-    res.json({ 
-      success: true, 
-      message: 'If an account with that email exists, a password reset link has been sent.' 
+
+    res.json({
+      success: true,
+      message: 'If an account exists, a reset link has been sent'
     });
   } catch (error) {
-    res.status(500).json({ success: false, message: error.message });
+    console.error('Forgot password error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to process request'
+    });
   }
 });
 
-// Reset password with token
+// Reset password
 router.post('/reset-password/:token', async (req, res) => {
   try {
+    const { token } = req.params;
     const { password } = req.body;
-    
-    if (!password || password.length < 6) {
-      return res.status(400).json({ 
-        success: false, 
-        message: 'Password must be at least 6 characters' 
+
+    if (!validatePassword(password)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Password must be at least 6 characters'
       });
     }
-    
+
     const user = await User.findOne({
-      passwordResetToken: req.params.token,
+      passwordResetToken: token,
       passwordResetExpires: { $gt: Date.now() }
     });
-    
+
     if (!user) {
-      return res.status(400).json({ 
-        success: false, 
-        message: 'Password reset token is invalid or has expired' 
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid or expired reset token'
       });
     }
-    
-    // Update password
+
     user.password = password;
     user.passwordResetToken = undefined;
     user.passwordResetExpires = undefined;
     await user.save();
-    
-    res.json({ 
-      success: true, 
-      message: 'Password has been reset successfully. You can now log in with your new password.' 
+
+    res.json({
+      success: true,
+      message: 'Password reset successfully'
     });
   } catch (error) {
-    res.status(500).json({ success: false, message: error.message });
+    console.error('Reset password error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to reset password'
+    });
   }
 });
+
 module.exports = router;

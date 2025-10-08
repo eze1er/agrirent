@@ -12,7 +12,7 @@ export default function Auth({ onLoginSuccess }) {
     lastName: "",
     email: "",
     password: "",
-    phoneNumber: "",
+    phone: "", // CHANGED: Only keep 'phone', removed 'phoneNumber'
     role: "renter",
   });
 
@@ -27,12 +27,34 @@ export default function Auth({ onLoginSuccess }) {
             email: formData.email,
             password: formData.password,
           })
-        : await authAPI.register(formData);
+        : await authAPI.register({
+            firstName: formData.firstName,
+            lastName: formData.lastName,
+            email: formData.email,
+            password: formData.password,
+            phone: formData.phone, // Send phone field
+            role: formData.role,
+          });
 
       if (response.data.success) {
-        localStorage.setItem("token", response.data.token);
-        localStorage.setItem("user", JSON.stringify(response.data.user));
-        onLoginSuccess(response.data.user);
+        if (isLogin) {
+          // Login successful
+          localStorage.setItem("token", response.data.token);
+          localStorage.setItem("user", JSON.stringify(response.data.user));
+          onLoginSuccess(response.data.user);
+        } else {
+          // Registration successful
+          alert(response.data.message || "Registration successful! Please check your email to verify your account.");
+          setIsLogin(true); // Switch to login view
+          setFormData({
+            firstName: "",
+            lastName: "",
+            email: "",
+            password: "",
+            phone: "",
+            role: "renter",
+          });
+        }
       } else {
         setError(response.data.message || "Authentication failed");
       }
@@ -46,6 +68,7 @@ export default function Auth({ onLoginSuccess }) {
       setLoading(false);
     }
   };
+
   const handleGoogleLogin = () => {
     window.location.href = "http://localhost:3001/api/auth/google";
   };
@@ -62,7 +85,7 @@ export default function Auth({ onLoginSuccess }) {
           <h1 className="text-4xl font-bold bg-gradient-to-r from-indigo-600 to-purple-600 bg-clip-text text-transparent mb-2">
             AgriRent
           </h1>
-          <p className="text-gray-600">Location d'equipement Agricole</p>
+          <p className="text-gray-600">Location d'équipement Agricole</p>
         </div>
 
         <div className="flex gap-2 mb-6">
@@ -139,17 +162,25 @@ export default function Auth({ onLoginSuccess }) {
 
               <div>
                 <label className="block text-sm font-semibold mb-2 text-gray-700">
-                  Phone Number *
+                  Phone Number (Optional)
                 </label>
-                <input
-                  type="tel"
-                  name="phoneNumber"
-                  value={formData.phoneNumber}
-                  onChange={handleChange}
-                  required={!isLogin}
-                  placeholder="+1 (416) 555-0123"
-                  className="w-full border-2 border-gray-200 rounded-xl px-4 py-3 focus:border-indigo-500 focus:outline-none"
-                />
+                <div className="relative">
+                  <Phone
+                    className="absolute left-4 top-1/2 transform -translate-y-1/2 text-gray-400"
+                    size={20}
+                  />
+                  <input
+                    type="tel"
+                    name="phone"
+                    value={formData.phone}
+                    onChange={handleChange}
+                    placeholder="+16472377070"
+                    className="w-full border-2 border-gray-200 rounded-xl pl-12 pr-4 py-3 focus:border-indigo-500 focus:outline-none"
+                  />
+                </div>
+                <p className="text-xs text-gray-500 mt-1">
+                  📱 Format: +1 followed by 10 digits (for SMS notifications when rentals are approved)
+                </p>
               </div>
 
               <div>
@@ -185,7 +216,7 @@ export default function Auth({ onLoginSuccess }) {
                 value={formData.email}
                 onChange={handleChange}
                 required
-                
+                autoComplete={isLogin ? "email" : "email"}
                 className="w-full border-2 border-gray-200 rounded-xl pl-12 pr-4 py-3 focus:border-indigo-500 focus:outline-none"
                 placeholder="your@email.com"
               />
@@ -273,17 +304,16 @@ export default function Auth({ onLoginSuccess }) {
           Sign in with Google
         </button>
 
-
-{isLogin && (
-  <div className="mt-4 text-center">
-    <Link 
-      to="/forgot-password"
-      className="text-sm text-indigo-600 hover:text-indigo-700 font-medium"
-    >
-      Forgot password?
-    </Link>
-  </div>
-)}
+        {isLogin && (
+          <div className="mt-4 text-center">
+            <Link 
+              to="/forgot-password"
+              className="text-sm text-indigo-600 hover:text-indigo-700 font-medium"
+            >
+              Forgot password?
+            </Link>
+          </div>
+        )}
 
         <div className="mt-6 text-center text-sm text-gray-600">
           {isLogin ? "Don't have an account? " : "Already have an account? "}

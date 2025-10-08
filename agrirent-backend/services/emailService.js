@@ -1,3 +1,4 @@
+// services/emailService.js
 const nodemailer = require('nodemailer');
 
 const transporter = nodemailer.createTransport({
@@ -8,6 +9,25 @@ const transporter = nodemailer.createTransport({
     pass: process.env.EMAIL_PASSWORD
   }
 });
+
+// Generic email sender ✅
+const sendEmail = async (to, subject, html) => {
+  const mailOptions = {
+    from: process.env.EMAIL_FROM,
+    to,
+    subject,
+    html
+  };
+
+  try {
+    await transporter.sendMail(mailOptions);
+    console.log('Email sent to:', to);
+    return { success: true };
+  } catch (error) {
+    console.error('Failed to send email:', error.message);
+    throw error;
+  }
+};
 
 const sendWelcomeEmail = async (user) => {
   const mailOptions = {
@@ -95,10 +115,10 @@ const sendPasswordResetEmail = async (user, token) => {
   }
 };
 
+// ✅ SINGLE EXPORT - NO DUPLICATES
 module.exports = { 
+  sendEmail,
   sendWelcomeEmail, 
   sendVerificationEmail, 
   sendPasswordResetEmail 
 };
-
-module.exports = { sendWelcomeEmail, sendVerificationEmail };

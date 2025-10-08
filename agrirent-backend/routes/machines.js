@@ -2,7 +2,21 @@ const express = require('express');
 const router = express.Router();
 const { protect } = require('../middleware/auth');
 const Machine = require('../models/Machine');
-const User = require('../models/User');  // ADD THIS LINE
+const User = require('../models/User');
+const Rental = require('../models/Rental');
+
+// ✅ SPECIFIC ROUTES FIRST (before /:id)
+
+// Get owner's machines - MUST BE BEFORE /:id
+router.get('/my-machines', protect, async (req, res) => {
+  try {
+    const machines = await Machine.find({ ownerId: req.user.id })
+      .sort({ createdAt: -1 });
+    res.json({ success: true, data: machines });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
 
 // Get all machines
 router.get('/', async (req, res) => {
@@ -11,6 +25,24 @@ router.get('/', async (req, res) => {
       .populate('ownerId', 'firstName lastName email')
       .sort({ createdAt: -1 });
     res.json({ success: true, data: machines });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// ✅ DYNAMIC ROUTES LAST (/:id must be after specific routes)
+
+// Get single machine by ID
+router.get('/:id', async (req, res) => {
+  try {
+    const machine = await Machine.findById(req.params.id)
+      .populate('ownerId', 'firstName lastName email phone');
+    
+    if (!machine) {
+      return res.status(404).json({ success: false, message: 'Machine not found' });
+    }
+    
+    res.json({ success: true, data: machine });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }
@@ -50,39 +82,44 @@ router.post('/', protect, async (req, res) => {
   }
 });
 
-// Get owner's machines
-router.get('/my-machines', protect, async (req, res) => {
-  try {
-    const machines = await Machine.find({ ownerId: req.user.id })
-      .sort({ createdAt: -1 });
-    res.json({ success: true, data: machines });
-  } catch (error) {
-    res.status(500).json({ success: false, message: error.message });
-  }
-});
-
 // Update machine
 router.put('/:id', protect, async (req, res) => {
   try {
     const machine = await Machine.findById(req.params.id);
     
     if (!machine) {
-      return res.status(404).json({ success: false, message: 'Machine not found' });
+      return res.status(404).json({ 
+        success: false, 
+        message: 'Machine not found' 
+      });
     }
     
     if (machine.ownerId.toString() !== req.user.id) {
-      return res.status(403).json({ success: false, message: 'Not authorized' });
+      return res.status(403).json({ 
+        success: false, 
+        message: 'Not authorized to edit this machine' 
+      });
     }
+    
+    delete req.body.ownerId;
     
     const updated = await Machine.findByIdAndUpdate(
       req.params.id,
       req.body,
       { new: true, runValidators: true }
-    );
+    ).populate('ownerId', 'firstName lastName email');
     
-    res.json({ success: true, data: updated });
+    res.json({ 
+      success: true, 
+      data: updated,
+      message: 'Machine updated successfully'
+    });
   } catch (error) {
-    res.status(500).json({ success: false, message: error.message });
+    console.error('Machine update error:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: error.message 
+    });
   }
 });
 
@@ -92,14 +129,19 @@ router.delete('/:id', protect, async (req, res) => {
     const machine = await Machine.findById(req.params.id);
     
     if (!machine) {
-      return res.status(404).json({ success: false, message: 'Machine not found' });
+      return res.status(404).json({ 
+        success: false, 
+        message: 'Machine not found' 
+      });
     }
     
     if (machine.ownerId.toString() !== req.user.id) {
-      return res.status(403).json({ success: false, message: 'Not authorized' });
+      return res.status(403).json({ 
+        success: false, 
+        message: 'Not authorized to delete this machine' 
+      });
     }
     
-    // Check if machine has active rentals
     const activeRentals = await Rental.countDocuments({
       machineId: req.params.id,
       status: { $in: ['pending', 'approved', 'active'] }
@@ -108,14 +150,57 @@ router.delete('/:id', protect, async (req, res) => {
     if (activeRentals > 0) {
       return res.status(400).json({ 
         success: false, 
-        message: 'Cannot delete machine with active rentals' 
+        message: 'Cannot delete machine with active or pending rentals' 
       });
     }
     
     await Machine.findByIdAndDelete(req.params.id);
-    res.json({ success: true, message: 'Machine deleted successfully' });
+    
+    res.json({ 
+      success: true, 
+      message: 'Machine deleted successfully' 
+    });
   } catch (error) {
-    res.status(500).json({ success: false, message: error.message });
+    console.error('Machine deletion error:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: error.message 
+    });
+  }
+});
+
+// Soft delete
+router.patch('/:id/deactivate', protect, async (req, res) => {
+  try {
+    const machine = await Machine.findById(req.params.id);
+    
+    if (!machine) {
+      return res.status(404).json({ 
+        success: false, 
+        message: 'Machine not found' 
+      });
+    }
+    
+    if (machine.ownerId.toString() !== req.user.id) {
+      return res.status(403).json({ 
+        success: false, 
+        message: 'Not authorized' 
+      });
+    }
+    
+    machine.isActive = false;
+    await machine.save();
+    
+    res.json({ 
+      success: true, 
+      data: machine,
+      message: 'Machine deactivated successfully' 
+    });
+  } catch (error) {
+    res.status(500).json({ 
+      success: false, 
+      message: error.message 
+    });
   }
 });
 

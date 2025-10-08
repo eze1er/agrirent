@@ -41,6 +41,23 @@ const rentalSchema = new mongoose.Schema({
     default: 'pending'
   },
   
+ // models/Rental.js
+
+rejectionReason: {
+  type: String,
+  // Remove the required function, make it conditional in the route instead
+  validate: {
+    validator: function(value) {
+      // Only validate if status is rejected
+      if (this.status === 'rejected') {
+        return value && value.length >= 10;
+      }
+      return true;
+    },
+    message: 'Rejection reason must be at least 10 characters'
+  }
+},
+  
   pricing: {
     pricePerDay: Number,
     pricePerHectare: Number,

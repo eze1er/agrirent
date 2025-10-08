@@ -57,21 +57,21 @@ app.get('/api/health', (req, res) => {
 });
 
 // Routes
-const authRoutes = require('./routes/auth');
-const userRoutes = require('./routes/users');
-const machineRoutes = require('./routes/machines');
-const rentalRoutes = require('./routes/rentals');
-const notificationRoutes = require('./routes/notifications');
-const uploadRoutes = require('./routes/upload');
-const testRoutes = require('./routes/test'); // ADD THIS LINE
+// const authRoutes = require('./routes/auth');
+// const userRoutes = require('./routes/users');
+// const machineRoutes = require('./routes/machines');
+// const rentalRoutes = require('./routes/rentals');
+// const notificationRoutes = require('./routes/notifications');
+// const uploadRoutes = require('./routes/upload');
+// const testRoutes = require('./routes/test'); // ADD THIS LINE
 
-app.use('/api/auth', authRoutes);
-app.use('/api/users', userRoutes);
-app.use('/api/machines', machineRoutes);
-app.use('/api/rentals', rentalRoutes);
-app.use('/api/notifications', notificationRoutes);
-app.use('/api/upload', uploadRoutes);
-app.use('/api/test', testRoutes); // ADD THIS LINE
+// Routes
+app.use('/api/auth', require('./routes/auth'));
+app.use('/api/users', require('./routes/users'));
+app.use('/api/machines', require('./routes/machines'));
+app.use('/api/rentals', require('./routes/rentals'));
+app.use('/api/notifications', require('./routes/notifications'));
+app.use('/api/upload', require('./routes/upload'));
 
 // 404 handler
 app.use((req, res) => {

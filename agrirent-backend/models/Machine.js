@@ -79,6 +79,6 @@ const machineSchema = new mongoose.Schema({
 }, { timestamps: true });
 
 // Index for geospatial queries
-machineSchema.index({ location: '2dsphere' });
+// machineSchema.index({ location: '2dsphere' });
 
 module.exports = mongoose.model('Machine', machineSchema);
