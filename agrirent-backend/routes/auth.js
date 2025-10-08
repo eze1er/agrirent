@@ -142,6 +142,68 @@ router.delete('/debug/delete-user', async (req, res) => {
   }
 });
 
+// routes/auth.js - Add this debug route
+
+router.get('/debug/check-phone', async (req, res) => {
+  try {
+    const { email } = req.query;
+    
+    const user = await User.findOne({ email: email.toLowerCase() })
+      .select('firstName lastName email phone');
+    
+    if (!user) {
+      return res.status(404).json({ success: false, message: 'User not found' });
+    }
+    
+    res.json({ 
+      success: true, 
+      user: {
+        name: `${user.firstName} ${user.lastName}`,
+        email: user.email,
+        phone: user.phone || 'NO PHONE NUMBER',
+        hasPhone: !!user.phone
+      }
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// Add route to update phone number
+router.post('/debug/update-phone', async (req, res) => {
+  try {
+    const { email, phone } = req.body;
+    
+    if (!email || !phone) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Email and phone are required' 
+      });
+    }
+    
+    const user = await User.findOneAndUpdate(
+      { email: email.toLowerCase() },
+      { phone },
+      { new: true }
+    ).select('-password');
+    
+    if (!user) {
+      return res.status(404).json({ success: false, message: 'User not found' });
+    }
+    
+    res.json({ 
+      success: true, 
+      message: 'Phone number updated successfully',
+      user: {
+        email: user.email,
+        phone: user.phone
+      }
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
 // ============================================
 // REGULAR AUTH ROUTES
 // ============================================
