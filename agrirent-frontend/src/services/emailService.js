@@ -1,14 +1,37 @@
 const nodemailer = require('nodemailer');
-const crypto = require('crypto');
 
 const transporter = nodemailer.createTransport({
   host: process.env.EMAIL_HOST,
   port: process.env.EMAIL_PORT,
+  secure: false, // true for 465, false for other ports
   auth: {
     user: process.env.EMAIL_USER,
     pass: process.env.EMAIL_PASSWORD
   }
 });
+
+// ✅ Generic send email function (ADDED)
+const sendEmail = async (to, subject, html) => {
+  try {
+    console.log('📧 Sending email to:', to);
+    console.log('📝 Subject:', subject);
+    console.log('📄 Email HTML length:', html.length, 'characters');
+
+    const mailOptions = {
+      from: process.env.EMAIL_FROM || process.env.EMAIL_USER,
+      to,
+      subject,
+      html,
+    };
+
+    const info = await transporter.sendMail(mailOptions);
+    console.log('✅ Email sent successfully. Message ID:', info.messageId);
+    return info;
+  } catch (error) {
+    console.error('❌ Email sending failed:', error.message);
+    throw error;
+  }
+};
 
 const sendWelcomeEmail = async (user) => {
   const mailOptions = {
@@ -49,4 +72,33 @@ const sendVerificationEmail = async (user, token) => {
   await transporter.sendMail(mailOptions);
 };
 
-module.exports = { sendWelcomeEmail, sendVerificationEmail };
+// ✅ Password reset email (ADDED)
+const sendPasswordResetEmail = async (user, token) => {
+  const resetUrl = `${process.env.FRONTEND_URL || 'http://localhost:5173'}/reset-password/${token}`;
+  const subject = 'Reset Your Password - AgriRent';
+  const html = `
+    <h1>Reset Your Password</h1>
+    <p>Hi ${user.firstName},</p>
+    <p>Click the link below to reset your password:</p>
+    <a href="${resetUrl}" style="background-color: #4F46E5; color: white; padding: 12px 24px; text-decoration: none; border-radius: 8px; display: inline-block;">
+      Reset Password
+    </a>
+    <p>Or copy this link: ${resetUrl}</p>
+    <p>This link will expire in 1 hour.</p>
+    <p>If you didn't request a password reset, please ignore this email.</p>
+  `;
+  
+  await transporter.sendMail({
+    from: process.env.EMAIL_FROM,
+    to: user.email,
+    subject,
+    html
+  });
+};
+
+module.exports = { 
+  sendEmail,  // ✅ EXPORT THIS
+  sendWelcomeEmail, 
+  sendVerificationEmail,
+  sendPasswordResetEmail  // ✅ EXPORT THIS
+};

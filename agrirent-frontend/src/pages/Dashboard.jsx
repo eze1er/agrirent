@@ -753,151 +753,268 @@ export default function Dashboard({ user: currentUser, onLogout }) {
     );
   };
 
-  const RentalRequestsScreen = () => {
-    const [requests, setRequests] = useState([]);
-    const [loading, setLoading] = useState(false);
+const RentalRequestsScreen = () => {
+  const [requests, setRequests] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [showRejectModal, setShowRejectModal] = useState(false);
+  const [selectedRental, setSelectedRental] = useState(null);
+  const [rejectionReason, setRejectionReason] = useState('');
+  const [error, setError] = useState('');
 
-    useEffect(() => {
+  useEffect(() => {
+    fetchRequests();
+  }, []);
+
+  const fetchRequests = async () => {
+    setLoading(true);
+    try {
+      const response = await rentalAPI.getAll();
+      if (response.data.success) {
+        // Filter to show only requests for machines I own
+        const myRequests = response.data.data.filter(
+          (rental) =>
+            rental.ownerId?._id === currentUser?.id ||
+            rental.ownerId === currentUser?.id
+        );
+        setRequests(myRequests);
+      }
+    } catch (error) {
+      console.error("Error fetching requests:", error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleApprove = async (rentalId) => {
+    if (!window.confirm("Are you sure you want to approve this rental?")) return;
+
+    try {
+      await rentalAPI.updateStatus(rentalId, { status: 'approved' });
+      alert("✅ Rental approved successfully! Notification sent to renter.");
       fetchRequests();
-    }, []);
+    } catch (error) {
+      alert(error.response?.data?.message || "Failed to approve rental");
+    }
+  };
 
-    const fetchRequests = async () => {
-      setLoading(true);
-      try {
-        const response = await rentalAPI.getAll();
-        if (response.data.success) {
-          // Filter to show only requests for machines I own
-          const myRequests = response.data.data.filter(
-            (rental) =>
-              rental.ownerId?._id === currentUser?.id ||
-              rental.ownerId === currentUser?.id
-          );
-          setRequests(myRequests);
-        }
-      } catch (error) {
-        console.error("Error fetching requests:", error);
-      } finally {
-        setLoading(false);
-      }
-    };
+  const openRejectModal = (rental) => {
+    setSelectedRental(rental);
+    setShowRejectModal(true);
+    setRejectionReason('');
+    setError('');
+  };
 
-    const handleStatusUpdate = async (rentalId, status) => {
-      try {
-        await rentalAPI.updateStatus(rentalId, status);
-        alert(`Rental ${status} successfully`);
-        fetchRequests();
-      } catch (error) {
-        alert(error.response?.data?.message || "Failed to update rental");
-      }
-    };
+  const closeRejectModal = () => {
+    setShowRejectModal(false);
+    setSelectedRental(null);
+    setRejectionReason('');
+    setError('');
+  };
 
-    if (loading) {
-      return (
-        <div className="p-4 flex items-center justify-center h-64">
-          <div className="text-center">
-            <div className="w-12 h-12 border-4 border-emerald-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-            <p className="text-gray-600">Loading requests...</p>
-          </div>
-        </div>
-      );
+  const handleReject = async () => {
+    // Validate
+    if (!rejectionReason.trim()) {
+      setError('Please provide a reason for rejection');
+      return;
     }
 
+    if (rejectionReason.trim().length < 10) {
+      setError('Rejection reason must be at least 10 characters');
+      return;
+    }
+
+    try {
+      setLoading(true);
+      setError('');
+
+      await rentalAPI.updateStatus(selectedRental._id, {
+        status: 'rejected',
+        rejectionReason: rejectionReason.trim()
+      });
+
+      alert('✅ Rental rejected. Notification sent to renter.');
+      closeRejectModal();
+      fetchRequests();
+    } catch (err) {
+      setError(err.response?.data?.message || 'Failed to reject rental');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (loading && !showRejectModal) {
     return (
-      <div className="p-4">
-        <h1 className="text-2xl font-bold mb-4 bg-gradient-to-r from-blue-600 to-cyan-600 bg-clip-text text-transparent">
-          Rental Requests
-        </h1>
-
-        {requests.length === 0 ? (
-          <div className="bg-white rounded-2xl p-8 shadow-lg text-center">
-            <Calendar size={48} className="mx-auto text-gray-400 mb-3" />
-            <p className="text-gray-600">No rental requests yet</p>
-          </div>
-        ) : (
-          <div className="space-y-4">
-            {requests.map((rental) => (
-              <div
-                key={rental._id}
-                className="bg-white rounded-2xl p-5 shadow-lg"
-              >
-                <div className="flex justify-between items-start mb-3">
-                  <div>
-                    <h3 className="font-bold">{rental.machineId?.name}</h3>
-                    <p className="text-sm text-gray-600">
-                      Renter: {rental.renterId?.firstName}{" "}
-                      {rental.renterId?.lastName}
-                    </p>
-                    <p className="text-sm text-gray-600">
-                      Email: {rental.renterId?.email}
-                    </p>
-                  </div>
-                  <span
-                    className={`px-4 py-2 rounded-xl text-xs font-bold capitalize ${
-                      rental.status === "pending"
-                        ? "bg-amber-100 text-amber-800"
-                        : rental.status === "approved"
-                        ? "bg-emerald-100 text-emerald-800"
-                        : "bg-gray-100 text-gray-800"
-                    }`}
-                  >
-                    {rental.status}
-                  </span>
-                </div>
-
-                {rental.rentalType === "daily" ? (
-                  <>
-                    <p className="text-sm text-gray-600">
-                      Start: {new Date(rental.startDate).toLocaleDateString()}
-                    </p>
-                    <p className="text-sm text-gray-600">
-                      End: {new Date(rental.endDate).toLocaleDateString()}
-                    </p>
-                    <p className="text-sm text-gray-600">
-                      Days: {rental.pricing?.numberOfDays}
-                    </p>
-                  </>
-                ) : (
-                  <>
-                    <p className="text-sm text-gray-600">
-                      Work Date:{" "}
-                      {new Date(rental.workDate).toLocaleDateString()}
-                    </p>
-                    <p className="text-sm text-gray-600">
-                      Hectares: {rental.pricing?.numberOfHectares} Ha
-                    </p>
-                    <p className="text-sm text-gray-600">
-                      Location: {rental.fieldLocation}
-                    </p>
-                  </>
-                )}
-
-                <p className="text-lg font-bold mt-2 text-blue-600">
-                  Total: ${rental.pricing?.totalPrice?.toFixed(2)}
-                </p>
-
-                {rental.status === "pending" && (
-                  <div className="flex gap-2 mt-4">
-                    <button
-                      onClick={() => handleStatusUpdate(rental._id, "approved")}
-                      className="flex-1 bg-emerald-500 text-white py-2 rounded-xl font-semibold hover:bg-emerald-600 transition"
-                    >
-                      Approve
-                    </button>
-                    <button
-                      onClick={() => handleStatusUpdate(rental._id, "rejected")}
-                      className="flex-1 bg-rose-500 text-white py-2 rounded-xl font-semibold hover:bg-rose-600 transition"
-                    >
-                      Reject
-                    </button>
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
-        )}
+      <div className="p-4 flex items-center justify-center h-64">
+        <div className="text-center">
+          <div className="w-12 h-12 border-4 border-emerald-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+          <p className="text-gray-600">Loading requests...</p>
+        </div>
       </div>
     );
-  };
+  }
+
+  return (
+    <div className="p-4">
+      <h1 className="text-2xl font-bold mb-4 bg-gradient-to-r from-blue-600 to-cyan-600 bg-clip-text text-transparent">
+        Rental Requests
+      </h1>
+
+      {requests.length === 0 ? (
+        <div className="bg-white rounded-2xl p-8 shadow-lg text-center">
+          <Calendar size={48} className="mx-auto text-gray-400 mb-3" />
+          <p className="text-gray-600">No rental requests yet</p>
+        </div>
+      ) : (
+        <div className="space-y-4">
+          {requests.map((rental) => (
+            <div
+              key={rental._id}
+              className="bg-white rounded-2xl p-5 shadow-lg"
+            >
+              <div className="flex justify-between items-start mb-3">
+                <div>
+                  <h3 className="font-bold">{rental.machineId?.name}</h3>
+                  <p className="text-sm text-gray-600">
+                    Renter: {rental.renterId?.firstName}{" "}
+                    {rental.renterId?.lastName}
+                  </p>
+                  <p className="text-sm text-gray-600">
+                    Email: {rental.renterId?.email}
+                  </p>
+                </div>
+                <span
+                  className={`px-4 py-2 rounded-xl text-xs font-bold capitalize ${
+                    rental.status === "pending"
+                      ? "bg-amber-100 text-amber-800"
+                      : rental.status === "approved"
+                      ? "bg-emerald-100 text-emerald-800"
+                      : rental.status === "rejected"
+                      ? "bg-rose-100 text-rose-800"
+                      : "bg-gray-100 text-gray-800"
+                  }`}
+                >
+                  {rental.status}
+                </span>
+              </div>
+
+              {rental.rentalType === "daily" ? (
+                <>
+                  <p className="text-sm text-gray-600">
+                    Start: {new Date(rental.startDate).toLocaleDateString()}
+                  </p>
+                  <p className="text-sm text-gray-600">
+                    End: {new Date(rental.endDate).toLocaleDateString()}
+                  </p>
+                  <p className="text-sm text-gray-600">
+                    Days: {rental.pricing?.numberOfDays}
+                  </p>
+                </>
+              ) : (
+                <>
+                  <p className="text-sm text-gray-600">
+                    Work Date:{" "}
+                    {new Date(rental.workDate).toLocaleDateString()}
+                  </p>
+                  <p className="text-sm text-gray-600">
+                    Hectares: {rental.pricing?.numberOfHectares} Ha
+                  </p>
+                  <p className="text-sm text-gray-600">
+                    Location: {rental.fieldLocation}
+                  </p>
+                </>
+              )}
+
+              <p className="text-lg font-bold mt-2 text-blue-600">
+                Total: ${rental.pricing?.totalPrice?.toFixed(2)}
+              </p>
+
+              {/* Show rejection reason if rejected */}
+              {rental.status === "rejected" && rental.rejectionReason && (
+                <div className="mt-4 bg-rose-50 border-l-4 border-rose-500 p-3 rounded">
+                  <h4 className="font-semibold text-rose-800 text-sm mb-1">
+                    📝 Reason for Decline:
+                  </h4>
+                  <p className="text-gray-700 text-sm">{rental.rejectionReason}</p>
+                </div>
+              )}
+
+              {rental.status === "pending" && (
+                <div className="flex gap-2 mt-4">
+                  <button
+                    onClick={() => handleApprove(rental._id)}
+                    className="flex-1 bg-emerald-500 text-white py-2 rounded-xl font-semibold hover:bg-emerald-600 transition"
+                  >
+                    ✅ Approve
+                  </button>
+                  <button
+                    onClick={() => openRejectModal(rental)}
+                    className="flex-1 bg-rose-500 text-white py-2 rounded-xl font-semibold hover:bg-rose-600 transition"
+                  >
+                    ❌ Reject
+                  </button>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Reject Modal */}
+      {showRejectModal && selectedRental && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl">
+            <h2 className="text-2xl font-bold mb-4 bg-gradient-to-r from-rose-600 to-red-600 bg-clip-text text-transparent">
+              Reject Rental Request
+            </h2>
+            
+            <p className="text-gray-600 mb-4 text-sm">
+              Please provide a reason for rejecting this rental request. 
+              The renter will receive your message via email and SMS.
+            </p>
+
+            <div className="mb-4">
+              <label className="block font-semibold mb-2 text-sm">Rejection Reason *</label>
+              <textarea
+                value={rejectionReason}
+                onChange={(e) => setRejectionReason(e.target.value)}
+                placeholder="e.g., Machine is scheduled for maintenance during your requested dates..."
+                rows={4}
+                className="w-full p-3 border-2 border-gray-200 rounded-xl focus:border-rose-500 focus:outline-none text-sm"
+                maxLength={500}
+              />
+              <small className="text-gray-500 text-xs">
+                {rejectionReason.length}/500 characters (minimum 10)
+              </small>
+            </div>
+
+            {error && (
+              <div className="mb-4 p-3 bg-rose-50 border border-rose-200 text-rose-700 rounded-xl text-sm">
+                {error}
+              </div>
+            )}
+
+            <div className="flex gap-3">
+              <button
+                onClick={closeRejectModal}
+                disabled={loading}
+                className="flex-1 px-4 py-3 border-2 border-gray-300 rounded-xl hover:bg-gray-50 font-semibold text-gray-700"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleReject}
+                disabled={loading || rejectionReason.trim().length < 10}
+                className="flex-1 px-4 py-3 bg-gradient-to-r from-rose-500 to-red-500 text-white rounded-xl font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {loading ? 'Rejecting...' : 'Reject Rental'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
 
   const ProfileScreen = () => (
     <div className="p-4">

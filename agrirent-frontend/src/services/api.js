@@ -29,9 +29,9 @@ export const machineAPI = {
   getAll: () => api.get('/machines'),
   getById: (id) => api.get(`/machines/${id}`),
   create: (data) => api.post('/machines', data),
-  update: (id, data) => api.put(`/machines/${id}`, data),  // ADD THIS
-  delete: (id) => api.delete(`/machines/${id}`),  // ADD THIS
-  getMyMachines: () => api.get('/machines/my-machines'),  // ADD THIS
+  update: (id, data) => api.put(`/machines/${id}`, data),
+  delete: (id) => api.delete(`/machines/${id}`),
+  getMyMachines: () => api.get('/machines/my-machines'),
 };
 
 export const uploadAPI = {
@@ -52,8 +52,8 @@ export const uploadAPI = {
 export const rentalAPI = {
   getAll: () => api.get('/rentals'),
   create: (data) => api.post('/rentals', data),
-  updateStatus: (id, status) => api.patch(`/rentals/${id}/status`, { status }),  // ADD THIS
-  complete: (id) => api.patch(`/rentals/${id}/complete`),  // ADD THIS
+  updateStatus: (id, data) => api.patch(`/rentals/${id}/status`, data), // ✅ FIXED
+  complete: (id) => api.patch(`/rentals/${id}/complete`),
 };
 
 export const userAPI = {
