@@ -7,19 +7,54 @@ export default function Auth({ onLoginSuccess }) {
   const [isLogin, setIsLogin] = useState(true);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [phoneError, setPhoneError] = useState(""); // Added phone-specific error state
   const [formData, setFormData] = useState({
     firstName: "",
     lastName: "",
     email: "",
     password: "",
-    phone: "", // CHANGED: Only keep 'phone', removed 'phoneNumber'
+    phone: "",
     role: "renter",
   });
+
+  // Phone number validation function
+  const validatePhoneNumber = (phone) => {
+    if (!phone) return ""; // Phone is optional, so empty is valid
+    
+    // Basic international phone validation
+    const phoneRegex = /^\+\d{1,4}\d{6,14}$/; // + followed by country code (1-4 digits) and phone number (6-14 digits)
+    
+    if (!phoneRegex.test(phone)) {
+      return "Please enter a valid international phone number (e.g., +12125551234)";
+    }
+    
+    // Additional validation for specific countries
+    if (phone.startsWith('+1') && phone.length !== 12) {
+      return "US/Canada numbers should be 11 digits including +1 (e.g., +12125551234)";
+    }
+    
+    if (phone.startsWith('+44') && phone.length !== 13) {
+      return "UK numbers should be 13 digits including +44 (e.g., +447911123456)";
+    }
+    
+    return ""; // No error
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
     setError("");
+    setPhoneError("");
+
+    // Validate phone number if provided
+    if (!isLogin && formData.phone) {
+      const phoneValidationError = validatePhoneNumber(formData.phone);
+      if (phoneValidationError) {
+        setPhoneError(phoneValidationError);
+        setLoading(false);
+        return;
+      }
+    }
 
     try {
       const response = isLogin
@@ -32,7 +67,7 @@ export default function Auth({ onLoginSuccess }) {
             lastName: formData.lastName,
             email: formData.email,
             password: formData.password,
-            phone: formData.phone, // Send phone field
+            phone: formData.phone,
             role: formData.role,
           });
 
@@ -74,8 +109,42 @@ export default function Auth({ onLoginSuccess }) {
   };
 
   const handleChange = (e) => {
-    setFormData({ ...formData, [e.target.name]: e.target.value });
-    setError(""); // Clear error when user types
+    const { name, value } = e.target;
+    
+    // Special handling for phone number
+    if (name === "phone") {
+      // Remove any non-digit characters except +
+      let cleanedValue = value.replace(/[^\d+]/g, '');
+      
+      // Ensure it starts with + if it contains numbers
+      if (cleanedValue && !cleanedValue.startsWith('+')) {
+        cleanedValue = '+' + cleanedValue;
+      }
+      
+      // Limit length to prevent extremely long numbers
+      if (cleanedValue.length > 16) {
+        cleanedValue = cleanedValue.slice(0, 16);
+      }
+      
+      setFormData({ ...formData, [name]: cleanedValue });
+      
+      // Validate phone number in real-time
+      if (!isLogin) {
+        const validationError = validatePhoneNumber(cleanedValue);
+        setPhoneError(validationError);
+      }
+    } else {
+      setFormData({ ...formData, [name]: value });
+    }
+    
+    // Clear general error when user types
+    if (error) setError("");
+  };
+
+  const switchMode = () => {
+    setIsLogin(!isLogin);
+    setError("");
+    setPhoneError("");
   };
 
   return (
@@ -94,6 +163,7 @@ export default function Auth({ onLoginSuccess }) {
             onClick={() => {
               setIsLogin(true);
               setError("");
+              setPhoneError("");
             }}
             className={`flex-1 py-3 rounded-xl font-semibold transition ${
               isLogin
@@ -108,6 +178,7 @@ export default function Auth({ onLoginSuccess }) {
             onClick={() => {
               setIsLogin(false);
               setError("");
+              setPhoneError("");
             }}
             className={`flex-1 py-3 rounded-xl font-semibold transition ${
               !isLogin
@@ -140,7 +211,7 @@ export default function Auth({ onLoginSuccess }) {
                     value={formData.firstName}
                     onChange={handleChange}
                     required={!isLogin}
-                    className="w-full border-2 border-gray-200 rounded-xl px-4 py-3 focus:border-indigo-500 focus:outline-none"
+                    className="w-full border-2 border-gray-200 rounded-xl px-4 py-3 focus:border-indigo-500 focus:outline-none transition"
                     placeholder="John"
                   />
                 </div>
@@ -154,7 +225,7 @@ export default function Auth({ onLoginSuccess }) {
                     value={formData.lastName}
                     onChange={handleChange}
                     required={!isLogin}
-                    className="w-full border-2 border-gray-200 rounded-xl px-4 py-3 focus:border-indigo-500 focus:outline-none"
+                    className="w-full border-2 border-gray-200 rounded-xl px-4 py-3 focus:border-indigo-500 focus:outline-none transition"
                     placeholder="Doe"
                   />
                 </div>
@@ -174,13 +245,32 @@ export default function Auth({ onLoginSuccess }) {
                     name="phone"
                     value={formData.phone}
                     onChange={handleChange}
-                    placeholder="+16472377070"
-                    className="w-full border-2 border-gray-200 rounded-xl pl-12 pr-4 py-3 focus:border-indigo-500 focus:outline-none"
+                    placeholder="+12125551234"
+                    className={`w-full border-2 rounded-xl pl-12 pr-4 py-3 focus:outline-none transition ${
+                      phoneError 
+                        ? 'border-rose-500 focus:border-rose-500' 
+                        : 'border-gray-200 focus:border-indigo-500'
+                    }`}
                   />
                 </div>
-                <p className="text-xs text-gray-500 mt-1">
-                  📱 Format: +1 followed by 10 digits (for SMS notifications when rentals are approved)
-                </p>
+                {phoneError && (
+                  <p className="text-rose-500 text-xs mt-1 flex items-center gap-1">
+                    <AlertCircle size={12} />
+                    {phoneError}
+                  </p>
+                )}
+                
+                {/* Phone format guidance */}
+                <div className="bg-blue-50 border-l-4 border-blue-500 p-3 rounded mt-2">
+                  <p className="text-sm text-blue-800 font-semibold mb-1">
+                    📱 Phone Number Format
+                  </p>
+                  <p className="text-xs text-blue-700">
+                    <strong>USA/Canada:</strong> +1 followed by 10 digits (e.g., +12125551234)<br/>
+                    <strong>UK:</strong> +44 followed by 10 digits (e.g., +447911123456)<br/>
+                    <strong>Other:</strong> +[country code][phone number]
+                  </p>
+                </div>
               </div>
 
               <div>
@@ -191,7 +281,8 @@ export default function Auth({ onLoginSuccess }) {
                   name="role"
                   value={formData.role}
                   onChange={handleChange}
-                  className="w-full border-2 border-gray-200 rounded-xl px-4 py-3 focus:border-indigo-500 focus:outline-none"
+                  required={!isLogin}
+                  className="w-full border-2 border-gray-200 rounded-xl px-4 py-3 focus:border-indigo-500 focus:outline-none transition"
                 >
                   <option value="renter">Renter (looking for equipment)</option>
                   <option value="owner">Owner (renting out equipment)</option>
@@ -217,7 +308,7 @@ export default function Auth({ onLoginSuccess }) {
                 onChange={handleChange}
                 required
                 autoComplete={isLogin ? "email" : "email"}
-                className="w-full border-2 border-gray-200 rounded-xl pl-12 pr-4 py-3 focus:border-indigo-500 focus:outline-none"
+                className="w-full border-2 border-gray-200 rounded-xl pl-12 pr-4 py-3 focus:border-indigo-500 focus:outline-none transition"
                 placeholder="your@email.com"
               />
             </div>
@@ -240,7 +331,7 @@ export default function Auth({ onLoginSuccess }) {
                 required
                 minLength={6}
                 autoComplete={isLogin ? "current-password" : "new-password"}
-                className="w-full border-2 border-gray-200 rounded-xl pl-12 pr-4 py-3 focus:border-indigo-500 focus:outline-none"
+                className="w-full border-2 border-gray-200 rounded-xl pl-12 pr-4 py-3 focus:border-indigo-500 focus:outline-none transition"
                 placeholder="••••••••"
               />
             </div>
@@ -251,7 +342,7 @@ export default function Auth({ onLoginSuccess }) {
 
           <button
             type="submit"
-            disabled={loading}
+            disabled={loading || (!isLogin && phoneError)}
             className="w-full bg-gradient-to-r from-indigo-600 to-purple-600 text-white py-4 rounded-xl font-bold hover:shadow-xl transition disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {loading ? (
@@ -319,10 +410,7 @@ export default function Auth({ onLoginSuccess }) {
           {isLogin ? "Don't have an account? " : "Already have an account? "}
           <button
             type="button"
-            onClick={() => {
-              setIsLogin(!isLogin);
-              setError("");
-            }}
+            onClick={switchMode}
             className="text-indigo-600 font-semibold hover:text-indigo-700"
           >
             {isLogin ? "Sign up" : "Sign in"}

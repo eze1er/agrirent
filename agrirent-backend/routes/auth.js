@@ -235,6 +235,14 @@ router.post('/register', async (req, res) => {
       });
     }
 
+        // ✅ NEW: Validate phone number if provided
+    if (phone && !validatePhoneNumber(phone)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid phone number format. Please use international format with country code (e.g., +12125551234)'
+      });
+    }
+
     // Validate role
     const validRoles = ['renter', 'owner', 'both'];
     const userRole = role || 'renter';
@@ -244,6 +252,15 @@ router.post('/register', async (req, res) => {
         message: 'Invalid role. Must be renter, owner, or both'
       });
     }
+
+    const validatePhoneNumber = (phone) => {
+  if (!phone) return true; // Phone is optional
+  
+  // E.164 format: +[country code][number]
+  // Example: +12125551234 (US), +447911123456 (UK)
+  const phoneRegex = /^\+[1-9]\d{1,14}$/;
+  return phoneRegex.test(phone);
+};
 
     const existingUser = await User.findOne({ email: email.toLowerCase() });
     if (existingUser) {
