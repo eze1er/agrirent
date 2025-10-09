@@ -519,7 +519,7 @@ export default function Dashboard({ user: currentUser, onLogout }) {
           )}
         </div>
         {/* Reviews Section */}
-<div className="mt-8">
+{/* <div className="mt-8">
   <h3 className="text-xl font-bold mb-4">Reviews</h3>
   {loadingReviews ? (
     <p className="text-gray-500 text-sm">Loading reviews...</p>
@@ -546,7 +546,7 @@ export default function Dashboard({ user: currentUser, onLogout }) {
       ))}
     </div>
   )}
-</div>
+</div> */}
       </div>
     );
   };
@@ -997,32 +997,52 @@ export default function Dashboard({ user: currentUser, onLogout }) {
                 <p className="text-lg font-bold mt-2 text-blue-600">
                   Total: ${rental.pricing?.totalPrice?.toFixed(2)}
                 </p>
-                {rental.status === "rejected" && rental.rejectionReason && (
-                  <div className="mt-4 bg-rose-50 border-l-4 border-rose-500 p-3 rounded">
-                    <h4 className="font-semibold text-rose-800 text-sm mb-1">
-                      📝 Reason for Decline:
-                    </h4>
-                    <p className="text-gray-700 text-sm">
-                      {rental.rejectionReason}
-                    </p>
-                  </div>
-                )}
-                {rental.status === "pending" && (
-                  <div className="flex gap-2 mt-4">
-                    <button
-                      onClick={() => handleApprove(rental._id)}
-                      className="flex-1 bg-emerald-500 text-white py-2 rounded-xl font-semibold hover:bg-emerald-600 transition"
-                    >
-                      ✅ Approve
-                    </button>
-                    <button
-                      onClick={() => openRejectModal(rental)}
-                      className="flex-1 bg-rose-500 text-white py-2 rounded-xl font-semibold hover:bg-rose-600 transition"
-                    >
-                      ❌ Reject
-                    </button>
-                  </div>
-                )}
+{/* Show rejection reason if rejected */}
+{rental.status === "rejected" && rental.rejectionReason && (
+  <div className="mt-4 bg-rose-50 border-l-4 border-rose-500 p-3 rounded">
+    <h4 className="font-semibold text-rose-800 text-sm mb-1">
+      📝 Reason for Decline:
+    </h4>
+    <p className="text-gray-700 text-sm">{rental.rejectionReason}</p>
+  </div>
+)}
+
+{/* Approve/Reject for pending */}
+{rental.status === "pending" && (
+  <div className="flex gap-2 mt-4">
+    <button
+      onClick={() => handleApprove(rental._id)}
+      className="flex-1 bg-emerald-500 text-white py-2 rounded-xl font-semibold hover:bg-emerald-600 transition"
+    >
+      ✅ Approve
+    </button>
+    <button
+      onClick={() => openRejectModal(rental)}
+      className="flex-1 bg-rose-500 text-white py-2 rounded-xl font-semibold hover:bg-rose-600 transition"
+    >
+      ❌ Reject
+    </button>
+  </div>
+)}
+
+{/* Complete for approved/active */}
+{['approved', 'active'].includes(rental.status) && (
+  <button
+    onClick={async () => {
+      if (!window.confirm("Mark this rental as completed?")) return;
+      try {
+        await rentalAPI.complete(rental._id); // ✅ Uses the correct method
+        alert("✅ Rental completed!");
+        fetchRequests();
+      } catch (err) {
+        alert(err.response?.data?.message || "Failed to complete rental");
+      }
+    }}
+    className="mt-3 w-full py-2 bg-gradient-to-r from-blue-500 to-cyan-500 text-white rounded-xl font-semibold text-sm"
+  >
+    ✅ Complete Rental
+  </button>
+)}
               </div>
             ))}
           </div>

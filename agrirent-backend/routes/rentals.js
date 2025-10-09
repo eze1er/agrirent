@@ -42,7 +42,10 @@ router.get("/", protect, async (req, res) => {
     const rentals = await Rental.find({
       $or: [{ renterId: req.user.id }, { ownerId: req.user.id }],
     })
-      .populate("machineId", "name images pricePerDay pricePerHectare category rating")
+      .populate(
+        "machineId",
+        "name images pricePerDay pricePerHectare category rating"
+      )
       .populate("renterId", "firstName lastName email")
       .populate("ownerId", "firstName lastName email")
       .sort({ createdAt: -1 });
@@ -96,12 +99,10 @@ router.post("/", protect, async (req, res) => {
       }
 
       if (!machine.pricePerDay) {
-        return res
-          .status(400)
-          .json({
-            success: false,
-            message: "This machine is not available for daily rental",
-          });
+        return res.status(400).json({
+          success: false,
+          message: "This machine is not available for daily rental",
+        });
       }
 
       const start = new Date(startDate);
@@ -110,21 +111,17 @@ router.post("/", protect, async (req, res) => {
       today.setHours(0, 0, 0, 0);
 
       if (start < today) {
-        return res
-          .status(400)
-          .json({
-            success: false,
-            message: "Start date cannot be in the past",
-          });
+        return res.status(400).json({
+          success: false,
+          message: "Start date cannot be in the past",
+        });
       }
 
       if (end <= start) {
-        return res
-          .status(400)
-          .json({
-            success: false,
-            message: "End date must be after start date",
-          });
+        return res.status(400).json({
+          success: false,
+          message: "End date must be after start date",
+        });
       }
 
       const conflictingRental = await Rental.findOne({
@@ -135,12 +132,10 @@ router.post("/", protect, async (req, res) => {
       });
 
       if (conflictingRental) {
-        return res
-          .status(400)
-          .json({
-            success: false,
-            message: "Machine is not available for these dates",
-          });
+        return res.status(400).json({
+          success: false,
+          message: "Machine is not available for these dates",
+        });
       }
 
       const days = Math.ceil((end - start) / (1000 * 60 * 60 * 24));
@@ -159,21 +154,17 @@ router.post("/", protect, async (req, res) => {
       };
     } else if (rentalType === "per_hectare") {
       if (!hectares || !workDate || !fieldLocation) {
-        return res
-          .status(400)
-          .json({
-            success: false,
-            message: "Hectares, work date, and field location required",
-          });
+        return res.status(400).json({
+          success: false,
+          message: "Hectares, work date, and field location required",
+        });
       }
 
       if (!machine.pricePerHectare) {
-        return res
-          .status(400)
-          .json({
-            success: false,
-            message: "This machine is not available for per-hectare rental",
-          });
+        return res.status(400).json({
+          success: false,
+          message: "This machine is not available for per-hectare rental",
+        });
       }
 
       if (hectares < (machine.minimumHectares || 1)) {
@@ -207,12 +198,10 @@ router.post("/", protect, async (req, res) => {
       });
 
       if (conflictingRental) {
-        return res
-          .status(400)
-          .json({
-            success: false,
-            message: "Machine is not available on this date",
-          });
+        return res.status(400).json({
+          success: false,
+          message: "Machine is not available on this date",
+        });
       }
 
       const subtotal = hectares * machine.pricePerHectare;
@@ -294,10 +283,19 @@ router.patch("/:id/status", protect, async (req, res) => {
     }
 
     // Only pending rentals can be approved/rejected
-    if (rental.status !== "pending") {
+    // Define valid status transitions
+    const validTransitions = {
+      pending: ["approved", "rejected"],
+      approved: ["completed"],
+      active: ["completed"],
+      // Add more if needed
+    };
+
+    const allowedNextStatuses = validTransitions[rental.status] || [];
+    if (!allowedNextStatuses.includes(status)) {
       return res.status(400).json({
         success: false,
-        message: "Only pending rentals can be updated",
+        message: `Cannot change status from "${rental.status}" to "${status}"`,
       });
     }
 
@@ -606,7 +604,10 @@ router.patch("/:id/status", protect, async (req, res) => {
     await rental.save();
 
     const updatedRental = await Rental.findById(rental._id)
-      .populate("machineId", "name images pricePerDay pricePerHectare category rating")
+      .populate(
+        "machineId",
+        "name images pricePerDay pricePerHectare category rating"
+      )
       .populate("renterId", "firstName lastName email")
       .populate("ownerId", "firstName lastName email");
 
@@ -702,7 +703,7 @@ router.patch("/:id/complete", protect, async (req, res) => {
 });
 
 // ✅ ADDED: Submit review for completed rental
-router.post('/:id/review', protect, async (req, res) => {
+router.post("/:id/review", protect, async (req, res) => {
   try {
     const { rating, comment } = req.body;
     const rentalId = req.params.id;
@@ -711,7 +712,7 @@ router.post('/:id/review', protect, async (req, res) => {
     if (!rating || rating < 1 || rating > 5) {
       return res.status(400).json({
         success: false,
-        message: 'Rating must be between 1 and 5'
+        message: "Rating must be between 1 and 5",
       });
     }
 
@@ -719,19 +720,19 @@ router.post('/:id/review', protect, async (req, res) => {
     if (comment && comment.length > 500) {
       return res.status(400).json({
         success: false,
-        message: 'Review comment must be 500 characters or less'
+        message: "Review comment must be 500 characters or less",
       });
     }
 
     const rental = await Rental.findById(rentalId)
-      .populate('machineId')
-      .populate('renterId', 'firstName lastName email')
-      .populate('ownerId', 'firstName lastName email');
+      .populate("machineId")
+      .populate("renterId", "firstName lastName email")
+      .populate("ownerId", "firstName lastName email");
 
     if (!rental) {
       return res.status(404).json({
         success: false,
-        message: 'Rental not found'
+        message: "Rental not found",
       });
     }
 
@@ -739,15 +740,15 @@ router.post('/:id/review', protect, async (req, res) => {
     if (rental.renterId._id.toString() !== req.user.id) {
       return res.status(403).json({
         success: false,
-        message: 'Only the renter can review this rental'
+        message: "Only the renter can review this rental",
       });
     }
 
     // Can only review completed rentals
-    if (rental.status !== 'completed') {
+    if (rental.status !== "completed") {
       return res.status(400).json({
         success: false,
-        message: 'You can only review completed rentals'
+        message: "You can only review completed rentals",
       });
     }
 
@@ -755,53 +756,56 @@ router.post('/:id/review', protect, async (req, res) => {
     if (rental.isReviewed) {
       return res.status(400).json({
         success: false,
-        message: 'You have already reviewed this rental'
+        message: "You have already reviewed this rental",
       });
     }
 
     // Add review to rental
     rental.review = {
       rating: rating,
-      comment: comment?.trim() || '',
-      createdAt: new Date()
+      comment: comment?.trim() || "",
+      createdAt: new Date(),
     };
     rental.isReviewed = true;
     await rental.save();
 
     // Update machine's average rating
     const machine = await Machine.findById(rental.machineId._id);
-    
+
     // Get all completed rentals with reviews for this machine
     const reviewedRentals = await Rental.find({
       machineId: machine._id,
-      status: 'completed',
+      status: "completed",
       isReviewed: true,
-      'review.rating': { $exists: true, $ne: null }
+      "review.rating": { $exists: true, $ne: null },
     });
 
     // Calculate new average
-    const totalRating = reviewedRentals.reduce((sum, r) => sum + r.review.rating, 0);
+    const totalRating = reviewedRentals.reduce(
+      (sum, r) => sum + r.review.rating,
+      0
+    );
     const reviewCount = reviewedRentals.length;
     const averageRating = reviewCount > 0 ? totalRating / reviewCount : 0;
 
     machine.rating = {
       average: Math.round(averageRating * 10) / 10, // Round to 1 decimal
-      count: reviewCount
+      count: reviewCount,
     };
     await machine.save();
 
     // Create notification for owner
     await createNotification(
       rental.ownerId._id,
-      'review_received',
-      'New Review Received',
+      "review_received",
+      "New Review Received",
       `${rental.renterId.firstName} left a ${rating}-star review for ${machine.name}`,
       rental._id,
-      'Rental'
+      "Rental"
     );
 
     // Send email to owner
-    const emailSubject = '⭐ New Review for Your Machine';
+    const emailSubject = "⭐ New Review for Your Machine";
     const emailHtml = `
       <!DOCTYPE html>
       <html>
@@ -824,16 +828,28 @@ router.post('/:id/review', protect, async (req, res) => {
           <div class="content">
             <p>Hi ${rental.ownerId.firstName},</p>
             
-            <p><strong>${rental.renterId.firstName} ${rental.renterId.lastName}</strong> left a review for your machine:</p>
+            <p><strong>${rental.renterId.firstName} ${
+      rental.renterId.lastName
+    }</strong> left a review for your machine:</p>
             
             <div class="rating-box">
               <h3 style="margin-top: 0; color: #92400e;">📋 ${machine.name}</h3>
-              <div class="stars">${'⭐'.repeat(rating)}${'☆'.repeat(5 - rating)}</div>
+              <div class="stars">${"⭐".repeat(rating)}${"☆".repeat(
+      5 - rating
+    )}</div>
               <p style="margin: 10px 0 0 0; font-size: 18px; font-weight: bold;">${rating} out of 5 stars</p>
-              ${comment ? `<p style="margin: 15px 0 0 0; font-style: italic; color: #666;">"${comment}"</p>` : ''}
+              ${
+                comment
+                  ? `<p style="margin: 15px 0 0 0; font-style: italic; color: #666;">"${comment}"</p>`
+                  : ""
+              }
             </div>
             
-            <p>Your machine now has an average rating of <strong>${machine.rating.average}</strong> stars from ${machine.rating.count} review${machine.rating.count !== 1 ? 's' : ''}.</p>
+            <p>Your machine now has an average rating of <strong>${
+              machine.rating.average
+            }</strong> stars from ${machine.rating.count} review${
+      machine.rating.count !== 1 ? "s" : ""
+    }.</p>
             
             <p>Thank you for using AgriRent!</p>
           </div>
@@ -847,51 +863,162 @@ router.post('/:id/review', protect, async (req, res) => {
 
     try {
       await sendEmail(rental.ownerId.email, emailSubject, emailHtml);
-      console.log('✅ Review notification email sent to owner');
+      console.log("✅ Review notification email sent to owner");
     } catch (emailError) {
-      console.error('❌ Failed to send review email:', emailError);
+      console.error("❌ Failed to send review email:", emailError);
     }
 
     const updatedRental = await Rental.findById(rental._id)
-      .populate('machineId', 'name images rating')
-      .populate('renterId', 'firstName lastName')
-      .populate('ownerId', 'firstName lastName');
+      .populate("machineId", "name images rating")
+      .populate("renterId", "firstName lastName")
+      .populate("ownerId", "firstName lastName");
 
     res.json({
       success: true,
       data: updatedRental,
-      message: 'Review submitted successfully!'
+      message: "Review submitted successfully!",
     });
   } catch (error) {
-    console.error('Review submission error:', error);
+    console.error("Review submission error:", error);
     res.status(500).json({
       success: false,
-      message: error.message
+      message: error.message,
+    });
+  }
+});
+
+// ✅ ADDED: Update existing review
+router.put("/:id/review", protect, async (req, res) => {
+  try {
+    const { rating, comment } = req.body;
+    const rentalId = req.params.id;
+
+    // Validate rating
+    if (!rating || rating < 1 || rating > 5) {
+      return res.status(400).json({
+        success: false,
+        message: "Rating must be between 1 and 5",
+      });
+    }
+
+    if (comment && comment.length > 500) {
+      return res.status(400).json({
+        success: false,
+        message: "Review comment must be 500 characters or less",
+      });
+    }
+
+    const rental = await Rental.findById(rentalId)
+      .populate("machineId")
+      .populate("renterId", "firstName lastName email")
+      .populate("ownerId", "firstName lastName email");
+
+    if (!rental) {
+      return res.status(404).json({
+        success: false,
+        message: "Rental not found",
+      });
+    }
+
+    // Only renter can edit
+    if (rental.renterId._id.toString() !== req.user.id) {
+      return res.status(403).json({
+        success: false,
+        message: "Only the renter can edit this review",
+      });
+    }
+
+    // Must be completed and already reviewed
+    if (rental.status !== "completed" || !rental.isReviewed) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "Can only edit reviews for completed rentals that have been reviewed",
+      });
+    }
+
+    const oldRating = rental.review.rating;
+
+    // Update review
+    rental.review = {
+      rating,
+      comment: comment?.trim() || "",
+      createdAt: new Date(), // Optional: keep original date or update to now
+    };
+    await rental.save();
+
+    // Recalculate machine rating
+    const machine = await Machine.findById(rental.machineId._id);
+    const reviewedRentals = await Rental.find({
+      machineId: machine._id,
+      status: "completed",
+      isReviewed: true,
+      "review.rating": { $exists: true, $ne: null },
+    });
+
+    const totalRating = reviewedRentals.reduce(
+      (sum, r) => sum + r.review.rating,
+      0
+    );
+    const reviewCount = reviewedRentals.length;
+    const averageRating = reviewCount > 0 ? totalRating / reviewCount : 0;
+
+    machine.rating = {
+      average: Math.round(averageRating * 10) / 10,
+      count: reviewCount,
+    };
+    await machine.save();
+
+    // Optional: Send notification to owner about review update
+    await createNotification(
+      rental.ownerId._id,
+      "review_updated",
+      "Review Updated",
+      `${rental.renterId.firstName} updated their review for ${machine.name}`,
+      rental._id,
+      "Rental"
+    );
+
+    const updatedRental = await Rental.findById(rental._id)
+      .populate("machineId", "name images rating")
+      .populate("renterId", "firstName lastName")
+      .populate("ownerId", "firstName lastName");
+
+    res.json({
+      success: true,
+      data: updatedRental,
+      message: "Review updated successfully!",
+    });
+  } catch (error) {
+    console.error("Review update error:", error);
+    res.status(500).json({
+      success: false,
+      message: error.message,
     });
   }
 });
 
 // ✅ ADDED: Get reviews for a machine
-router.get('/machine/:machineId/reviews', async (req, res) => {
+router.get("/machine/:machineId/reviews", async (req, res) => {
   try {
     const reviews = await Rental.find({
       machineId: req.params.machineId,
-      status: 'completed',
+      status: "completed",
       isReviewed: true,
-      'review.rating': { $exists: true }
+      "review.rating": { $exists: true },
     })
-    .populate('renterId', 'firstName lastName')
-    .select('review createdAt renterId')
-    .sort({ 'review.createdAt': -1 });
+      .populate("renterId", "firstName lastName")
+      .select("review createdAt renterId")
+      .sort({ "review.createdAt": -1 });
 
     res.json({
       success: true,
-      data: reviews
+      data: reviews,
     });
   } catch (error) {
     res.status(500).json({
       success: false,
-      message: error.message
+      message: error.message,
     });
   }
 });
