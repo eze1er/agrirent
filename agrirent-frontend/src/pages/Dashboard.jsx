@@ -20,14 +20,17 @@ export default function Dashboard({ user: currentUser, onLogout }) {
   const [showAddMachineForm, setShowAddMachineForm] = useState(false);
   const [showEditMachineForm, setShowEditMachineForm] = useState(false);
   const [editingMachine, setEditingMachine] = useState(null);
-
   const [machines, setMachines] = useState([]);
   const [rentals, setRentals] = useState([]);
   const [loadingMachines, setLoadingMachines] = useState(false);
   const [loadingRentals, setLoadingRentals] = useState(false);
-
   const [showBookingModal, setShowBookingModal] = useState(false);
   const [bookingMachine, setBookingMachine] = useState(null);
+
+  // Review states
+  const [showReviewModal, setShowReviewModal] = useState(false);
+  const [reviewingRental, setReviewingRental] = useState(null);
+  const [reviewData, setReviewData] = useState({ rating: 5, comment: "" });
 
   useEffect(() => {
     fetchMachines();
@@ -68,7 +71,6 @@ export default function Dashboard({ user: currentUser, onLogout }) {
         machineId: bookingMachine._id,
         ...bookingData,
       });
-
       if (response.data.success) {
         alert("Booking request sent successfully!");
         await fetchRentals();
@@ -85,7 +87,6 @@ export default function Dashboard({ user: currentUser, onLogout }) {
   const VerificationBanner = ({ user }) => {
     if (!user || user.isEmailVerified) return null;
     if (user.role !== "owner" && user.role !== "both") return null;
-
     const handleResendEmail = async () => {
       try {
         const response = await fetch(
@@ -102,7 +103,6 @@ export default function Dashboard({ user: currentUser, onLogout }) {
         alert("Failed to resend email");
       }
     };
-
     return (
       <div className="bg-amber-100 border-l-4 border-amber-500 text-amber-800 p-4 m-4 rounded-lg">
         <p className="font-semibold">Email Verification Required</p>
@@ -122,7 +122,6 @@ export default function Dashboard({ user: currentUser, onLogout }) {
   const HomeScreen = () => {
     const activeMachines = machines.filter((m) => m.isActive).length;
     const activeRentals = rentals.filter((r) => r.status === "active").length;
-
     return (
       <div className="p-6">
         <h2 className="text-3xl font-bold bg-gradient-to-r from-blue-600 via-cyan-600 to-teal-600 bg-clip-text text-transparent mb-2">
@@ -131,7 +130,6 @@ export default function Dashboard({ user: currentUser, onLogout }) {
         <p className="text-gray-600 mb-8">
           Find and rent agricultural equipment
         </p>
-
         <div className="grid grid-cols-2 gap-4 mb-6">
           <div className="bg-gradient-to-br from-blue-500 to-blue-600 rounded-2xl p-5 text-white shadow-lg">
             <Package size={28} className="opacity-80 mb-2" />
@@ -144,7 +142,6 @@ export default function Dashboard({ user: currentUser, onLogout }) {
             <p className="text-3xl font-bold">{activeRentals}</p>
           </div>
         </div>
-
         <div className="grid grid-cols-2 gap-3">
           <button
             onClick={() => setCurrentView("machines")}
@@ -160,7 +157,6 @@ export default function Dashboard({ user: currentUser, onLogout }) {
             <Calendar size={28} />
             <span className="text-sm font-semibold">My Rentals</span>
           </button>
-
           {isOwner && (
             <>
               <button
@@ -196,7 +192,6 @@ export default function Dashboard({ user: currentUser, onLogout }) {
       selectedFilter === "All"
         ? machines
         : machines.filter((m) => m.category === selectedFilter);
-
     if (loadingMachines) {
       return (
         <div className="p-4 flex items-center justify-center h-64">
@@ -207,7 +202,6 @@ export default function Dashboard({ user: currentUser, onLogout }) {
         </div>
       );
     }
-
     return (
       <div className="p-4">
         <div className="flex justify-between items-center mb-4">
@@ -223,7 +217,6 @@ export default function Dashboard({ user: currentUser, onLogout }) {
             </button>
           )}
         </div>
-
         <div className="bg-white rounded-2xl p-3 mb-4 shadow-md flex gap-2 overflow-x-auto">
           {["All", "tractor", "harvester", "planter"].map((filter) => (
             <button
@@ -239,7 +232,6 @@ export default function Dashboard({ user: currentUser, onLogout }) {
             </button>
           ))}
         </div>
-
         {filteredMachines.length === 0 ? (
           <div className="bg-white rounded-2xl p-8 text-center shadow-lg">
             <Tractor size={48} className="mx-auto text-gray-400 mb-3" />
@@ -293,13 +285,18 @@ export default function Dashboard({ user: currentUser, onLogout }) {
                   <div className="flex items-center gap-1 mt-2">
                     <Star size={16} className="text-amber-400 fill-amber-400" />
                     <span className="text-sm font-semibold">
-                      {machine.rating?.average || 0}
+                      {(machine.rating?.average || 0).toFixed(1)}
                     </span>
+                    {machine.rating?.count > 0 && (
+                      <span className="text-xs text-gray-500">
+                        ({machine.rating.count} review
+                        {machine.rating.count !== 1 ? "s" : ""})
+                      </span>
+                    )}
                     <span className="text-sm text-gray-500 ml-1">
                       • {machine.address?.city || "Location N/A"}
                     </span>
                   </div>
-
                   <div className="mt-4">
                     {machine.pricingType === "daily" && (
                       <div className="flex justify-between items-center">
@@ -311,7 +308,6 @@ export default function Dashboard({ user: currentUser, onLogout }) {
                         </span>
                       </div>
                     )}
-
                     {machine.pricingType === "per_hectare" && (
                       <div className="flex justify-between items-center">
                         <span className="text-2xl font-bold bg-gradient-to-r from-emerald-600 to-teal-600 bg-clip-text text-transparent">
@@ -322,7 +318,6 @@ export default function Dashboard({ user: currentUser, onLogout }) {
                         </span>
                       </div>
                     )}
-
                     {machine.pricingType === "both" && (
                       <div className="space-y-1">
                         <div className="flex justify-between items-center">
@@ -350,31 +345,48 @@ export default function Dashboard({ user: currentUser, onLogout }) {
   };
 
   const MachineDetailScreen = () => {
+    const [machineReviews, setMachineReviews] = useState([]);
+    const [loadingReviews, setLoadingReviews] = useState(true);
     const [currentImageIndex, setCurrentImageIndex] = useState(0);
 
-    if (!selectedMachine) return null;
+    useEffect(() => {
+      const fetchReviews = async () => {
+        if (!selectedMachine?._id) return;
+        try {
+          const response = await rentalAPI.getReviewsByMachine(
+            selectedMachine._id
+          );
+          if (response.data.success) {
+            setMachineReviews(response.data.data || []);
+          }
+        } catch (err) {
+          console.error("Failed to load reviews:", err);
+          setMachineReviews([]);
+        } finally {
+          setLoadingReviews(false);
+        }
+      };
+      fetchReviews();
+    }, [selectedMachine?._id]);
 
+    if (!selectedMachine) return null;
     const images =
       selectedMachine.images && selectedMachine.images.length > 0
         ? selectedMachine.images
         : [
             "https://images.unsplash.com/photo-1625246333195-78d9c38ad449?w=400",
           ];
-
     const nextImage = () => {
       setCurrentImageIndex((prev) => (prev + 1) % images.length);
     };
-
     const prevImage = () => {
       setCurrentImageIndex(
         (prev) => (prev - 1 + images.length) % images.length
       );
     };
-
     const isOwnMachine =
       selectedMachine.ownerId?._id === currentUser?.id ||
       selectedMachine.ownerId === currentUser?.id;
-
     return (
       <div className="p-4">
         <button
@@ -383,7 +395,6 @@ export default function Dashboard({ user: currentUser, onLogout }) {
         >
           ← Back
         </button>
-
         <div className="relative mb-4">
           <img
             src={images[currentImageIndex]}
@@ -407,7 +418,6 @@ export default function Dashboard({ user: currentUser, onLogout }) {
             </>
           )}
         </div>
-
         {images.length > 1 && (
           <div className="flex gap-2 mb-4 overflow-x-auto pb-2">
             {images.map((img, idx) => (
@@ -425,7 +435,6 @@ export default function Dashboard({ user: currentUser, onLogout }) {
             ))}
           </div>
         )}
-
         <div className="bg-white rounded-2xl p-5 shadow-lg">
           <h1 className="text-2xl font-bold">{selectedMachine.name}</h1>
           <p className="text-gray-600 capitalize">
@@ -434,7 +443,6 @@ export default function Dashboard({ user: currentUser, onLogout }) {
           {selectedMachine.description && (
             <p className="text-gray-600 mt-3">{selectedMachine.description}</p>
           )}
-
           <div className="mt-4">
             <div className="flex items-center gap-1 mb-4">
               <Star size={20} className="text-amber-400 fill-amber-400" />
@@ -442,7 +450,6 @@ export default function Dashboard({ user: currentUser, onLogout }) {
                 {selectedMachine.rating?.average || 0}
               </span>
             </div>
-
             <div className="bg-gradient-to-br from-blue-50 to-cyan-50 rounded-xl p-4 mb-4">
               {selectedMachine.pricingType === "daily" && (
                 <div>
@@ -452,7 +459,6 @@ export default function Dashboard({ user: currentUser, onLogout }) {
                   </div>
                 </div>
               )}
-
               {selectedMachine.pricingType === "per_hectare" && (
                 <div>
                   <p className="text-sm text-gray-600 mb-1">Per Hectare Rate</p>
@@ -464,7 +470,6 @@ export default function Dashboard({ user: currentUser, onLogout }) {
                   </p>
                 </div>
               )}
-
               {selectedMachine.pricingType === "both" && (
                 <div className="space-y-3">
                   <div>
@@ -487,12 +492,10 @@ export default function Dashboard({ user: currentUser, onLogout }) {
                 </div>
               )}
             </div>
-
             <p className="text-gray-600 mt-2">
               {selectedMachine.specifications?.horsepower || 0} HP
             </p>
           </div>
-
           {!isOwnMachine && selectedMachine.availability === "available" && (
             <button
               onClick={() => {
@@ -504,19 +507,46 @@ export default function Dashboard({ user: currentUser, onLogout }) {
               Book Now
             </button>
           )}
-
           {isOwnMachine && (
             <div className="mt-6 bg-blue-50 text-blue-700 p-4 rounded-xl text-center">
               This is your machine
             </div>
           )}
-
           {selectedMachine.availability !== "available" && !isOwnMachine && (
             <div className="mt-6 bg-gray-100 text-gray-600 p-4 rounded-xl text-center">
               Currently unavailable
             </div>
           )}
         </div>
+        {/* Reviews Section */}
+<div className="mt-8">
+  <h3 className="text-xl font-bold mb-4">Reviews</h3>
+  {loadingReviews ? (
+    <p className="text-gray-500 text-sm">Loading reviews...</p>
+  ) : machineReviews.length === 0 ? (
+    <p className="text-gray-500 text-sm">No reviews yet.</p>
+  ) : (
+    <div className="space-y-4">
+      {machineReviews.map((review) => (
+        <div key={review._id} className="bg-gray-50 p-4 rounded-xl">
+          <div className="flex items-center gap-2 mb-2">
+            <Star size={18} className="text-amber-500 fill-amber-500" />
+            <span className="font-semibold">{review.rating}</span>
+            <span className="text-gray-600 text-sm">
+              by {review.renterId?.firstName || 'User'}
+            </span>
+          </div>
+          {review.comment && (
+            <p className="text-gray-700 italic">"{review.comment}"</p>
+          )}
+          <p className="text-xs text-gray-500 mt-2">
+            {new Date(review.createdAt).toLocaleDateString()}
+          </p>
+        </div>
+      ))}
+    </div>
+  )}
+</div>
       </div>
     );
   };
@@ -532,7 +562,6 @@ export default function Dashboard({ user: currentUser, onLogout }) {
         </div>
       );
     }
-
     return (
       <div className="p-4">
         <h1 className="text-2xl font-bold mb-4 bg-gradient-to-r from-blue-600 to-cyan-600 bg-clip-text text-transparent">
@@ -565,13 +594,16 @@ export default function Dashboard({ user: currentUser, onLogout }) {
                         ? "bg-amber-100 text-amber-800"
                         : rental.status === "approved"
                         ? "bg-emerald-100 text-emerald-800"
+                        : rental.status === "completed"
+                        ? "bg-blue-100 text-blue-800"
+                        : rental.status === "rejected"
+                        ? "bg-rose-100 text-rose-800"
                         : "bg-gray-100 text-gray-800"
                     }`}
                   >
                     {rental.status}
                   </span>
                 </div>
-
                 {rental.rentalType === "daily" ? (
                   <>
                     <p className="text-sm text-gray-600">
@@ -595,10 +627,68 @@ export default function Dashboard({ user: currentUser, onLogout }) {
                     </p>
                   </>
                 )}
-
                 <p className="text-lg font-bold mt-2 bg-gradient-to-r from-blue-600 to-cyan-600 bg-clip-text text-transparent">
                   ${rental.pricing?.totalPrice?.toFixed(2) || 0}
                 </p>
+
+                {/* Review UI */}
+                {rental.status === "completed" && (
+                  <>
+                    {rental.isReviewed ? (
+                      <div className="mt-4 bg-amber-50 border-l-4 border-amber-500 p-3 rounded">
+                        <div className="flex justify-between items-start">
+                          <div>
+                            <p className="text-sm font-semibold text-amber-800">
+                              ⭐ You rated this: {rental.review?.rating} stars
+                            </p>
+                            {rental.review?.comment && (
+                              <p className="text-sm text-gray-700 mt-1 italic">
+                                "{rental.review.comment}"
+                              </p>
+                            )}
+                          </div>
+                          <button
+                            onClick={() => {
+                              setReviewingRental(rental);
+                              setReviewData({
+                                rating: rental.review?.rating || 5,
+                                comment: rental.review?.comment || "",
+                              });
+                              setShowReviewModal(true);
+                            }}
+                            className="text-xs text-blue-600 font-semibold hover:underline"
+                          >
+                            Edit
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <button
+                        onClick={() => {
+                          setReviewingRental(rental);
+                          setReviewData({ rating: 5, comment: "" });
+                          setShowReviewModal(true);
+                        }}
+                        className="w-full mt-4 bg-gradient-to-r from-amber-500 to-orange-500 text-white py-2 rounded-xl font-semibold hover:shadow-lg transition"
+                      >
+                        ⭐ Leave a Review
+                      </button>
+                    )}
+                  </>
+                )}
+
+                {rental.status === "completed" && rental.isReviewed && (
+                  <div className="mt-4 bg-amber-50 border-l-4 border-amber-500 p-3 rounded">
+                    <p className="text-sm font-semibold text-amber-800">
+                      ⭐ You rated this: {rental.review?.rating} stars
+                    </p>
+                    {rental.review?.comment && (
+                      <p className="text-sm text-gray-700 mt-1 italic">
+                        "{rental.review.comment}"
+                      </p>
+                    )}
+                  </div>
+                )}
               </div>
             ))}
           </div>
@@ -610,11 +700,9 @@ export default function Dashboard({ user: currentUser, onLogout }) {
   const MyMachinesScreen = () => {
     const [myMachines, setMyMachines] = useState([]);
     const [loading, setLoading] = useState(false);
-
     useEffect(() => {
       fetchMyMachines();
     }, []);
-
     const fetchMyMachines = async () => {
       setLoading(true);
       try {
@@ -628,11 +716,9 @@ export default function Dashboard({ user: currentUser, onLogout }) {
         setLoading(false);
       }
     };
-
     const handleDeleteMachine = async (machineId) => {
       if (!window.confirm("Are you sure you want to delete this machine?"))
         return;
-
       try {
         await machineAPI.delete(machineId);
         alert("Machine deleted successfully");
@@ -641,7 +727,6 @@ export default function Dashboard({ user: currentUser, onLogout }) {
         alert(error.response?.data?.message || "Failed to delete machine");
       }
     };
-
     if (loading) {
       return (
         <div className="p-4 flex items-center justify-center h-64">
@@ -652,7 +737,6 @@ export default function Dashboard({ user: currentUser, onLogout }) {
         </div>
       );
     }
-
     return (
       <div className="p-4">
         <div className="flex justify-between items-center mb-4">
@@ -666,7 +750,6 @@ export default function Dashboard({ user: currentUser, onLogout }) {
             <Plus size={20} className="inline mr-1" /> Add
           </button>
         </div>
-
         {myMachines.length === 0 ? (
           <div className="bg-white rounded-2xl p-8 shadow-lg text-center">
             <Tractor size={48} className="mx-auto text-gray-400 mb-3" />
@@ -701,7 +784,6 @@ export default function Dashboard({ user: currentUser, onLogout }) {
                     <p className="text-sm text-gray-500 capitalize">
                       {machine.category} • {machine.brand}
                     </p>
-
                     {machine.pricingType === "daily" && (
                       <p className="text-blue-600 font-semibold mt-1">
                         ${machine.pricePerDay}/day
@@ -722,7 +804,6 @@ export default function Dashboard({ user: currentUser, onLogout }) {
                         </p>
                       </div>
                     )}
-
                     <span
                       className={`inline-block mt-2 px-3 py-1 rounded-full text-xs font-bold ${
                         machine.availability === "available"
@@ -734,7 +815,6 @@ export default function Dashboard({ user: currentUser, onLogout }) {
                     </span>
                   </div>
                 </div>
-
                 <div className="flex gap-2 mt-4">
                   <button
                     onClick={() => {
@@ -767,17 +847,14 @@ export default function Dashboard({ user: currentUser, onLogout }) {
     const [selectedRental, setSelectedRental] = useState(null);
     const [rejectionReason, setRejectionReason] = useState("");
     const [error, setError] = useState("");
-
     useEffect(() => {
       fetchRequests();
     }, []);
-
     const fetchRequests = async () => {
       setLoading(true);
       try {
         const response = await rentalAPI.getAll();
         if (response.data.success) {
-          // Filter to show only requests for machines I own
           const myRequests = response.data.data.filter(
             (rental) =>
               rental.ownerId?._id === currentUser?.id ||
@@ -791,11 +868,9 @@ export default function Dashboard({ user: currentUser, onLogout }) {
         setLoading(false);
       }
     };
-
     const handleApprove = async (rentalId) => {
       if (!window.confirm("Are you sure you want to approve this rental?"))
         return;
-
       try {
         await rentalAPI.updateStatus(rentalId, { status: "approved" });
         alert("✅ Rental approved successfully! Notification sent to renter.");
@@ -804,42 +879,34 @@ export default function Dashboard({ user: currentUser, onLogout }) {
         alert(error.response?.data?.message || "Failed to approve rental");
       }
     };
-
     const openRejectModal = (rental) => {
       setSelectedRental(rental);
       setShowRejectModal(true);
       setRejectionReason("");
       setError("");
     };
-
     const closeRejectModal = () => {
       setShowRejectModal(false);
       setSelectedRental(null);
       setRejectionReason("");
       setError("");
     };
-
     const handleReject = async () => {
-      // Validate
       if (!rejectionReason.trim()) {
         setError("Please provide a reason for rejection");
         return;
       }
-
       if (rejectionReason.trim().length < 10) {
         setError("Rejection reason must be at least 10 characters");
         return;
       }
-
       try {
         setLoading(true);
         setError("");
-
         await rentalAPI.updateStatus(selectedRental._id, {
           status: "rejected",
           rejectionReason: rejectionReason.trim(),
         });
-
         alert("✅ Rental rejected. Notification sent to renter.");
         closeRejectModal();
         fetchRequests();
@@ -849,7 +916,6 @@ export default function Dashboard({ user: currentUser, onLogout }) {
         setLoading(false);
       }
     };
-
     if (loading && !showRejectModal) {
       return (
         <div className="p-4 flex items-center justify-center h-64">
@@ -860,13 +926,11 @@ export default function Dashboard({ user: currentUser, onLogout }) {
         </div>
       );
     }
-
     return (
       <div className="p-4">
         <h1 className="text-2xl font-bold mb-4 bg-gradient-to-r from-blue-600 to-cyan-600 bg-clip-text text-transparent">
           Rental Requests
         </h1>
-
         {requests.length === 0 ? (
           <div className="bg-white rounded-2xl p-8 shadow-lg text-center">
             <Calendar size={48} className="mx-auto text-gray-400 mb-3" />
@@ -904,7 +968,6 @@ export default function Dashboard({ user: currentUser, onLogout }) {
                     {rental.status}
                   </span>
                 </div>
-
                 {rental.rentalType === "daily" ? (
                   <>
                     <p className="text-sm text-gray-600">
@@ -931,12 +994,9 @@ export default function Dashboard({ user: currentUser, onLogout }) {
                     </p>
                   </>
                 )}
-
                 <p className="text-lg font-bold mt-2 text-blue-600">
                   Total: ${rental.pricing?.totalPrice?.toFixed(2)}
                 </p>
-
-                {/* Show rejection reason if rejected */}
                 {rental.status === "rejected" && rental.rejectionReason && (
                   <div className="mt-4 bg-rose-50 border-l-4 border-rose-500 p-3 rounded">
                     <h4 className="font-semibold text-rose-800 text-sm mb-1">
@@ -947,7 +1007,6 @@ export default function Dashboard({ user: currentUser, onLogout }) {
                     </p>
                   </div>
                 )}
-
                 {rental.status === "pending" && (
                   <div className="flex gap-2 mt-4">
                     <button
@@ -968,20 +1027,16 @@ export default function Dashboard({ user: currentUser, onLogout }) {
             ))}
           </div>
         )}
-
-        {/* Reject Modal */}
         {showRejectModal && selectedRental && (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
             <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl">
               <h2 className="text-2xl font-bold mb-4 bg-gradient-to-r from-rose-600 to-red-600 bg-clip-text text-transparent">
                 Reject Rental Request
               </h2>
-
               <p className="text-gray-600 mb-4 text-sm">
                 Please provide a reason for rejecting this rental request. The
                 renter will receive your message via email and SMS.
               </p>
-
               <div className="mb-4">
                 <label className="block font-semibold mb-2 text-sm">
                   Rejection Reason *
@@ -998,13 +1053,11 @@ export default function Dashboard({ user: currentUser, onLogout }) {
                   {rejectionReason.length}/500 characters (minimum 10)
                 </small>
               </div>
-
               {error && (
                 <div className="mb-4 p-3 bg-rose-50 border border-rose-200 text-rose-700 rounded-xl text-sm">
                   {error}
                 </div>
               )}
-
               <div className="flex gap-3">
                 <button
                   onClick={closeRejectModal}
@@ -1076,35 +1129,29 @@ export default function Dashboard({ user: currentUser, onLogout }) {
     const [localUploadedImages, setLocalUploadedImages] = useState([]);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState("");
-
     const handleChange = (e) => {
       setFormData({ ...formData, [e.target.name]: e.target.value });
     };
-
     const handleImageUpload = (e) => {
       const files = Array.from(e.target.files);
       setImageFiles([...imageFiles, ...files]);
       const previewUrls = files.map((file) => URL.createObjectURL(file));
       setLocalUploadedImages([...localUploadedImages, ...previewUrls]);
     };
-
     const removeImage = (index) => {
       setImageFiles(imageFiles.filter((_, i) => i !== index));
       setLocalUploadedImages(localUploadedImages.filter((_, i) => i !== index));
     };
-
     const handleSubmit = async (e) => {
       e.preventDefault();
       setLoading(true);
       setError("");
-
       try {
         let imageUrls = [];
         if (imageFiles.length > 0) {
           const uploadResponse = await uploadAPI.uploadImages(imageFiles);
           imageUrls = uploadResponse.data.images.map((img) => img.url);
         }
-
         const machineData = {
           name: formData.name,
           category: formData.category.toLowerCase(),
@@ -1130,8 +1177,6 @@ export default function Dashboard({ user: currentUser, onLogout }) {
                   "https://images.unsplash.com/photo-1625246333195-78d9c38ad449?w=400",
                 ],
         };
-
-        // Add pricing based on type
         if (
           formData.pricingType === "daily" ||
           formData.pricingType === "both"
@@ -1145,9 +1190,7 @@ export default function Dashboard({ user: currentUser, onLogout }) {
           machineData.pricePerHectare = parseFloat(formData.pricePerHectare);
           machineData.minimumHectares = parseFloat(formData.minimumHectares);
         }
-
         const response = await machineAPI.create(machineData);
-
         if (response.data.success) {
           setShowAddMachineForm(false);
           setLocalUploadedImages([]);
@@ -1163,20 +1206,17 @@ export default function Dashboard({ user: currentUser, onLogout }) {
         setLoading(false);
       }
     };
-
     return (
       <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50 overflow-y-auto">
         <div className="bg-white rounded-2xl p-6 max-w-md w-full my-8 shadow-2xl max-h-[90vh] overflow-y-auto">
           <h2 className="text-2xl font-bold mb-4 bg-gradient-to-r from-blue-600 to-cyan-600 bg-clip-text text-transparent">
             Add New Machine
           </h2>
-
           {error && (
             <div className="bg-rose-100 border border-rose-300 text-rose-700 px-4 py-3 rounded-xl mb-4 text-sm">
               {error}
             </div>
           )}
-
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
               <label className="block text-sm font-semibold mb-2">
@@ -1192,7 +1232,6 @@ export default function Dashboard({ user: currentUser, onLogout }) {
                 className="w-full border-2 border-gray-200 rounded-xl px-4 py-3 focus:border-blue-500 focus:outline-none"
               />
             </div>
-
             <div>
               <label className="block text-sm font-semibold mb-2">
                 Category *
@@ -1212,7 +1251,6 @@ export default function Dashboard({ user: currentUser, onLogout }) {
                 <option value="cultivator">Cultivator</option>
               </select>
             </div>
-
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="block text-sm font-semibold mb-2">
@@ -1243,7 +1281,6 @@ export default function Dashboard({ user: currentUser, onLogout }) {
                 />
               </div>
             </div>
-
             <div>
               <label className="block text-sm font-semibold mb-2">
                 Pricing Type *
@@ -1260,7 +1297,6 @@ export default function Dashboard({ user: currentUser, onLogout }) {
                 <option value="both">Both (Daily & Per Hectare)</option>
               </select>
             </div>
-
             {(formData.pricingType === "daily" ||
               formData.pricingType === "both") && (
               <div>
@@ -1272,16 +1308,12 @@ export default function Dashboard({ user: currentUser, onLogout }) {
                   name="pricePerDay"
                   value={formData.pricePerDay}
                   onChange={handleChange}
-                  required={
-                    formData.pricingType === "daily" ||
-                    formData.pricingType === "both"
-                  }
+                  required
                   placeholder="450"
                   className="w-full border-2 border-gray-200 rounded-xl px-4 py-3 focus:border-blue-500 focus:outline-none"
                 />
               </div>
             )}
-
             {(formData.pricingType === "per_hectare" ||
               formData.pricingType === "both") && (
               <>
@@ -1294,10 +1326,7 @@ export default function Dashboard({ user: currentUser, onLogout }) {
                     name="pricePerHectare"
                     value={formData.pricePerHectare}
                     onChange={handleChange}
-                    required={
-                      formData.pricingType === "per_hectare" ||
-                      formData.pricingType === "both"
-                    }
+                    required
                     placeholder="75"
                     className="w-full border-2 border-gray-200 rounded-xl px-4 py-3 focus:border-blue-500 focus:outline-none"
                   />
@@ -1317,7 +1346,6 @@ export default function Dashboard({ user: currentUser, onLogout }) {
                 </div>
               </>
             )}
-
             <div>
               <label className="block text-sm font-semibold mb-2">
                 Horsepower
@@ -1331,7 +1359,6 @@ export default function Dashboard({ user: currentUser, onLogout }) {
                 className="w-full border-2 border-gray-200 rounded-xl px-4 py-3 focus:border-blue-500 focus:outline-none"
               />
             </div>
-
             <div>
               <label className="block text-sm font-semibold mb-2">
                 Description
@@ -1345,7 +1372,6 @@ export default function Dashboard({ user: currentUser, onLogout }) {
                 className="w-full border-2 border-gray-200 rounded-xl px-4 py-3 focus:border-blue-500 focus:outline-none"
               />
             </div>
-
             <div>
               <label className="block text-sm font-semibold mb-2">
                 Upload Images
@@ -1365,7 +1391,6 @@ export default function Dashboard({ user: currentUser, onLogout }) {
                 <Plus size={32} className="mx-auto text-blue-400 mb-2" />
                 <p className="text-sm text-gray-600">Click to upload images</p>
               </label>
-
               {localUploadedImages.length > 0 && (
                 <div className="grid grid-cols-3 gap-2 mt-3">
                   {localUploadedImages.map((img, idx) => (
@@ -1387,7 +1412,6 @@ export default function Dashboard({ user: currentUser, onLogout }) {
                 </div>
               )}
             </div>
-
             <div className="flex gap-3 mt-6">
               <button
                 type="button"
@@ -1434,43 +1458,33 @@ export default function Dashboard({ user: currentUser, onLogout }) {
     const [newImagePreviews, setNewImagePreviews] = useState([]);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState("");
-
     const handleChange = (e) => {
       setFormData({ ...formData, [e.target.name]: e.target.value });
     };
-
     const handleImageUpload = (e) => {
       const files = Array.from(e.target.files);
       setImageFiles([...imageFiles, ...files]);
       const previewUrls = files.map((file) => URL.createObjectURL(file));
       setNewImagePreviews([...newImagePreviews, ...previewUrls]);
     };
-
     const removeExistingImage = (index) => {
       setExistingImages(existingImages.filter((_, i) => i !== index));
     };
-
     const removeNewImage = (index) => {
       setImageFiles(imageFiles.filter((_, i) => i !== index));
       setNewImagePreviews(newImagePreviews.filter((_, i) => i !== index));
     };
-
     const handleSubmit = async (e) => {
       e.preventDefault();
       setLoading(true);
       setError("");
-
       try {
-        // Upload new images if any
         let newImageUrls = [];
         if (imageFiles.length > 0) {
           const uploadResponse = await uploadAPI.uploadImages(imageFiles);
           newImageUrls = uploadResponse.data.images.map((img) => img.url);
         }
-
-        // Combine existing and new images
         const allImages = [...existingImages, ...newImageUrls];
-
         const machineData = {
           name: formData.name,
           category: formData.category.toLowerCase(),
@@ -1488,9 +1502,10 @@ export default function Dashboard({ user: currentUser, onLogout }) {
                   "https://images.unsplash.com/photo-1625246333195-78d9c38ad449?w=400",
                 ],
         };
-
-        // Add pricing based on type
-        if (formData.pricingType === "daily" || formData.pricingType === "both") {
+        if (
+          formData.pricingType === "daily" ||
+          formData.pricingType === "both"
+        ) {
           machineData.pricePerDay = parseFloat(formData.pricePerDay);
         }
         if (
@@ -1500,9 +1515,10 @@ export default function Dashboard({ user: currentUser, onLogout }) {
           machineData.pricePerHectare = parseFloat(formData.pricePerHectare);
           machineData.minimumHectares = parseFloat(formData.minimumHectares);
         }
-
-        const response = await machineAPI.update(editingMachine._id, machineData);
-
+        const response = await machineAPI.update(
+          editingMachine._id,
+          machineData
+        );
         if (response.data.success) {
           setShowEditMachineForm(false);
           setEditingMachine(null);
@@ -1518,20 +1534,17 @@ export default function Dashboard({ user: currentUser, onLogout }) {
         setLoading(false);
       }
     };
-
     return (
       <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50 overflow-y-auto">
         <div className="bg-white rounded-2xl p-6 max-w-md w-full my-8 shadow-2xl max-h-[90vh] overflow-y-auto">
           <h2 className="text-2xl font-bold mb-4 bg-gradient-to-r from-blue-600 to-cyan-600 bg-clip-text text-transparent">
             Edit Machine
           </h2>
-
           {error && (
             <div className="bg-rose-100 border border-rose-300 text-rose-700 px-4 py-3 rounded-xl mb-4 text-sm">
               {error}
             </div>
           )}
-
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
               <label className="block text-sm font-semibold mb-2">
@@ -1546,7 +1559,6 @@ export default function Dashboard({ user: currentUser, onLogout }) {
                 className="w-full border-2 border-gray-200 rounded-xl px-4 py-3 focus:border-blue-500 focus:outline-none"
               />
             </div>
-
             <div>
               <label className="block text-sm font-semibold mb-2">
                 Category *
@@ -1566,7 +1578,6 @@ export default function Dashboard({ user: currentUser, onLogout }) {
                 <option value="cultivator">Cultivator</option>
               </select>
             </div>
-
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="block text-sm font-semibold mb-2">
@@ -1582,7 +1593,9 @@ export default function Dashboard({ user: currentUser, onLogout }) {
                 />
               </div>
               <div>
-                <label className="block text-sm font-semibold mb-2">Year *</label>
+                <label className="block text-sm font-semibold mb-2">
+                  Year *
+                </label>
                 <input
                   type="number"
                   name="year"
@@ -1593,7 +1606,6 @@ export default function Dashboard({ user: currentUser, onLogout }) {
                 />
               </div>
             </div>
-
             <div>
               <label className="block text-sm font-semibold mb-2">
                 Pricing Type *
@@ -1610,7 +1622,6 @@ export default function Dashboard({ user: currentUser, onLogout }) {
                 <option value="both">Both (Daily & Per Hectare)</option>
               </select>
             </div>
-
             {(formData.pricingType === "daily" ||
               formData.pricingType === "both") && (
               <div>
@@ -1622,15 +1633,11 @@ export default function Dashboard({ user: currentUser, onLogout }) {
                   name="pricePerDay"
                   value={formData.pricePerDay}
                   onChange={handleChange}
-                  required={
-                    formData.pricingType === "daily" ||
-                    formData.pricingType === "both"
-                  }
+                  required
                   className="w-full border-2 border-gray-200 rounded-xl px-4 py-3 focus:border-blue-500 focus:outline-none"
                 />
               </div>
             )}
-
             {(formData.pricingType === "per_hectare" ||
               formData.pricingType === "both") && (
               <>
@@ -1643,10 +1650,7 @@ export default function Dashboard({ user: currentUser, onLogout }) {
                     name="pricePerHectare"
                     value={formData.pricePerHectare}
                     onChange={handleChange}
-                    required={
-                      formData.pricingType === "per_hectare" ||
-                      formData.pricingType === "both"
-                    }
+                    required
                     className="w-full border-2 border-gray-200 rounded-xl px-4 py-3 focus:border-blue-500 focus:outline-none"
                   />
                 </div>
@@ -1664,7 +1668,6 @@ export default function Dashboard({ user: currentUser, onLogout }) {
                 </div>
               </>
             )}
-
             <div>
               <label className="block text-sm font-semibold mb-2">
                 Horsepower
@@ -1677,7 +1680,6 @@ export default function Dashboard({ user: currentUser, onLogout }) {
                 className="w-full border-2 border-gray-200 rounded-xl px-4 py-3 focus:border-blue-500 focus:outline-none"
               />
             </div>
-
             <div>
               <label className="block text-sm font-semibold mb-2">
                 Description
@@ -1690,8 +1692,6 @@ export default function Dashboard({ user: currentUser, onLogout }) {
                 className="w-full border-2 border-gray-200 rounded-xl px-4 py-3 focus:border-blue-500 focus:outline-none"
               />
             </div>
-
-            {/* Existing Images */}
             {existingImages.length > 0 && (
               <div>
                 <label className="block text-sm font-semibold mb-2">
@@ -1717,8 +1717,6 @@ export default function Dashboard({ user: currentUser, onLogout }) {
                 </div>
               </div>
             )}
-
-            {/* Upload New Images */}
             <div>
               <label className="block text-sm font-semibold mb-2">
                 Add New Images
@@ -1740,7 +1738,6 @@ export default function Dashboard({ user: currentUser, onLogout }) {
                   Click to upload new images
                 </p>
               </label>
-
               {newImagePreviews.length > 0 && (
                 <div className="grid grid-cols-3 gap-2 mt-3">
                   {newImagePreviews.map((img, idx) => (
@@ -1762,7 +1759,6 @@ export default function Dashboard({ user: currentUser, onLogout }) {
                 </div>
               )}
             </div>
-
             <div className="flex gap-3 mt-6">
               <button
                 type="button"
@@ -1790,15 +1786,140 @@ export default function Dashboard({ user: currentUser, onLogout }) {
     );
   };
 
+  // Review Modal Component
+const ReviewModal = () => {
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [hoveredRating, setHoveredRating] = useState(0);
+
+  const handleSubmitReview = async () => {
+    if (!reviewData.rating || reviewData.rating < 1 || reviewData.rating > 5) {
+      setError('Please select a valid rating (1-5)');
+      return;
+    }
+    if (reviewData.comment.length > 500) {
+      setError('Review must be 500 characters or less');
+      return;
+    }
+
+    try {
+      setLoading(true);
+      setError('');
+
+      if (reviewingRental.isReviewed && reviewingRental.review?.rating) {
+        // Update existing review
+        await rentalAPI.updateReview(reviewingRental._id, reviewData);
+      } else {
+        // Create new review
+        await rentalAPI.submitReview(reviewingRental._id, reviewData);
+      }
+
+      alert('✅ Review saved successfully!');
+      setShowReviewModal(false);
+      setReviewingRental(null);
+      setReviewData({ rating: 5, comment: '' });
+      fetchRentals(); // Refresh to show updated state
+    } catch (err) {
+      setError(err.response?.data?.message || 'Failed to save review');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl">
+        <h2 className="text-2xl font-bold mb-4 bg-gradient-to-r from-amber-600 to-orange-600 bg-clip-text text-transparent">
+          Rate Your Experience
+        </h2>
+        <div className="mb-4">
+          <p className="text-gray-700 font-medium mb-2">
+            How was your experience with {reviewingRental?.machineId?.name}?
+          </p>
+        </div>
+        {/* Star Rating */}
+        <div className="mb-6">
+          <label className="block font-semibold mb-3 text-center">Your Rating</label>
+          <div className="flex justify-center gap-2">
+            {[1, 2, 3, 4, 5].map((star) => (
+              <button
+                key={star}
+                type="button"
+                onClick={() => setReviewData({ ...reviewData, rating: star })}
+                onMouseEnter={() => setHoveredRating(star)}
+                onMouseLeave={() => setHoveredRating(0)}
+                className="text-5xl focus:outline-none transition-transform hover:scale-110"
+              >
+                {star <= (hoveredRating || reviewData.rating) ? (
+                  <span className="text-amber-400">⭐</span>
+                ) : (
+                  <span className="text-gray-300">☆</span>
+                )}
+              </button>
+            ))}
+          </div>
+          <p className="text-center text-sm text-gray-600 mt-2">
+            {reviewData.rating === 1 && "Poor"}
+            {reviewData.rating === 2 && "Fair"}
+            {reviewData.rating === 3 && "Good"}
+            {reviewData.rating === 4 && "Very Good"}
+            {reviewData.rating === 5 && "Excellent"}
+          </p>
+        </div>
+        {/* Comment */}
+        <div className="mb-4">
+          <label className="block font-semibold mb-2">
+            Your Review (Optional)
+          </label>
+          <textarea
+            value={reviewData.comment}
+            onChange={(e) => setReviewData({ ...reviewData, comment: e.target.value })}
+            placeholder="Share your experience with this machine..."
+            rows={4}
+            maxLength={500}
+            className="w-full p-3 border-2 border-gray-200 rounded-xl focus:border-amber-500 focus:outline-none text-sm"
+          />
+          <small className="text-gray-500 text-xs">
+            {reviewData.comment.length}/500 characters
+          </small>
+        </div>
+        {error && (
+          <div className="mb-4 p-3 bg-rose-50 border border-rose-200 text-rose-700 rounded-xl text-sm">
+            {error}
+          </div>
+        )}
+        <div className="flex gap-3">
+          <button
+            onClick={() => {
+              setShowReviewModal(false);
+              setReviewingRental(null);
+              setReviewData({ rating: 5, comment: '' });
+            }}
+            disabled={loading}
+            className="flex-1 px-4 py-3 border-2 border-gray-300 rounded-xl hover:bg-gray-50 font-semibold text-gray-700"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handleSubmitReview}
+            disabled={loading || !reviewData.rating}
+            className="flex-1 px-4 py-3 bg-gradient-to-r from-amber-500 to-orange-500 text-white rounded-xl font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {loading ? 'Saving...' : 'Save Review'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
   return (
     <div className="bg-gradient-to-br from-gray-50 to-blue-50 min-h-screen pb-20 max-w-md mx-auto">
       <div className="bg-gradient-to-r from-blue-600 via-cyan-600 to-teal-600 text-white p-5 shadow-xl">
         <h1 className="text-2xl font-bold">AgriRent</h1>
         <p className="text-sm text-blue-100">Location d'equipement Agricole</p>
       </div>
-
       <VerificationBanner user={currentUser} />
-
       {currentView === "home" && <HomeScreen />}
       {currentView === "machines" && <MachinesScreen />}
       {currentView === "machineDetail" && <MachineDetailScreen />}
@@ -1818,6 +1939,7 @@ export default function Dashboard({ user: currentUser, onLogout }) {
           onBook={handleBookMachine}
         />
       )}
+      {showReviewModal && reviewingRental && <ReviewModal />}
 
       <div className="fixed bottom-0 left-0 right-0 bg-white/80 backdrop-blur-lg border-t px-4 py-3 flex justify-around shadow-lg max-w-md mx-auto">
         <button

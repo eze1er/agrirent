@@ -1,3 +1,4 @@
+// ✅ /agrirent-backend/models/Rental.js
 const mongoose = require('mongoose');
 
 const rentalSchema = new mongoose.Schema({
@@ -41,22 +42,18 @@ const rentalSchema = new mongoose.Schema({
     default: 'pending'
   },
   
- // models/Rental.js
-
-rejectionReason: {
-  type: String,
-  // Remove the required function, make it conditional in the route instead
-  validate: {
-    validator: function(value) {
-      // Only validate if status is rejected
-      if (this.status === 'rejected') {
-        return value && value.length >= 10;
-      }
-      return true;
-    },
-    message: 'Rejection reason must be at least 10 characters'
-  }
-},
+  rejectionReason: {
+    type: String,
+    validate: {
+      validator: function(value) {
+        if (this.status === 'rejected') {
+          return value && value.length >= 10;
+        }
+        return true;
+      },
+      message: 'Rejection reason must be at least 10 characters'
+    }
+  },
   
   pricing: {
     pricePerDay: Number,
@@ -66,6 +63,35 @@ rejectionReason: {
     subtotal: { type: Number, required: true },
     serviceFee: { type: Number, required: true },
     totalPrice: { type: Number, required: true }
+  },
+
+  review: {
+    rating: {
+      type: Number,
+      min: 1,
+      max: 5,
+      validate: {
+        validator: function(value) {
+          if (this.review?.comment || this.review?.rating) {
+            return value >= 1 && value <= 5;
+          }
+          return true;
+        },
+        message: 'Rating must be between 1 and 5'
+      }
+    },
+    comment: {
+      type: String,
+      maxlength: 500
+    },
+    createdAt: {
+      type: Date,
+      default: Date.now
+    }
+  },
+  isReviewed: {
+    type: Boolean,
+    default: false
   }
 }, { timestamps: true });
 

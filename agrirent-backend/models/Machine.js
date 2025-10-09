@@ -53,7 +53,7 @@ const machineSchema = new mongoose.Schema({
   
   location: {
     type: { type: String, default: 'Point' },
-    coordinates: [Number]
+    coordinates: [Number] // [longitude, latitude]
   },
   
   address: {
@@ -72,13 +72,108 @@ const machineSchema = new mongoose.Schema({
   
   isActive: { type: Boolean, default: true },
   
+  // ✅ RATING SYSTEM
   rating: {
-    average: { type: Number, default: 0 },
-    count: { type: Number, default: 0 }
+    average: {
+      type: Number,
+      default: 0,
+      min: 0,
+      max: 5,
+      set: function(value) {
+        // Round to 1 decimal place (e.g., 4.33 → 4.3)
+        return Math.round(value * 10) / 10;
+      }
+    },
+    count: {
+      type: Number,
+      default: 0,
+      min: 0
+    }
   }
 }, { timestamps: true });
 
-// Index for geospatial queries
-// machineSchema.index({ location: '2dsphere' });
+// 🌍 Geospatial index for location-based queries (optional but recommended)
+machineSchema.index({ location: '2dsphere' });
+
+// ✅ INSTANCE METHODS
+
+// Add a new rating (when a review is submitted)
+machineSchema.methods.updateRating = async function(newRating) {
+  if (newRating < 1 || newRating > 5) {
+    throw new Error('Rating must be between 1 and 5');
+  }
+  const currentTotal = this.rating.average * this.rating.count;
+  this.rating.count += 1;
+  this.rating.average = (currentTotal + newRating) / this.rating.count;
+  return this.save();
+};
+
+// Update an existing rating (when a review is edited)
+machineSchema.methods.updateExistingRating = async function(oldRating, newRating) {
+  if (oldRating < 1 || oldRating > 5 || newRating < 1 || newRating > 5) {
+    throw new Error('Ratings must be between 1 and 5');
+  }
+  const currentTotal = this.rating.average * this.rating.count;
+  this.rating.average = (currentTotal - oldRating + newRating) / this.rating.count;
+  return this.save();
+};
+
+// Remove a rating (if review is deleted — optional)
+machineSchema.methods.removeRating = async function(ratingToRemove) {
+  if (this.rating.count <= 1) {
+    this.rating.average = 0;
+    this.rating.count = 0;
+  } else {
+    const currentTotal = this.rating.average * this.rating.count;
+    this.rating.average = (currentTotal - ratingToRemove) / (this.rating.count - 1);
+    this.rating.count -= 1;
+  }
+  return this.save();
+};
+
+// ✅ STATIC METHODS
+
+// Find all active and available machines
+machineSchema.statics.findAvailable = function() {
+  return this.find({ 
+    availability: 'available', 
+    isActive: true 
+  });
+};
+
+// Find machines by category (case-insensitive)
+machineSchema.statics.findByCategory = function(category) {
+  return this.find({ 
+    category: category.toLowerCase(),
+    availability: 'available',
+    isActive: true 
+  });
+};
+
+// ✅ VIRTUALS
+
+// Display name helper
+machineSchema.virtual('displayName').get(function() {
+  return `${this.brand} ${this.model || this.name} (${this.year})`;
+});
+
+// Check if machine has any reviews
+machineSchema.virtual('hasRatings').get(function() {
+  return this.rating.count > 0;
+});
+
+// Ensure virtuals are serialized in JSON
+machineSchema.set('toJSON', { virtuals: true });
+machineSchema.set('toObject', { virtuals: true });
+
+// ✅ MIDDLEWARE
+
+// Pre-save: enforce rating bounds (safety net)
+machineSchema.pre('save', function(next) {
+  if (this.rating.average < 0) this.rating.average = 0;
+  if (this.rating.average > 5) this.rating.average = 5;
+  if (this.rating.count < 0) this.rating.count = 0;
+  next();
+});
 
 module.exports = mongoose.model('Machine', machineSchema);
