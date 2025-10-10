@@ -36,12 +36,12 @@ export const machineAPI = {
   getMyMachines: () => api.get("/machines/my-machines"),
 };
 
-// Rental API
+// ✅ Rental API
 export const rentalAPI = {
   getAll: () => api.get("/rentals"),
   create: (data) => api.post("/rentals", data),
   updateStatus: (id, data) => api.patch(`/rentals/${id}/status`, data),
-  complete: (id) => api.patch(`/rentals/${id}/complete`), // ✅ ADD THIS
+  complete: (id) => api.patch(`/rentals/${id}/complete`), // ← ADD THIS
   submitReview: (id, reviewData) => api.post(`/rentals/${id}/review`, reviewData),
   updateReview: (id, reviewData) => api.put(`/rentals/${id}/review`, reviewData),
   getReviewsByMachine: (machineId) => api.get(`/rentals/machine/${machineId}/reviews`),

@@ -519,7 +519,7 @@ export default function Dashboard({ user: currentUser, onLogout }) {
           )}
         </div>
         {/* Reviews Section */}
-{/* <div className="mt-8">
+        {/* <div className="mt-8">
   <h3 className="text-xl font-bold mb-4">Reviews</h3>
   {loadingReviews ? (
     <p className="text-gray-500 text-sm">Loading reviews...</p>
@@ -677,18 +677,6 @@ export default function Dashboard({ user: currentUser, onLogout }) {
                   </>
                 )}
 
-                {rental.status === "completed" && rental.isReviewed && (
-                  <div className="mt-4 bg-amber-50 border-l-4 border-amber-500 p-3 rounded">
-                    <p className="text-sm font-semibold text-amber-800">
-                      ⭐ You rated this: {rental.review?.rating} stars
-                    </p>
-                    {rental.review?.comment && (
-                      <p className="text-sm text-gray-700 mt-1 italic">
-                        "{rental.review.comment}"
-                      </p>
-                    )}
-                  </div>
-                )}
               </div>
             ))}
           </div>
@@ -997,52 +985,58 @@ export default function Dashboard({ user: currentUser, onLogout }) {
                 <p className="text-lg font-bold mt-2 text-blue-600">
                   Total: ${rental.pricing?.totalPrice?.toFixed(2)}
                 </p>
-{/* Show rejection reason if rejected */}
-{rental.status === "rejected" && rental.rejectionReason && (
-  <div className="mt-4 bg-rose-50 border-l-4 border-rose-500 p-3 rounded">
-    <h4 className="font-semibold text-rose-800 text-sm mb-1">
-      📝 Reason for Decline:
-    </h4>
-    <p className="text-gray-700 text-sm">{rental.rejectionReason}</p>
-  </div>
-)}
+                {/* Show rejection reason if rejected */}
+                {rental.status === "rejected" && rental.rejectionReason && (
+                  <div className="mt-4 bg-rose-50 border-l-4 border-rose-500 p-3 rounded">
+                    <h4 className="font-semibold text-rose-800 text-sm mb-1">
+                      📝 Reason for Decline:
+                    </h4>
+                    <p className="text-gray-700 text-sm">
+                      {rental.rejectionReason}
+                    </p>
+                  </div>
+                )}
 
-{/* Approve/Reject for pending */}
-{rental.status === "pending" && (
-  <div className="flex gap-2 mt-4">
-    <button
-      onClick={() => handleApprove(rental._id)}
-      className="flex-1 bg-emerald-500 text-white py-2 rounded-xl font-semibold hover:bg-emerald-600 transition"
-    >
-      ✅ Approve
-    </button>
-    <button
-      onClick={() => openRejectModal(rental)}
-      className="flex-1 bg-rose-500 text-white py-2 rounded-xl font-semibold hover:bg-rose-600 transition"
-    >
-      ❌ Reject
-    </button>
-  </div>
-)}
+                {/* Approve/Reject for pending */}
+                {rental.status === "pending" && (
+                  <div className="flex gap-2 mt-4">
+                    <button
+                      onClick={() => handleApprove(rental._id)}
+                      className="flex-1 bg-emerald-500 text-white py-2 rounded-xl font-semibold hover:bg-emerald-600 transition"
+                    >
+                      ✅ Approve
+                    </button>
+                    <button
+                      onClick={() => openRejectModal(rental)}
+                      className="flex-1 bg-rose-500 text-white py-2 rounded-xl font-semibold hover:bg-rose-600 transition"
+                    >
+                      ❌ Reject
+                    </button>
+                  </div>
+                )}
 
-{/* Complete for approved/active */}
-{['approved', 'active'].includes(rental.status) && (
-  <button
-    onClick={async () => {
-      if (!window.confirm("Mark this rental as completed?")) return;
-      try {
-        await rentalAPI.complete(rental._id); // ✅ Uses the correct method
-        alert("✅ Rental completed!");
-        fetchRequests();
-      } catch (err) {
-        alert(err.response?.data?.message || "Failed to complete rental");
-      }
-    }}
-    className="mt-3 w-full py-2 bg-gradient-to-r from-blue-500 to-cyan-500 text-white rounded-xl font-semibold text-sm"
-  >
-    ✅ Complete Rental
-  </button>
-)}
+                {/* Complete for approved/active */}
+                {["approved", "active"].includes(rental.status) && (
+                  <button
+                    onClick={async () => {
+                      if (!window.confirm("Mark this rental as completed?"))
+                        return;
+                      try {
+                        await rentalAPI.complete(rental._id); // ✅ Uses the correct method
+                        alert("✅ Rental completed!");
+                        fetchRequests();
+                      } catch (err) {
+                        alert(
+                          err.response?.data?.message ||
+                            "Failed to complete rental"
+                        );
+                      }
+                    }}
+                    className="mt-3 w-full py-2 bg-gradient-to-r from-blue-500 to-cyan-500 text-white rounded-xl font-semibold text-sm"
+                  >
+                    ✅ Complete Rental
+                  </button>
+                )}
               </div>
             ))}
           </div>
@@ -1807,40 +1801,43 @@ export default function Dashboard({ user: currentUser, onLogout }) {
   };
 
   // Review Modal Component
+// Review Modal Component
 const ReviewModal = () => {
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
+  const [error, setError] = useState("");
   const [hoveredRating, setHoveredRating] = useState(0);
+  const [localRating, setLocalRating] = useState(reviewData.rating);
+  const [localComment, setLocalComment] = useState(reviewData.comment);
 
   const handleSubmitReview = async () => {
-    if (!reviewData.rating || reviewData.rating < 1 || reviewData.rating > 5) {
-      setError('Please select a valid rating (1-5)');
+    if (!localRating || localRating < 1 || localRating > 5) {
+      setError("Please select a valid rating (1-5)");
       return;
     }
-    if (reviewData.comment.length > 500) {
-      setError('Review must be 500 characters or less');
+    if (localComment.length > 500) {
+      setError("Review must be 500 characters or less");
       return;
     }
 
     try {
       setLoading(true);
-      setError('');
+      setError("");
+
+      const reviewPayload = { rating: localRating, comment: localComment };
 
       if (reviewingRental.isReviewed && reviewingRental.review?.rating) {
-        // Update existing review
-        await rentalAPI.updateReview(reviewingRental._id, reviewData);
+        await rentalAPI.updateReview(reviewingRental._id, reviewPayload);
       } else {
-        // Create new review
-        await rentalAPI.submitReview(reviewingRental._id, reviewData);
+        await rentalAPI.submitReview(reviewingRental._id, reviewPayload);
       }
 
-      alert('✅ Review saved successfully!');
+      alert("✅ Review saved successfully!");
       setShowReviewModal(false);
       setReviewingRental(null);
-      setReviewData({ rating: 5, comment: '' });
-      fetchRentals(); // Refresh to show updated state
+      setReviewData({ rating: 5, comment: "" });
+      fetchRentals();
     } catch (err) {
-      setError(err.response?.data?.message || 'Failed to save review');
+      setError(err.response?.data?.message || "Failed to save review");
     } finally {
       setLoading(false);
     }
@@ -1859,18 +1856,24 @@ const ReviewModal = () => {
         </div>
         {/* Star Rating */}
         <div className="mb-6">
-          <label className="block font-semibold mb-3 text-center">Your Rating</label>
+          <label className="block font-semibold mb-3 text-center">
+            Your Rating
+          </label>
           <div className="flex justify-center gap-2">
             {[1, 2, 3, 4, 5].map((star) => (
               <button
                 key={star}
                 type="button"
-                onClick={() => setReviewData({ ...reviewData, rating: star })}
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setLocalRating(star);
+                }}
                 onMouseEnter={() => setHoveredRating(star)}
                 onMouseLeave={() => setHoveredRating(0)}
-                className="text-5xl focus:outline-none transition-transform hover:scale-110"
+                className="text-5xl focus:outline-none transition-transform hover:scale-110 cursor-pointer"
               >
-                {star <= (hoveredRating || reviewData.rating) ? (
+                {star <= (hoveredRating || localRating) ? (
                   <span className="text-amber-400">⭐</span>
                 ) : (
                   <span className="text-gray-300">☆</span>
@@ -1879,11 +1882,11 @@ const ReviewModal = () => {
             ))}
           </div>
           <p className="text-center text-sm text-gray-600 mt-2">
-            {reviewData.rating === 1 && "Poor"}
-            {reviewData.rating === 2 && "Fair"}
-            {reviewData.rating === 3 && "Good"}
-            {reviewData.rating === 4 && "Very Good"}
-            {reviewData.rating === 5 && "Excellent"}
+            {localRating === 1 && "Poor"}
+            {localRating === 2 && "Fair"}
+            {localRating === 3 && "Good"}
+            {localRating === 4 && "Very Good"}
+            {localRating === 5 && "Excellent"}
           </p>
         </div>
         {/* Comment */}
@@ -1892,15 +1895,16 @@ const ReviewModal = () => {
             Your Review (Optional)
           </label>
           <textarea
-            value={reviewData.comment}
-            onChange={(e) => setReviewData({ ...reviewData, comment: e.target.value })}
+            value={localComment}
+            onChange={(e) => setLocalComment(e.target.value)}
             placeholder="Share your experience with this machine..."
             rows={4}
             maxLength={500}
-            className="w-full p-3 border-2 border-gray-200 rounded-xl focus:border-amber-500 focus:outline-none text-sm"
+            className="w-full p-3 border-2 border-gray-200 rounded-xl focus:border-amber-500 focus:outline-none text-sm resize-none"
+            autoComplete="off"
           />
           <small className="text-gray-500 text-xs">
-            {reviewData.comment.length}/500 characters
+            {localComment.length}/500 characters
           </small>
         </div>
         {error && (
@@ -1913,7 +1917,7 @@ const ReviewModal = () => {
             onClick={() => {
               setShowReviewModal(false);
               setReviewingRental(null);
-              setReviewData({ rating: 5, comment: '' });
+              setReviewData({ rating: 5, comment: "" });
             }}
             disabled={loading}
             className="flex-1 px-4 py-3 border-2 border-gray-300 rounded-xl hover:bg-gray-50 font-semibold text-gray-700"
@@ -1922,10 +1926,10 @@ const ReviewModal = () => {
           </button>
           <button
             onClick={handleSubmitReview}
-            disabled={loading || !reviewData.rating}
+            disabled={loading || !localRating}
             className="flex-1 px-4 py-3 bg-gradient-to-r from-amber-500 to-orange-500 text-white rounded-xl font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            {loading ? 'Saving...' : 'Save Review'}
+            {loading ? "Saving..." : "Save Review"}
           </button>
         </div>
       </div>
@@ -1959,7 +1963,9 @@ const ReviewModal = () => {
           onBook={handleBookMachine}
         />
       )}
-      {showReviewModal && reviewingRental && <ReviewModal />}
+      {showReviewModal && reviewingRental && (
+        <ReviewModal key={reviewingRental._id} />
+      )}
 
       <div className="fixed bottom-0 left-0 right-0 bg-white/80 backdrop-blur-lg border-t px-4 py-3 flex justify-around shadow-lg max-w-md mx-auto">
         <button
