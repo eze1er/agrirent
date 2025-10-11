@@ -1,6 +1,12 @@
 // src/components/PaymentModal.jsx
 import { useState } from "react";
-import { X, CreditCard, Smartphone, CheckCircle, AlertCircle } from "lucide-react";
+import {
+  X,
+  CreditCard,
+  Smartphone,
+  CheckCircle,
+  AlertCircle,
+} from "lucide-react";
 import { paymentAPI } from "../services/api";
 
 export default function PaymentModal({ rental, onClose, onPaymentSuccess }) {
@@ -85,9 +91,74 @@ export default function PaymentModal({ rental, onClose, onPaymentSuccess }) {
     }
     return v;
   };
+  // the good one
+  //  const handleStripePayment = async () => {
+  //   if (!cardDetails.cardNumber || !cardDetails.expiry || !cardDetails.cvc || !cardDetails.name) {
+  //     setError("Please fill in all card details");
+  //     return;
+  //   }
 
+  //   setLoading(true);
+  //   setError("");
+  //   setStep(3);
+
+  //   try {
+  //     // Step 1: Create payment intent
+  //     const createResponse = await paymentAPI.createStripePayment({
+  //       amount: rental.pricing.totalPrice,
+  //       currency: "usd",
+  //       rentalId: rental._id,
+  //     });
+
+  //     console.log('Create payment response:', createResponse.data); // Debug log
+
+  //     // ✅ Check if we got the payment intent ID
+  //     if (!createResponse.data?.data?.clientSecret) {
+  //       throw new Error('No payment intent created');
+  //     }
+
+  //     // For demo/testing: simulate successful payment
+  //     // In production, you'd use Stripe.js here to actually process the card
+
+  //     // Step 2: Confirm payment (simulate success)
+  //     // Extract payment intent ID from client secret
+  //     const clientSecret = createResponse.data.data.clientSecret;
+  //     const paymentIntentId = clientSecret.split('_secret_')[0];
+
+  //     console.log('Payment intent ID:', paymentIntentId); // Debug log
+
+  //     // ✅ Make sure paymentIntentId exists before confirming
+  //     if (!paymentIntentId) {
+  //       throw new Error('Invalid payment intent ID');
+  //     }
+
+  //     const confirmResponse = await paymentAPI.confirmStripePayment(paymentIntentId);
+
+  //     setSuccess(true);
+  //     setTimeout(() => {
+  //       onPaymentSuccess({
+  //         method: "stripe",
+  //         transactionId: paymentIntentId,
+  //         amount: rental.pricing.totalPrice,
+  //       });
+  //     }, 1500);
+  //   } catch (err) {
+  //     console.error('Payment error:', err); // Debug log
+  //     setError(err.response?.data?.message || err.message || "Payment failed");
+  //     setStep(2);
+  //   } finally {
+  //     setLoading(false);
+  //   }
+  // };
+
+  // In PaymentModal.js - TESTING ONLY
   const handleStripePayment = async () => {
-    if (!cardDetails.cardNumber || !cardDetails.expiry || !cardDetails.cvc || !cardDetails.name) {
+    if (
+      !cardDetails.cardNumber ||
+      !cardDetails.expiry ||
+      !cardDetails.cvc ||
+      !cardDetails.name
+    ) {
       setError("Please fill in all card details");
       return;
     }
@@ -97,33 +168,81 @@ export default function PaymentModal({ rental, onClose, onPaymentSuccess }) {
     setStep(3);
 
     try {
-      const response = await paymentAPI.createStripePayment({
+      // FOR TESTING: Skip Stripe and directly mark as paid
+      const testMode = !import.meta.env.STRIPE_PUBLISHABLE_KEY;
+
+      if (testMode) {
+        // Simulate payment success
+        await new Promise((resolve) => setTimeout(resolve, 2000));
+
+        setSuccess(true);
+        setTimeout(() => {
+          onPaymentSuccess({
+            method: "stripe",
+            transactionId: "test_" + Date.now(),
+            amount: rental.pricing.totalPrice,
+          });
+        }, 1500);
+        return;
+      }
+
+      // Real Stripe flow
+      const createResponse = await paymentAPI.createStripePayment({
         amount: rental.pricing.totalPrice,
         currency: "usd",
         rentalId: rental._id,
       });
 
-      // In production, use Stripe.js to handle the payment
-      // For now, simulate success
-      await new Promise((resolve) => setTimeout(resolve, 2000));
+      if (!createResponse.data?.data?.paymentIntentId) {
+        throw new Error("No payment intent ID received");
+      }
 
-      await paymentAPI.confirmStripePayment(response.data.paymentIntentId);
+      const paymentIntentId = createResponse.data.data.paymentIntentId;
+
+      const confirmResponse = await paymentAPI.confirmStripePayment(
+        paymentIntentId
+      );
 
       setSuccess(true);
       setTimeout(() => {
         onPaymentSuccess({
           method: "stripe",
-          transactionId: response.data.paymentIntentId,
+          transactionId: paymentIntentId,
           amount: rental.pricing.totalPrice,
         });
       }, 1500);
     } catch (err) {
-      setError(err.response?.data?.message || "Payment failed");
+      console.error("Payment error:", err);
+      setError(err.response?.data?.message || err.message || "Payment failed");
       setStep(2);
     } finally {
       setLoading(false);
     }
   };
+// backend/routes/paymentRoutes.js
+// router.post('/debug-payment', protect, async (req, res) => {
+//   try {
+//     const { rentalId } = req.body;
+    
+//     const rental = await Rental.findById(rentalId);
+//     const payment = await Payment.findOne({ rentalId });
+    
+//     res.json({
+//       rental: {
+//         id: rental?._id,
+//         status: rental?.status,
+//         payment: rental?.payment,
+//       },
+//       payment: payment ? {
+//         id: payment._id,
+//         transactionId: payment.transactionId,
+//         escrowStatus: payment.escrowStatus,
+//       } : null
+//     });
+//   } catch (error) {
+//     res.status(500).json({ error: error.message });
+//   }
+// });
 
   const handlePayPalPayment = async () => {
     setLoading(true);
@@ -224,7 +343,9 @@ export default function PaymentModal({ rental, onClose, onPaymentSuccess }) {
             )}
             <div className="mt-3 pt-3 border-t border-blue-200">
               <div className="flex justify-between items-center">
-                <span className="font-semibold text-gray-700">Total Amount:</span>
+                <span className="font-semibold text-gray-700">
+                  Total Amount:
+                </span>
                 <span className="text-2xl font-bold bg-gradient-to-r from-blue-600 to-cyan-600 bg-clip-text text-transparent">
                   ${rental.pricing?.totalPrice?.toFixed(2)}
                 </span>
@@ -235,7 +356,9 @@ export default function PaymentModal({ rental, onClose, onPaymentSuccess }) {
           {/* Step 1: Select Payment Method */}
           {step === 1 && (
             <div>
-              <h3 className="font-bold text-gray-800 mb-4">Select Payment Method</h3>
+              <h3 className="font-bold text-gray-800 mb-4">
+                Select Payment Method
+              </h3>
               <div className="space-y-3">
                 {paymentMethods.map((method) => (
                   <button
@@ -245,8 +368,12 @@ export default function PaymentModal({ rental, onClose, onPaymentSuccess }) {
                   >
                     <div className="text-blue-600">{method.icon}</div>
                     <div className="text-left flex-1">
-                      <p className="font-semibold text-gray-800">{method.name}</p>
-                      <p className="text-xs text-gray-500">{method.description}</p>
+                      <p className="font-semibold text-gray-800">
+                        {method.name}
+                      </p>
+                      <p className="text-xs text-gray-500">
+                        {method.description}
+                      </p>
                     </div>
                   </button>
                 ))}
@@ -317,7 +444,9 @@ export default function PaymentModal({ rental, onClose, onPaymentSuccess }) {
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-semibold mb-2">CVC</label>
+                    <label className="block text-sm font-semibold mb-2">
+                      CVC
+                    </label>
                     <input
                       type="text"
                       value={cardDetails.cvc}
@@ -361,7 +490,8 @@ export default function PaymentModal({ rental, onClose, onPaymentSuccess }) {
               <h3 className="font-bold text-gray-800 mb-4">PayPal Payment</h3>
               <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 mb-4">
                 <p className="text-sm text-gray-700">
-                  You will be redirected to PayPal to complete your payment securely.
+                  You will be redirected to PayPal to complete your payment
+                  securely.
                 </p>
               </div>
               {error && (
@@ -388,7 +518,9 @@ export default function PaymentModal({ rental, onClose, onPaymentSuccess }) {
               >
                 ← Change payment method
               </button>
-              <h3 className="font-bold text-gray-800 mb-4">Mobile Money Payment</h3>
+              <h3 className="font-bold text-gray-800 mb-4">
+                Mobile Money Payment
+              </h3>
               <div className="space-y-4">
                 <div>
                   <label className="block text-sm font-semibold mb-2">
@@ -447,7 +579,8 @@ export default function PaymentModal({ rental, onClose, onPaymentSuccess }) {
               </div>
               <div className="mt-4 bg-amber-50 border border-amber-200 rounded-xl p-4">
                 <p className="text-sm text-gray-700">
-                  You will receive a prompt on your phone to authorize this payment.
+                  You will receive a prompt on your phone to authorize this
+                  payment.
                 </p>
               </div>
               {error && (
@@ -475,17 +608,23 @@ export default function PaymentModal({ rental, onClose, onPaymentSuccess }) {
                   <h3 className="text-xl font-bold text-gray-800 mb-2">
                     Processing Payment...
                   </h3>
-                  <p className="text-gray-600">Please wait while we process your payment</p>
+                  <p className="text-gray-600">
+                    Please wait while we process your payment
+                  </p>
                 </div>
               )}
               {success && (
                 <div>
-                  <CheckCircle size={64} className="mx-auto text-emerald-600 mb-4" />
+                  <CheckCircle
+                    size={64}
+                    className="mx-auto text-emerald-600 mb-4"
+                  />
                   <h3 className="text-xl font-bold text-gray-800 mb-2">
                     Payment Successful!
                   </h3>
                   <p className="text-gray-600">
-                    Your rental has been confirmed. You'll receive a confirmation email shortly.
+                    Your rental has been confirmed. You'll receive a
+                    confirmation email shortly.
                   </p>
                 </div>
               )}

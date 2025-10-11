@@ -31,65 +31,77 @@ router.post('/stripe/create-intent', protect, requireStripe, async (req, res) =>
   try {
     const { amount, currency = 'usd', rentalId } = req.body;
 
-    const rental = await Rental.findById(rentalId).populate('ownerId');
+    console.log('Creating payment intent:', { amount, currency, rentalId }); // Debug
+
+    // Validate rental
+    const rental = await Rental.findById(rentalId);
     if (!rental) {
       return res.status(404).json({ success: false, message: 'Rental not found' });
     }
 
-    // Création de l'intention de paiement Stripe
+    // Create payment intent
     const paymentIntent = await stripe.paymentIntents.create({
-      amount: Math.round(amount * 100), // Stripe utilise les centimes
+      amount: Math.round(amount * 100), // Stripe uses cents
       currency,
       metadata: {
         rentalId: rentalId,
         userId: req.user.id,
-        ownerId: rental.ownerId._id.toString(),
+        ownerId: rental.ownerId.toString(),
         type: 'escrow',
       },
-      // Important: Pas de transfert immédiat, les fonds restent sur le compte de la plateforme
-      transfer_data: undefined,
-      // Méthode de capture immédiate
-      capture_method: 'automatic',
+      // ✅ IMPORTANT: No transfer_data - keeps money in platform account
     });
 
-    // Enregistrement du paiement avec statut en séquestre ('pending')
+    console.log('Payment intent created:', paymentIntent.id); // Debug
+
+    // Save payment record
     const payment = await Payment.create({
       userId: req.user.id,
       rentalId,
-      ownerId: rental.ownerId._id,
+      ownerId: rental.ownerId,
       amount,
       currency,
       method: 'stripe',
       status: 'pending',
       escrowStatus: 'pending',
-      transactionId: paymentIntent.id,
+      transactionId: paymentIntent.id, // ✅ Save the ID
       metadata: {
         clientSecret: paymentIntent.client_secret,
       },
     });
 
+    // ✅ Return both clientSecret and paymentIntentId
     res.json({
       success: true,
       data: {
         clientSecret: paymentIntent.client_secret,
+        paymentIntentId: paymentIntent.id, // ✅ Include this
         paymentId: payment._id,
       },
     });
   } catch (error) {
     console.error('Stripe payment error:', error);
-    res.status(500).json({ success: false, message: error.message });
+    res.status(500).json({ 
+      success: false, 
+      message: error.message 
+    });
   }
 });
 
 // Confirmer le paiement et le marquer comme détenu en séquestre
-router.post('/stripe/confirm', protect, async (req, res) => {
+router.post('/stripe/confirm', protect, requireStripe, async (req, res) => {
   try {
     const { paymentIntentId } = req.body;
-    
-    // Si stripe est null, le middleware requireStripe l'aurait bloqué, mais double vérification
-    if (!stripe) {
-      return res.status(503).json({ success: false, message: 'Payment service not configured.' });
+
+    // ✅ Validate paymentIntentId exists
+    if (!paymentIntentId) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Payment intent ID is required' 
+      });
     }
+
+    console.log('Confirming payment intent:', paymentIntentId); // Debug
 
     const paymentIntent = await stripe.paymentIntents.retrieve(paymentIntentId);
 
@@ -97,52 +109,44 @@ router.post('/stripe/confirm', protect, async (req, res) => {
       const payment = await Payment.findOne({ transactionId: paymentIntentId });
       
       if (!payment) {
-         return res.status(404).json({ success: false, message: 'Payment record not found' });
+        return res.status(404).json({
+          success: false,
+          message: 'Payment record not found'
+        });
       }
 
-      // Marquer comme détenu en séquestre (held)
+      // Mark as held in escrow
       await payment.markAsHeldInEscrow();
       payment.escrowTimeline.paidAt = new Date();
       await payment.save();
 
-      // Mettre à jour la location
+      // Update rental
       await Rental.findByIdAndUpdate(payment.rentalId, {
-        status: 'active', // Maintenant actif puisque payé
+        status: 'active',
         'payment.status': 'held_in_escrow',
         'payment.transactionId': paymentIntentId,
         'payment.method': 'stripe',
         'payment.amount': payment.amount,
-      });
-
-      // Notifier le propriétaire que le paiement est sécurisé
-      const rental = await Rental.findById(payment.rentalId)
-        .populate('machineId')
-        .populate('renterId')
-        .populate('ownerId'); // Populer ownerId car il est utilisé pour l'email
-      
-      await sendEmail({
-        to: rental.ownerId.email,
-        subject: 'Paiement Sécurisé - Location Active',
-        html: `
-          <h2>Paiement Sécurisé en Séquestre</h2>
-          <p>Bonne nouvelle! Le locataire a payé $${payment.amount} pour "${rental.machineId.name}".</p>
-          <p>Le paiement est détenu en toute sécurité par AgriRent et vous sera versé une fois la location terminée et confirmée.</p>
-          <p><strong>Locataire:</strong> ${rental.renterId.firstName} ${rental.renterId.lastName}</p>
-          <p><strong>Statut:</strong> Paiement Détenu en Séquestre</p>
-        `,
+        'payment.paidAt': new Date(),
       });
 
       res.json({ 
         success: true, 
-        message: 'Payment held in escrow. Owner will be notified.',
+        message: 'Payment held in escrow',
         data: payment 
       });
     } else {
-      res.status(400).json({ success: false, message: 'Payment not completed' });
+      res.status(400).json({ 
+        success: false, 
+        message: 'Payment not completed. Status: ' + paymentIntent.status 
+      });
     }
   } catch (error) {
     console.error('Stripe confirm error:', error);
-    res.status(500).json({ success: false, message: error.message });
+    res.status(500).json({ 
+      success: false, 
+      message: error.message 
+    });
   }
 });
 

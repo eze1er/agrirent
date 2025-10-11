@@ -92,7 +92,8 @@ const rentalSchema = new mongoose.Schema({
     required: true,
     enum: [
       'pending',           // Payment initiated but not completed
-      'held',              // Payment received and held in AgriRent account
+      'held', 
+      'approved',             // Payment received and held in AgriRent account
       'released',          // Released to owner after renter confirmation
       'disputed',          // Under dispute resolution
       'refunded',          // Refunded to renter
@@ -104,13 +105,13 @@ const rentalSchema = new mongoose.Schema({
   status: {
     type: String,
     required: true,
-    enum: ['pending', 'processing', 'completed', 'failed', 'refunded', 'cancelled'],
+    enum: ['pending', 'processing', 'completed', 'failed', 'refunded', 'approved', 'cancelled'],
     default: 'pending',
   },
   
   transactionId: {
     type: String,
-    required: true,
+    required: false,
     unique: true,
   },
   
