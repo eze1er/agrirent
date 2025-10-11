@@ -343,6 +343,7 @@ router.post('/login', async (req, res) => {
     const user = await User.findOne({ email: email.toLowerCase() }).select('+password');
 
     if (!user) {
+      console.log('❌ User not found:', email);
       return res.status(401).json({
         success: false,
         message: 'Invalid credentials'
@@ -351,6 +352,7 @@ router.post('/login', async (req, res) => {
 
     const isPasswordValid = await user.comparePassword(password);
     if (!isPasswordValid) {
+      console.log('❌ Password mismatch for:', email);
       return res.status(401).json({
         success: false,
         message: 'Invalid credentials'
@@ -362,7 +364,7 @@ router.post('/login', async (req, res) => {
       process.env.JWT_SECRET,
       { expiresIn: '7d' }
     );
-
+console.log('✅ Login successful:', email);
     res.json({
       success: true,
       token,

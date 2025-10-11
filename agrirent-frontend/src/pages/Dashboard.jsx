@@ -9,9 +9,11 @@ import {
   Star,
   TrendingUp,
   Package,
+  Shield,
 } from "lucide-react";
-import { machineAPI, rentalAPI, uploadAPI } from "../services/api";
+import { machineAPI, rentalAPI, uploadAPI, paymentAPI } from "../services/api";
 import BookingModal from "../components/BookingModal";
+import PaymentModal from "../components/PaymentModal"; // Add this import
 
 export default function Dashboard({ user: currentUser, onLogout }) {
   const [currentView, setCurrentView] = useState("home");
@@ -26,6 +28,16 @@ export default function Dashboard({ user: currentUser, onLogout }) {
   const [loadingRentals, setLoadingRentals] = useState(false);
   const [showBookingModal, setShowBookingModal] = useState(false);
   const [bookingMachine, setBookingMachine] = useState(null);
+
+  // Payment and completion states
+  const [showPaymentModal, setShowPaymentModal] = useState(false);
+  const [paymentRental, setPaymentRental] = useState(null);
+  const [showConfirmCompletionModal, setShowConfirmCompletionModal] = useState(false);
+  const [confirmingRental, setConfirmingRental] = useState(null);
+  const [completionNote, setCompletionNote] = useState("");
+  const [showDisputeModal, setShowDisputeModal] = useState(false);
+  const [disputingRental, setDisputingRental] = useState(null);
+  const [disputeReason, setDisputeReason] = useState("");
 
   // Review states
   const [showReviewModal, setShowReviewModal] = useState(false);
@@ -79,6 +91,62 @@ export default function Dashboard({ user: currentUser, onLogout }) {
       }
     } catch (error) {
       throw error;
+    }
+  };
+
+  // ============== PAYMENT SUCCESS HANDLER ==============
+  const handlePaymentSuccess = async (paymentData) => {
+    await fetchRentals();
+    setShowPaymentModal(false);
+    setPaymentRental(null);
+    alert(`✅ Payment successful! Your funds are secured in escrow.\n\nTransaction ID: ${paymentData.transactionId}\n\nThe owner will be notified and can now provide the service. Once completed, you'll confirm to release the payment.`);
+  };
+
+  // ============== RENTER CONFIRMS COMPLETION ==============
+  const handleConfirmCompletion = async () => {
+    if (!completionNote.trim() || completionNote.length < 10) {
+      alert("Please provide details about the service (minimum 10 characters)");
+      return;
+    }
+
+    try {
+      const response = await paymentAPI.confirmCompletion(confirmingRental._id, {
+        confirmationNote: completionNote,
+      });
+
+      if (response.data.success) {
+        alert("✅ Thank you! You've confirmed the rental is complete.\n\nAgriRent will verify and release the payment to the owner within 24-48 hours.");
+        setShowConfirmCompletionModal(false);
+        setConfirmingRental(null);
+        setCompletionNote("");
+        await fetchRentals();
+      }
+    } catch (error) {
+      alert(error.response?.data?.message || "Failed to confirm completion");
+    }
+  };
+
+  // ============== OPEN DISPUTE ==============
+  const handleOpenDispute = async () => {
+    if (!disputeReason.trim() || disputeReason.length < 20) {
+      alert("Please provide a detailed reason for the dispute (minimum 20 characters)");
+      return;
+    }
+
+    try {
+      const response = await paymentAPI.openDispute(disputingRental._id, {
+        reason: disputeReason,
+      });
+
+      if (response.data.success) {
+        alert("⚠️ Dispute opened successfully.\n\nOur team will review your case within 24 hours and contact both parties. Your payment is secure.");
+        setShowDisputeModal(false);
+        setDisputingRental(null);
+        setDisputeReason("");
+        await fetchRentals();
+      }
+    } catch (error) {
+      alert(error.response?.data?.message || "Failed to open dispute");
     }
   };
 
@@ -181,8 +249,18 @@ export default function Dashboard({ user: currentUser, onLogout }) {
                 <span className="text-sm font-semibold">Rental Requests</span>
               </button>
             </>
+            
           )}
         </div>
+          {currentUser?.role === 'admin' && (
+    <button
+      onClick={() => window.location.href = '/admin/escrow'}
+      className="bg-gradient-to-br from-red-500 to-rose-500 p-5 rounded-2xl shadow-lg flex flex-col items-center gap-3 hover:scale-105 transition text-white"
+    >
+      <Shield size={28} />
+      <span className="text-sm font-semibold">Admin Panel</span>
+    </button>
+  )}
       </div>
     );
   };
@@ -518,35 +596,6 @@ export default function Dashboard({ user: currentUser, onLogout }) {
             </div>
           )}
         </div>
-        {/* Reviews Section */}
-        {/* <div className="mt-8">
-  <h3 className="text-xl font-bold mb-4">Reviews</h3>
-  {loadingReviews ? (
-    <p className="text-gray-500 text-sm">Loading reviews...</p>
-  ) : machineReviews.length === 0 ? (
-    <p className="text-gray-500 text-sm">No reviews yet.</p>
-  ) : (
-    <div className="space-y-4">
-      {machineReviews.map((review) => (
-        <div key={review._id} className="bg-gray-50 p-4 rounded-xl">
-          <div className="flex items-center gap-2 mb-2">
-            <Star size={18} className="text-amber-500 fill-amber-500" />
-            <span className="font-semibold">{review.rating}</span>
-            <span className="text-gray-600 text-sm">
-              by {review.renterId?.firstName || 'User'}
-            </span>
-          </div>
-          {review.comment && (
-            <p className="text-gray-700 italic">"{review.comment}"</p>
-          )}
-          <p className="text-xs text-gray-500 mt-2">
-            {new Date(review.createdAt).toLocaleDateString()}
-          </p>
-        </div>
-      ))}
-    </div>
-  )}
-</div> */}
       </div>
     );
   };
@@ -562,6 +611,7 @@ export default function Dashboard({ user: currentUser, onLogout }) {
         </div>
       );
     }
+
     return (
       <div className="p-4">
         <h1 className="text-2xl font-bold mb-4 bg-gradient-to-r from-blue-600 to-cyan-600 bg-clip-text text-transparent">
@@ -593,17 +643,23 @@ export default function Dashboard({ user: currentUser, onLogout }) {
                       rental.status === "pending"
                         ? "bg-amber-100 text-amber-800"
                         : rental.status === "approved"
+                        ? "bg-blue-100 text-blue-800"
+                        : rental.status === "active"
                         ? "bg-emerald-100 text-emerald-800"
                         : rental.status === "completed"
-                        ? "bg-blue-100 text-blue-800"
+                        ? "bg-purple-100 text-purple-800"
                         : rental.status === "rejected"
                         ? "bg-rose-100 text-rose-800"
+                        : rental.status === "disputed"
+                        ? "bg-orange-100 text-orange-800"
                         : "bg-gray-100 text-gray-800"
                     }`}
                   >
                     {rental.status}
                   </span>
                 </div>
+
+                {/* Rental Details */}
                 {rental.rentalType === "daily" ? (
                   <>
                     <p className="text-sm text-gray-600">
@@ -616,8 +672,7 @@ export default function Dashboard({ user: currentUser, onLogout }) {
                 ) : (
                   <>
                     <p className="text-sm text-gray-600">
-                      Work Date:{" "}
-                      {new Date(rental.workDate).toLocaleDateString()}
+                      Work Date: {new Date(rental.workDate).toLocaleDateString()}
                     </p>
                     <p className="text-sm text-gray-600">
                       Hectares: {rental.pricing?.numberOfHectares} Ha
@@ -631,52 +686,164 @@ export default function Dashboard({ user: currentUser, onLogout }) {
                   ${rental.pricing?.totalPrice?.toFixed(2) || 0}
                 </p>
 
-                {/* Review UI */}
-                {rental.status === "completed" && (
-                  <>
-                    {rental.isReviewed ? (
-                      <div className="mt-4 bg-amber-50 border-l-4 border-amber-500 p-3 rounded">
-                        <div className="flex justify-between items-start">
-                          <div>
-                            <p className="text-sm font-semibold text-amber-800">
-                              ⭐ You rated this: {rental.review?.rating} stars
-                            </p>
-                            {rental.review?.comment && (
-                              <p className="text-sm text-gray-700 mt-1 italic">
-                                "{rental.review.comment}"
-                              </p>
-                            )}
-                          </div>
-                          <button
-                            onClick={() => {
-                              setReviewingRental(rental);
-                              setReviewData({
-                                rating: rental.review?.rating || 5,
-                                comment: rental.review?.comment || "",
-                              });
-                              setShowReviewModal(true);
-                            }}
-                            className="text-xs text-blue-600 font-semibold hover:underline"
-                          >
-                            Edit
-                          </button>
-                        </div>
-                      </div>
-                    ) : (
-                      <button
-                        onClick={() => {
-                          setReviewingRental(rental);
-                          setReviewData({ rating: 5, comment: "" });
-                          setShowReviewModal(true);
-                        }}
-                        className="w-full mt-4 bg-gradient-to-r from-amber-500 to-orange-500 text-white py-2 rounded-xl font-semibold hover:shadow-lg transition"
+                {/* PAYMENT STATUS INDICATOR */}
+                {rental.payment?.status && (
+                  <div className="mt-3 p-3 bg-gradient-to-r from-blue-50 to-cyan-50 rounded-xl border border-blue-200">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-semibold text-gray-700">
+                        Payment Status:
+                      </span>
+                      <span
+                        className={`text-sm font-bold ${
+                          rental.payment.status === "held_in_escrow"
+                            ? "text-blue-600"
+                            : rental.payment.status === "completed"
+                            ? "text-emerald-600"
+                            : "text-gray-600"
+                        }`}
                       >
-                        ⭐ Leave a Review
-                      </button>
+                        {rental.payment.status === "held_in_escrow"
+                          ? "🔒 Secured in Escrow"
+                          : rental.payment.status === "completed"
+                          ? "✅ Released to Owner"
+                          : rental.payment.status}
+                      </span>
+                    </div>
+                    {rental.payment.status === "held_in_escrow" && (
+                      <p className="text-xs text-gray-600 mt-1">
+                        Your payment is safely held by AgriRent until service is
+                        complete
+                      </p>
                     )}
-                  </>
+                  </div>
                 )}
 
+                {/* ACTION BUTTONS BASED ON STATUS */}
+
+                {/* 1. APPROVED - Need to Pay */}
+                {rental.status === "approved" && !rental.payment?.status && (
+                  <button
+                    onClick={() => {
+                      setPaymentRental(rental);
+                      setShowPaymentModal(true);
+                    }}
+                    className="w-full mt-4 bg-gradient-to-r from-emerald-500 to-teal-500 text-white py-3 rounded-xl font-bold hover:shadow-xl transition"
+                  >
+                    💳 Pay Now - ${rental.pricing?.totalPrice?.toFixed(2)}
+                  </button>
+                )}
+
+                {/* 2. ACTIVE/COMPLETED - Waiting for Confirmation */}
+                {["active", "completed"].includes(rental.status) &&
+                  rental.payment?.status === "held_in_escrow" &&
+                  !rental.renterConfirmedCompletion && (
+                    <div className="mt-4 space-y-2">
+                      <div className="bg-amber-50 border border-amber-200 rounded-xl p-3">
+                        <p className="text-sm text-amber-800 font-semibold">
+                          ⏳ Service in Progress
+                        </p>
+                        <p className="text-xs text-gray-600 mt-1">
+                          Once the owner completes the service, confirm it below
+                          to release payment
+                        </p>
+                      </div>
+                      {rental.status === "completed" && (
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => {
+                              setConfirmingRental(rental);
+                              setShowConfirmCompletionModal(true);
+                            }}
+                            className="flex-1 bg-gradient-to-r from-emerald-500 to-teal-500 text-white py-3 rounded-xl font-bold hover:shadow-xl transition"
+                          >
+                            ✅ Confirm Complete
+                          </button>
+                          <button
+                            onClick={() => {
+                              setDisputingRental(rental);
+                              setShowDisputeModal(true);
+                            }}
+                            className="flex-1 bg-gradient-to-r from-orange-500 to-red-500 text-white py-3 rounded-xl font-bold hover:shadow-xl transition"
+                          >
+                            ⚠️ Open Dispute
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                {/* 3. CONFIRMED - Waiting for Admin */}
+                {rental.renterConfirmedCompletion &&
+                  rental.payment?.status === "held_in_escrow" && (
+                    <div className="mt-4 bg-blue-50 border border-blue-200 rounded-xl p-3">
+                      <p className="text-sm text-blue-800 font-semibold">
+                        ✅ You Confirmed Completion
+                      </p>
+                      <p className="text-xs text-gray-600 mt-1">
+                        AgriRent is verifying the transaction. Payment will be
+                        released to the owner within 24-48 hours.
+                      </p>
+                    </div>
+                  )}
+
+                {/* 4. DISPUTED */}
+                {rental.status === "disputed" && (
+                  <div className="mt-4 bg-orange-50 border border-orange-200 rounded-xl p-3">
+                    <p className="text-sm text-orange-800 font-semibold">
+                      ⚠️ Dispute in Progress
+                    </p>
+                    <p className="text-xs text-gray-600 mt-1">
+                      Our team is reviewing this case. We'll contact you shortly.
+                    </p>
+                  </div>
+                )}
+
+                {/* Review UI - Only after payment released */}
+                {rental.status === "completed" &&
+                  rental.payment?.status === "completed" && (
+                    <>
+                      {rental.isReviewed ? (
+                        <div className="mt-4 bg-amber-50 border-l-4 border-amber-500 p-3 rounded">
+                          <div className="flex justify-between items-start">
+                            <div>
+                              <p className="text-sm font-semibold text-amber-800">
+                                ⭐ You rated this: {rental.review?.rating} stars
+                              </p>
+                              {rental.review?.comment && (
+                                <p className="text-sm text-gray-700 mt-1 italic">
+                                  "{rental.review.comment}"
+                                </p>
+                              )}
+                            </div>
+                            <button
+                              onClick={() => {
+                                setReviewingRental(rental);
+                                setReviewData({
+                                  rating: rental.review?.rating || 5,
+                                  comment: rental.review?.comment || "",
+                                });
+                                setShowReviewModal(true);
+                              }}
+                              className="text-xs text-blue-600 font-semibold hover:underline"
+                            >
+                              Edit
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <button
+                          onClick={() => {
+                            setReviewingRental(rental);
+                            setReviewData({ rating: 5, comment: "" });
+                            setShowReviewModal(true);
+                          }}
+                          className="w-full mt-4 bg-gradient-to-r from-amber-500 to-orange-500 text-white py-2 rounded-xl font-semibold hover:shadow-lg transition"
+                        >
+                          ⭐ Leave a Review
+                        </button>
+                      )}
+                    </>
+                  )}
               </div>
             ))}
           </div>
@@ -1801,141 +1968,253 @@ export default function Dashboard({ user: currentUser, onLogout }) {
   };
 
   // Review Modal Component
-// Review Modal Component
-const ReviewModal = () => {
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
-  const [hoveredRating, setHoveredRating] = useState(0);
-  const [localRating, setLocalRating] = useState(reviewData.rating);
-  const [localComment, setLocalComment] = useState(reviewData.comment);
+  const ReviewModal = () => {
+    const [loading, setLoading] = useState(false);
+    const [error, setError] = useState("");
+    const [hoveredRating, setHoveredRating] = useState(0);
+    const [localRating, setLocalRating] = useState(reviewData.rating);
+    const [localComment, setLocalComment] = useState(reviewData.comment);
 
-  const handleSubmitReview = async () => {
-    if (!localRating || localRating < 1 || localRating > 5) {
-      setError("Please select a valid rating (1-5)");
-      return;
-    }
-    if (localComment.length > 500) {
-      setError("Review must be 500 characters or less");
-      return;
-    }
-
-    try {
-      setLoading(true);
-      setError("");
-
-      const reviewPayload = { rating: localRating, comment: localComment };
-
-      if (reviewingRental.isReviewed && reviewingRental.review?.rating) {
-        await rentalAPI.updateReview(reviewingRental._id, reviewPayload);
-      } else {
-        await rentalAPI.submitReview(reviewingRental._id, reviewPayload);
+    const handleSubmitReview = async () => {
+      if (!localRating || localRating < 1 || localRating > 5) {
+        setError("Please select a valid rating (1-5)");
+        return;
+      }
+      if (localComment.length > 500) {
+        setError("Review must be 500 characters or less");
+        return;
       }
 
-      alert("✅ Review saved successfully!");
-      setShowReviewModal(false);
-      setReviewingRental(null);
-      setReviewData({ rating: 5, comment: "" });
-      fetchRentals();
-    } catch (err) {
-      setError(err.response?.data?.message || "Failed to save review");
-    } finally {
-      setLoading(false);
-    }
+      try {
+        setLoading(true);
+        setError("");
+
+        const reviewPayload = { rating: localRating, comment: localComment };
+
+        if (reviewingRental.isReviewed && reviewingRental.review?.rating) {
+          await rentalAPI.updateReview(reviewingRental._id, reviewPayload);
+        } else {
+          await rentalAPI.submitReview(reviewingRental._id, reviewPayload);
+        }
+
+        alert("✅ Review saved successfully!");
+        setShowReviewModal(false);
+        setReviewingRental(null);
+        setReviewData({ rating: 5, comment: "" });
+        fetchRentals();
+      } catch (err) {
+        setError(err.response?.data?.message || "Failed to save review");
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    return (
+      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+        <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl">
+          <h2 className="text-2xl font-bold mb-4 bg-gradient-to-r from-amber-600 to-orange-600 bg-clip-text text-transparent">
+            Rate Your Experience
+          </h2>
+          <div className="mb-4">
+            <p className="text-gray-700 font-medium mb-2">
+              How was your experience with {reviewingRental?.machineId?.name}?
+            </p>
+          </div>
+          {/* Star Rating */}
+          <div className="mb-6">
+            <label className="block font-semibold mb-3 text-center">
+              Your Rating
+            </label>
+            <div className="flex justify-center gap-2">
+              {[1, 2, 3, 4, 5].map((star) => (
+                <button
+                  key={star}
+                  type="button"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    setLocalRating(star);
+                  }}
+                  onMouseEnter={() => setHoveredRating(star)}
+                  onMouseLeave={() => setHoveredRating(0)}
+                  className="text-5xl focus:outline-none transition-transform hover:scale-110 cursor-pointer"
+                >
+                  {star <= (hoveredRating || localRating) ? (
+                    <span className="text-amber-400">⭐</span>
+                  ) : (
+                    <span className="text-gray-300">☆</span>
+                  )}
+                </button>
+              ))}
+            </div>
+            <p className="text-center text-sm text-gray-600 mt-2">
+              {localRating === 1 && "Poor"}
+              {localRating === 2 && "Fair"}
+              {localRating === 3 && "Good"}
+              {localRating === 4 && "Very Good"}
+              {localRating === 5 && "Excellent"}
+            </p>
+          </div>
+          {/* Comment */}
+          <div className="mb-4">
+            <label className="block font-semibold mb-2">
+              Your Review (Optional)
+            </label>
+            <textarea
+              value={localComment}
+              onChange={(e) => setLocalComment(e.target.value)}
+              placeholder="Share your experience with this machine..."
+              rows={4}
+              maxLength={500}
+              className="w-full p-3 border-2 border-gray-200 rounded-xl focus:border-amber-500 focus:outline-none text-sm resize-none"
+              autoComplete="off"
+            />
+            <small className="text-gray-500 text-xs">
+              {localComment.length}/500 characters
+            </small>
+          </div>
+          {error && (
+            <div className="mb-4 p-3 bg-rose-50 border border-rose-200 text-rose-700 rounded-xl text-sm">
+              {error}
+            </div>
+          )}
+          <div className="flex gap-3">
+            <button
+              onClick={() => {
+                setShowReviewModal(false);
+                setReviewingRental(null);
+                setReviewData({ rating: 5, comment: "" });
+              }}
+              disabled={loading}
+              className="flex-1 px-4 py-3 border-2 border-gray-300 rounded-xl hover:bg-gray-50 font-semibold text-gray-700"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleSubmitReview}
+              disabled={loading || !localRating}
+              className="flex-1 px-4 py-3 bg-gradient-to-r from-amber-500 to-orange-500 text-white rounded-xl font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {loading ? "Saving..." : "Save Review"}
+            </button>
+          </div>
+        </div>
+      </div>
+    );
   };
 
-  return (
+  // ============== CONFIRMATION MODAL ==============
+  const ConfirmCompletionModal = () => (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
       <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl">
-        <h2 className="text-2xl font-bold mb-4 bg-gradient-to-r from-amber-600 to-orange-600 bg-clip-text text-transparent">
-          Rate Your Experience
+        <h2 className="text-2xl font-bold mb-4 bg-gradient-to-r from-emerald-600 to-teal-600 bg-clip-text text-transparent">
+          Confirm Service Completion
         </h2>
+        <p className="text-gray-700 mb-4">
+          Please confirm that <strong>{confirmingRental?.machineId?.name}</strong>{" "}
+          service was completed satisfactorily.
+        </p>
         <div className="mb-4">
-          <p className="text-gray-700 font-medium mb-2">
-            How was your experience with {reviewingRental?.machineId?.name}?
-          </p>
-        </div>
-        {/* Star Rating */}
-        <div className="mb-6">
-          <label className="block font-semibold mb-3 text-center">
-            Your Rating
-          </label>
-          <div className="flex justify-center gap-2">
-            {[1, 2, 3, 4, 5].map((star) => (
-              <button
-                key={star}
-                type="button"
-                onClick={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  setLocalRating(star);
-                }}
-                onMouseEnter={() => setHoveredRating(star)}
-                onMouseLeave={() => setHoveredRating(0)}
-                className="text-5xl focus:outline-none transition-transform hover:scale-110 cursor-pointer"
-              >
-                {star <= (hoveredRating || localRating) ? (
-                  <span className="text-amber-400">⭐</span>
-                ) : (
-                  <span className="text-gray-300">☆</span>
-                )}
-              </button>
-            ))}
-          </div>
-          <p className="text-center text-sm text-gray-600 mt-2">
-            {localRating === 1 && "Poor"}
-            {localRating === 2 && "Fair"}
-            {localRating === 3 && "Good"}
-            {localRating === 4 && "Very Good"}
-            {localRating === 5 && "Excellent"}
-          </p>
-        </div>
-        {/* Comment */}
-        <div className="mb-4">
-          <label className="block font-semibold mb-2">
-            Your Review (Optional)
+          <label className="block font-semibold mb-2 text-sm">
+            How was the service? (Optional)
           </label>
           <textarea
-            value={localComment}
-            onChange={(e) => setLocalComment(e.target.value)}
-            placeholder="Share your experience with this machine..."
+            value={completionNote}
+            onChange={(e) => setCompletionNote(e.target.value)}
+            placeholder="The tractor worked perfectly, job completed on time..."
             rows={4}
+            className="w-full p-3 border-2 border-gray-200 rounded-xl focus:border-emerald-500 focus:outline-none text-sm"
             maxLength={500}
-            className="w-full p-3 border-2 border-gray-200 rounded-xl focus:border-amber-500 focus:outline-none text-sm resize-none"
-            autoComplete="off"
           />
           <small className="text-gray-500 text-xs">
-            {localComment.length}/500 characters
+            {completionNote.length}/500 characters (minimum 10)
           </small>
         </div>
-        {error && (
-          <div className="mb-4 p-3 bg-rose-50 border border-rose-200 text-rose-700 rounded-xl text-sm">
-            {error}
-          </div>
-        )}
+        <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 mb-4">
+          <p className="text-xs text-gray-700">
+            ✅ Once confirmed, AgriRent will verify and release $
+            {confirmingRental?.pricing?.totalPrice?.toFixed(2)} to the owner
+            within 24-48 hours.
+          </p>
+        </div>
         <div className="flex gap-3">
           <button
             onClick={() => {
-              setShowReviewModal(false);
-              setReviewingRental(null);
-              setReviewData({ rating: 5, comment: "" });
+              setShowConfirmCompletionModal(false);
+              setConfirmingRental(null);
+              setCompletionNote("");
             }}
-            disabled={loading}
             className="flex-1 px-4 py-3 border-2 border-gray-300 rounded-xl hover:bg-gray-50 font-semibold text-gray-700"
           >
             Cancel
           </button>
           <button
-            onClick={handleSubmitReview}
-            disabled={loading || !localRating}
-            className="flex-1 px-4 py-3 bg-gradient-to-r from-amber-500 to-orange-500 text-white rounded-xl font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
+            onClick={handleConfirmCompletion}
+            disabled={completionNote.length < 10}
+            className="flex-1 px-4 py-3 bg-gradient-to-r from-emerald-500 to-teal-500 text-white rounded-xl font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            {loading ? "Saving..." : "Save Review"}
+            Confirm & Release Payment
           </button>
         </div>
       </div>
     </div>
   );
-};
+
+  // ============== DISPUTE MODAL ==============
+  const DisputeModal = () => (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl">
+        <h2 className="text-2xl font-bold mb-4 bg-gradient-to-r from-orange-600 to-red-600 bg-clip-text text-transparent">
+          Open Dispute
+        </h2>
+        <p className="text-gray-700 mb-4">
+          If there was an issue with the service, please provide details below.
+          Our team will review and resolve fairly.
+        </p>
+        <div className="mb-4">
+          <label className="block font-semibold mb-2 text-sm">
+            What went wrong? *
+          </label>
+          <textarea
+            value={disputeReason}
+            onChange={(e) => setDisputeReason(e.target.value)}
+            placeholder="The machine broke down after 2 hours, incomplete work..."
+            rows={5}
+            className="w-full p-3 border-2 border-gray-200 rounded-xl focus:border-orange-500 focus:outline-none text-sm"
+            maxLength={1000}
+          />
+          <small className="text-gray-500 text-xs">
+            {disputeReason.length}/1000 characters (minimum 20)
+          </small>
+        </div>
+        <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 mb-4">
+          <p className="text-xs text-gray-700">
+            ⚠️ Your payment of ${disputingRental?.pricing?.totalPrice?.toFixed(2)}{" "}
+            is secure. Our team will investigate and resolve within 24-48 hours.
+          </p>
+        </div>
+        <div className="flex gap-3">
+          <button
+            onClick={() => {
+              setShowDisputeModal(false);
+              setDisputingRental(null);
+              setDisputeReason("");
+            }}
+            className="flex-1 px-4 py-3 border-2 border-gray-300 rounded-xl hover:bg-gray-50 font-semibold text-gray-700"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handleOpenDispute}
+            disabled={disputeReason.length < 20}
+            className="flex-1 px-4 py-3 bg-gradient-to-r from-orange-500 to-red-500 text-white rounded-xl font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            Submit Dispute
+          </button>
+        </div>
+      </div>
+    </div>
+  );
 
   return (
     <div className="bg-gradient-to-br from-gray-50 to-blue-50 min-h-screen pb-20 max-w-md mx-auto">
@@ -1951,6 +2230,8 @@ const ReviewModal = () => {
       {currentView === "profile" && <ProfileScreen />}
       {currentView === "myMachines" && <MyMachinesScreen />}
       {currentView === "requests" && <RentalRequestsScreen />}
+      
+      {/* All Modals */}
       {showAddMachineForm && <AddMachineForm />}
       {showEditMachineForm && editingMachine && <EditMachineForm />}
       {showBookingModal && bookingMachine && (
@@ -1965,6 +2246,22 @@ const ReviewModal = () => {
       )}
       {showReviewModal && reviewingRental && (
         <ReviewModal key={reviewingRental._id} />
+      )}
+      {showPaymentModal && paymentRental && (
+        <PaymentModal
+          rental={paymentRental}
+          onClose={() => {
+            setShowPaymentModal(false);
+            setPaymentRental(null);
+          }}
+          onPaymentSuccess={handlePaymentSuccess}
+        />
+      )}
+      {showConfirmCompletionModal && confirmingRental && (
+        <ConfirmCompletionModal />
+      )}
+      {showDisputeModal && disputingRental && (
+        <DisputeModal />
       )}
 
       <div className="fixed bottom-0 left-0 right-0 bg-white/80 backdrop-blur-lg border-t px-4 py-3 flex justify-around shadow-lg max-w-md mx-auto">
