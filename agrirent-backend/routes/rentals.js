@@ -682,15 +682,25 @@ router.patch("/:id/complete", protect, async (req, res) => {
       });
     }
 
-    if (rental.status !== "approved") {
-      return res.status(400).json({
-        success: false,
-        message: "Only approved rentals can be completed",
-      });
-    }
+// Only allow completion if payment is secured in escrow
+if (rental.status !== "active") {
+  return res.status(400).json({
+    success: false,
+    message: "Rental must be active (paid) before it can be completed",
+  });
+}
 
-    rental.status = "completed";
-    await rental.save();
+// Optional: Also verify payment exists
+const payment = await Payment.findOne({ rentalId: rental._id });
+if (!payment || payment.escrowStatus !== 'held') {
+  return res.status(400).json({
+    success: false,
+    message: "Payment must be secured in escrow before completing rental",
+  });
+}
+
+rental.status = "completed";
+await rental.save();
 
     const machine = await Machine.findById(rental.machineId);
     machine.availability = "available";

@@ -57,12 +57,16 @@ export const rentalAPI = {
 // ============== COMPREHENSIVE PAYMENT API WITH ESCROW ==============
 export const paymentAPI = {
   // ========== PAYMENT PROCESSING ==========
-  
   // Stripe Payments
-  createStripePayment: (data) => api.post("/payments/stripe/create-intent", data),
-  confirmStripePayment: (paymentIntentId) => 
-    api.post("/payments/stripe/confirm", { paymentIntentId }),
-  saveStripePaymentMethod: (data) => api.post("/payments/stripe/save-payment-method", data),
+  // ✅ NEW: Create Stripe Checkout Session (USE THIS!)
+  createCheckoutSession: (data) => api.post('/payments/stripe/create-checkout-session', data),
+  
+  // ✅ NEW: Verify payment status after redirect
+  verifySession: (sessionId) => api.get(`/payments/stripe/verify-session/${sessionId}`),
+  
+  // Old methods (keep for backward compatibility)
+  createStripePayment: (data) => api.post('/payments/stripe/create-intent', data),
+  confirmStripePayment: (paymentIntentId) => api.post('/payments/stripe/confirm', { paymentIntentId }),
   
   // PayPal Payments
   createPayPalOrder: (data) => api.post("/payments/paypal/create-order", data),

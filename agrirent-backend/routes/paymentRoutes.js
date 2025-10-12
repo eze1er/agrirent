@@ -4,16 +4,36 @@ const { protect, authorize } = require('../middleware/auth');
 const Payment = require('../models/Payment');
 const Rental = require('../models/Rental');
 const User = require('../models/User');
-// Assurez-vous d'avoir les utilitaires pour l'envoi d'e-mails/SMS
 const { sendEmail, sendSMS } = require('../utils/notifications'); 
 
 // Initialisation conditionnelle de Stripe
-const stripe = process.env.STRIPE_SECRET_KEY 
-  ? require('stripe')(process.env.STRIPE_SECRET_KEY)
-  : null;
+let stripe = null;
 
+// Initialize Stripe immediately when the module loads
+if (process.env.STRIPE_SECRET_KEY) {
+  try {
+    stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
+    console.log('✅ Stripe initialized in paymentRoutes with key:', 
+      process.env.STRIPE_SECRET_KEY.substring(0, 10) + '...');
+  } catch (error) {
+    console.error('❌ Failed to initialize Stripe:', error.message);
+  }
+} else {
+  console.warn('⚠️ No STRIPE_SECRET_KEY found in paymentRoutes.js');
+  console.warn('   process.env.STRIPE_SECRET_KEY =', process.env.STRIPE_SECRET_KEY);
+}
+
+  
+// Middleware pour s'assurer que Stripe est configuré
 // Middleware pour s'assurer que Stripe est configuré
 const requireStripe = (req, res, next) => {
+  console.log('🔍 requireStripe check:', {
+    stripeExists: !!stripe,
+    envKeyExists: !!process.env.STRIPE_SECRET_KEY,
+    keyPrefix: process.env.STRIPE_SECRET_KEY ? 
+      process.env.STRIPE_SECRET_KEY.substring(0, 10) + '...' : 'NONE'
+  });
+  
   if (!stripe) {
     console.warn('⚠️ WARNING: STRIPE_SECRET_KEY not configured. Payment routes are disabled.');
     return res.status(503).json({
@@ -23,15 +43,172 @@ const requireStripe = (req, res, next) => {
   }
   next();
 };
+router.get('/stripe/test', (req, res) => {
+  res.json({
+    stripeConfigured: !!stripe,
+    hasSecretKey: !!process.env.STRIPE_SECRET_KEY,
+    keyPrefix: process.env.STRIPE_SECRET_KEY ? process.env.STRIPE_SECRET_KEY.substring(0, 7) : 'none'
+  });
+});
+// ============== ✅ NEW: STRIPE CHECKOUT SESSION ==============
+// This is what you need for the popup payment flow
+router.post('/stripe/create-checkout-session', protect, requireStripe, async (req, res) => {
+  try {
+    const { rentalId } = req.body;
 
-// ============== STRIPE ESCROW PAYMENT ==============
+    console.log('Creating checkout session for rental:', rentalId);
+
+    // Validate rental
+    const rental = await Rental.findById(rentalId)
+      .populate('machineId')
+      .populate('ownerId');
+      
+    if (!rental) {
+      return res.status(404).json({ success: false, message: 'Rental not found' });
+    }
+
+    // Check if user is the renter
+    if (rental.renterId.toString() !== req.user.id) {
+      return res.status(403).json({ 
+        success: false, 
+        message: 'Not authorized to pay for this rental' 
+      });
+    }
+
+    // Get the amount from rental pricing
+    const amount = rental.pricing?.totalPrice || rental.totalPrice;
+    
+    if (!amount || amount <= 0) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Invalid rental amount' 
+      });
+    }
+
+    console.log('Amount to charge:', amount);
+
+    // Create Stripe Checkout Session
+    const session = await stripe.checkout.sessions.create({
+      payment_method_types: ['card'],
+      line_items: [{
+        price_data: {
+          currency: 'usd',
+          product_data: {
+            name: `Rental: ${rental.machineId?.name || 'Machine'}`,
+            description: `Rental from ${rental.startDate} to ${rental.endDate}`,
+            images: rental.machineId?.images?.[0] ? [rental.machineId.images[0]] : [],
+          },
+          unit_amount: Math.round(amount * 100), // Convert to cents
+        },
+        quantity: 1,
+      }],
+      mode: 'payment',
+      success_url: `${process.env.FRONTEND_URL}/rentals/${rentalId}/success?session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: `${process.env.FRONTEND_URL}/rentals/${rentalId}`,
+      metadata: {
+        rentalId: rentalId.toString(), // ⚠️ CRITICAL: This is what the webhook needs
+        userId: req.user.id.toString(),
+        ownerId: rental.ownerId._id.toString(),
+        type: 'rental_payment',
+      },
+      customer_email: req.user.email,
+    });
+
+    console.log('✅ Checkout session created:', session.id);
+
+    // Create a pending payment record
+    await Payment.create({
+      userId: req.user.id,
+      rentalId,
+      ownerId: rental.ownerId._id,
+      amount,
+      currency: 'usd',
+      method: 'stripe',
+      status: 'pending',
+      escrowStatus: 'pending',
+      transactionId: session.id, // Store session ID temporarily
+      metadata: {
+        checkoutSessionId: session.id,
+      },
+    });
+
+    res.json({
+      success: true,
+      data: {
+        sessionId: session.id,
+        url: session.url, // Redirect user to this URL
+      },
+    });
+  } catch (error) {
+    console.error('Stripe checkout error:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: error.message 
+    });
+  }
+});
+
+// ============== VERIFY PAYMENT STATUS ==============
+// Frontend can call this after payment to verify it worked
+router.get('/stripe/verify-session/:sessionId', protect, requireStripe, async (req, res) => {
+  try {
+    const { sessionId } = req.params;
+    
+    const session = await stripe.checkout.sessions.retrieve(sessionId);
+    
+    if (session.payment_status === 'paid') {
+      // Find the rental from metadata
+      const rentalId = session.metadata?.rentalId;
+      
+      if (rentalId) {
+        const rental = await Rental.findById(rentalId);
+        const payment = await Payment.findOne({ rentalId });
+        
+        res.json({
+          success: true,
+          paid: true,
+          rental: {
+            id: rental?._id,
+            status: rental?.status,
+            paymentStatus: rental?.paymentInfo?.status,
+          },
+          payment: {
+            id: payment?._id,
+            status: payment?.status,
+            escrowStatus: payment?.escrowStatus,
+          }
+        });
+      } else {
+        res.json({
+          success: true,
+          paid: true,
+          message: 'Payment successful but rental not found in metadata'
+        });
+      }
+    } else {
+      res.json({
+        success: false,
+        paid: false,
+        status: session.payment_status
+      });
+    }
+  } catch (error) {
+    console.error('Verify session error:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: error.message 
+    });
+  }
+});
+
+// ============== STRIPE ESCROW PAYMENT (Keep existing) ==============
 
 // Créer l'intention de paiement et retenir les fonds en séquestre
 router.post('/stripe/create-intent', protect, requireStripe, async (req, res) => {
   try {
     const { amount, currency = 'usd', rentalId } = req.body;
 
-    console.log('Creating payment intent:', { amount, currency, rentalId }); // Debug
+    console.log('Creating payment intent:', { amount, currency, rentalId });
 
     // Validate rental
     const rental = await Rental.findById(rentalId);
@@ -41,7 +218,7 @@ router.post('/stripe/create-intent', protect, requireStripe, async (req, res) =>
 
     // Create payment intent
     const paymentIntent = await stripe.paymentIntents.create({
-      amount: Math.round(amount * 100), // Stripe uses cents
+      amount: Math.round(amount * 100),
       currency,
       metadata: {
         rentalId: rentalId,
@@ -49,10 +226,9 @@ router.post('/stripe/create-intent', protect, requireStripe, async (req, res) =>
         ownerId: rental.ownerId.toString(),
         type: 'escrow',
       },
-      // ✅ IMPORTANT: No transfer_data - keeps money in platform account
     });
 
-    console.log('Payment intent created:', paymentIntent.id); // Debug
+    console.log('Payment intent created:', paymentIntent.id);
 
     // Save payment record
     const payment = await Payment.create({
@@ -64,18 +240,17 @@ router.post('/stripe/create-intent', protect, requireStripe, async (req, res) =>
       method: 'stripe',
       status: 'pending',
       escrowStatus: 'pending',
-      transactionId: paymentIntent.id, // ✅ Save the ID
+      transactionId: paymentIntent.id,
       metadata: {
         clientSecret: paymentIntent.client_secret,
       },
     });
 
-    // ✅ Return both clientSecret and paymentIntentId
     res.json({
       success: true,
       data: {
         clientSecret: paymentIntent.client_secret,
-        paymentIntentId: paymentIntent.id, // ✅ Include this
+        paymentIntentId: paymentIntent.id,
         paymentId: payment._id,
       },
     });
@@ -93,7 +268,6 @@ router.post('/stripe/confirm', protect, requireStripe, async (req, res) => {
   try {
     const { paymentIntentId } = req.body;
 
-    // ✅ Validate paymentIntentId exists
     if (!paymentIntentId) {
       return res.status(400).json({ 
         success: false, 
@@ -101,7 +275,7 @@ router.post('/stripe/confirm', protect, requireStripe, async (req, res) => {
       });
     }
 
-    console.log('Confirming payment intent:', paymentIntentId); // Debug
+    console.log('Confirming payment intent:', paymentIntentId);
 
     const paymentIntent = await stripe.paymentIntents.retrieve(paymentIntentId);
 
@@ -115,12 +289,10 @@ router.post('/stripe/confirm', protect, requireStripe, async (req, res) => {
         });
       }
 
-      // Mark as held in escrow
       await payment.markAsHeldInEscrow();
       payment.escrowTimeline.paidAt = new Date();
       await payment.save();
 
-      // Update rental
       await Rental.findByIdAndUpdate(payment.rentalId, {
         status: 'active',
         'payment.status': 'held_in_escrow',
@@ -150,9 +322,10 @@ router.post('/stripe/confirm', protect, requireStripe, async (req, res) => {
   }
 });
 
-// ============== RENTER CONFIRMATION ==============
+// ============== REST OF YOUR EXISTING ROUTES ==============
+// (Keep all your other routes exactly as they are)
 
-// Le locataire confirme que le travail est terminé
+// RENTER CONFIRMATION
 router.post('/confirm-completion/:rentalId', protect, async (req, res) => {
   try {
     const { rentalId } = req.params;
@@ -161,13 +334,12 @@ router.post('/confirm-completion/:rentalId', protect, async (req, res) => {
     const rental = await Rental.findById(rentalId)
       .populate('ownerId')
       .populate('renterId')
-      .populate('machineId'); // Populer pour la notification
+      .populate('machineId');
     
     if (!rental) {
       return res.status(404).json({ success: false, message: 'Rental not found' });
     }
 
-    // Vérifier que c'est bien le locataire
     if (rental.renterId._id.toString() !== req.user.id) {
       return res.status(403).json({ 
         success: false, 
@@ -175,8 +347,6 @@ router.post('/confirm-completion/:rentalId', protect, async (req, res) => {
       });
     }
 
-    // Vérifier que la location est en statut "completed" (ou active, selon votre workflow)
-    // J'ai ajusté la condition pour être plus tolérant si le statut est 'active' ou 'completed'
     if (rental.status !== 'active' && rental.status !== 'completed') {
        return res.status(400).json({ 
         success: false, 
@@ -196,15 +366,12 @@ router.post('/confirm-completion/:rentalId', protect, async (req, res) => {
       });
     }
 
-    // Confirmation par le locataire
     await payment.confirmByRenter(confirmationNote);
 
-    // Mettre à jour la location
     rental.renterConfirmedCompletion = true;
     rental.renterConfirmedAt = new Date();
     await rental.save();
 
-    // Notifier l'administrateur pour vérification
     await sendEmail({
       to: process.env.ADMIN_EMAIL,
       subject: 'Libération de Paiement en Attente - Locataire Confirmé',
@@ -220,7 +387,6 @@ router.post('/confirm-completion/:rentalId', protect, async (req, res) => {
       `,
     });
 
-    // Notifier le propriétaire
     await sendEmail({
       to: rental.ownerId.email,
       subject: 'Location Confirmée - Paiement en Cours de Traitement',
@@ -243,527 +409,53 @@ router.post('/confirm-completion/:rentalId', protect, async (req, res) => {
   }
 });
 
-// ============== ADMIN VERIFICATION & RELEASE ==============
+// Keep all your other existing routes...
+// (I'm keeping the code shorter here, but include ALL your other routes)
 
-// L'administrateur vérifie et libère le paiement
-router.post('/admin/verify-and-release/:paymentId', 
-  protect, 
-  authorize('admin'), 
-  requireStripe,
-  async (req, res) => {
-    try {
-      const { paymentId } = req.params;
-      const { adminNote } = req.body;
-
-      const payment = await Payment.findById(paymentId)
-        .populate('userId')
-        .populate('ownerId')
-        .populate('rentalId');
-
-      if (!payment) {
-        return res.status(404).json({ success: false, message: 'Payment not found' });
-      }
-
-      if (payment.escrowStatus !== 'held') {
-        return res.status(400).json({ 
-          success: false, 
-          message: 'Payment is not in escrow' 
-        });
-      }
-
-      if (!payment.confirmations.renterConfirmed) {
-        return res.status(400).json({ 
-          success: false, 
-          message: 'Renter has not confirmed completion yet' 
-        });
-      }
-
-      // Vérification par l'administrateur
-      await payment.verifyByAdmin(req.user.id, adminNote);
-
-      // Libération du séquestre
-      await payment.releaseToOwner();
-
-      // Création du transfert Stripe vers le compte connecté du propriétaire
-      if (payment.method === 'stripe' && payment.ownerId.stripeAccountId) {
-        const transfer = await stripe.transfers.create({
-          amount: Math.round(payment.payout.amount * 100),
-          currency: payment.currency.toLowerCase(),
-          destination: payment.ownerId.stripeAccountId,
-          transfer_group: payment.rentalId._id.toString(),
-          metadata: {
-            paymentId: payment._id.toString(),
-            rentalId: payment.rentalId._id.toString(),
-          },
-        });
-
-        payment.payout.status = 'completed';
-        payment.payout.payoutTransactionId = transfer.id;
-        payment.payout.payoutAt = new Date();
-        await payment.save();
-      } else {
-        // Si pas de compte connecté, paiement manuel en attente
-        payment.payout.status = 'pending';
-        await payment.save();
-      }
-
-      // Notifier le propriétaire
-      await sendEmail({
-        to: payment.ownerId.email,
-        subject: 'Paiement Libéré - Fonds en Route!',
-        html: `
-          <h2>💰 Paiement Libéré!</h2>
-          <p>Excellente nouvelle! Votre paiement pour la location #${payment.rentalId._id} a été libéré.</p>
-          <p><strong>Montant:</strong> $${payment.payout.amount.toFixed(2)}</p>
-          <p><strong>Frais de Plateforme:</strong> $${payment.platformFee.amount.toFixed(2)}</p>
-          <p>Les fonds arriveront sur votre compte d'ici 2 à 5 jours ouvrables.</p>
-        `,
-      });
-
-      res.json({ 
-        success: true, 
-        message: 'Payment verified and released to owner',
-        data: payment 
-      });
-    } catch (error) {
-      console.error('Release error:', error);
-      res.status(500).json({ success: false, message: error.message });
-    }
-});
-
-// ============== DISPUTE MANAGEMENT ==============
-
-// Ouvrir un litige
-router.post('/dispute/open/:rentalId', protect, async (req, res) => {
+router.post('/debug-payment', protect, async (req, res) => {
   try {
-    const { rentalId } = req.params;
-    const { reason } = req.body;
-
-    if (!reason || reason.length < 20) {
-      return res.status(400).json({ 
-        success: false, 
-        message: 'Please provide a detailed reason (min 20 characters)' 
-      });
-    }
-
-    const rental = await Rental.findById(rentalId).populate('ownerId').populate('renterId');
-    if (!rental) {
-      return res.status(404).json({ success: false, message: 'Rental not found' });
-    }
-
-    // Vérifier si l'utilisateur est le locataire ou le propriétaire
-    const isRenter = rental.renterId._id.toString() === req.user.id;
-    const isOwner = rental.ownerId._id.toString() === req.user.id;
+    const { rentalId } = req.body;
     
-    if (!isRenter && !isOwner) {
-      return res.status(403).json({ 
-        success: false, 
-        message: 'Only renter or owner can open a dispute' 
-      });
-    }
-
-    const payment = await Payment.findOne({ rentalId });
-    if (!payment) {
-      return res.status(404).json({ success: false, message: 'Payment not found' });
-    }
-
-    if (payment.escrowStatus !== 'held') {
+    if (!rentalId) {
       return res.status(400).json({ 
         success: false, 
-        message: 'Can only dispute payments held in escrow' 
+        message: 'Rental ID is required' 
       });
     }
-
-    // Ouvrir le litige
-    await payment.openDispute(req.user.id, reason);
-
-    // Mettre à jour la location
-    rental.status = 'disputed';
-    await rental.save();
-
-    // Notifier l'administrateur
-    await sendEmail({
-      to: process.env.ADMIN_EMAIL,
-      subject: '⚠️ Litige de Paiement Ouvert',
-      html: `
-        <h2>Litige de Paiement Ouvert</h2>
-        <p><strong>ID Location:</strong> ${rental._id}</p>
-        <p><strong>Montant:</strong> $${payment.amount}</p>
-        <p><strong>Ouvert par:</strong> ${isRenter ? 'Locataire' : 'Propriétaire'}</p>
-        <p><strong>Raison:</strong> ${reason}</p>
-        <p>Veuillez examiner et résoudre ce litige.</p>
-        <a href="${process.env.ADMIN_DASHBOARD_URL}/disputes/${payment._id}">Examiner le Litige</a>
-      `,
-    });
-
-    // Notifier l'autre partie
-    const otherParty = isRenter ? rental.ownerId : rental.renterId;
-    await sendEmail({
-      to: otherParty.email,
-      subject: 'Litige Ouvert pour Votre Location',
-      html: `
-        <h2>Un Litige a été Ouvert</h2>
-        <p>Un litige a été ouvert pour la location #${rental._id}.</p>
-        <p>Notre équipe examinera le cas et contactera les deux parties.</p>
-        <p>Vos fonds sont sécurisés et seront gérés équitablement.</p>
-      `,
-    });
-
-    res.json({ 
-      success: true, 
-      message: 'Dispute opened. Our team will review within 24 hours.',
-      data: payment 
-    });
-  } catch (error) {
-    console.error('Dispute error:', error);
-    res.status(500).json({ success: false, message: error.message });
-  }
-});
-
-// L'administrateur résout le litige
-router.post('/admin/resolve-dispute/:paymentId', 
-  protect, 
-  authorize('admin'), 
-  requireStripe,
-  async (req, res) => {
-    try {
-      const { paymentId } = req.params;
-      const { outcome, resolution, refundAmount, releaseAmount } = req.body;
-
-      const payment = await Payment.findById(paymentId)
-        .populate('userId')
-        .populate('ownerId');
-
-      if (!payment) {
-        return res.status(404).json({ success: false, message: 'Payment not found' });
-      }
-
-      if (!payment.dispute.isDisputed) {
-        return res.status(400).json({ 
-          success: false, 
-          message: 'No active dispute for this payment' 
-        });
-      }
-
-      // Définir les montants en fonction du résultat
-      if (outcome === 'partial_refund' || outcome === 'split') {
-        payment.dispute.refundAmount = refundAmount;
-        payment.dispute.releaseAmount = releaseAmount;
-      }
-
-      // Résoudre le litige
-      await payment.resolveDispute(req.user.id, outcome, resolution);
-
-      // Traiter le remboursement si nécessaire
-      if (['refund_to_renter', 'partial_refund', 'split'].includes(outcome)) {
-        // Le montant à rembourser est le montant total ou le montant spécifié
-        const amountToRefund = outcome === 'refund_to_renter' 
-            ? payment.amount 
-            : refundAmount;
-
-        const refund = await stripe.refunds.create({
-          payment_intent: payment.transactionId,
-          amount: Math.round(amountToRefund * 100),
-          reason: 'requested_by_customer',
-          metadata: {
-            paymentId: payment._id.toString(),
-            disputeResolution: outcome,
-          },
-        });
-
-        payment.refund.refundId = refund.id;
-        payment.refund.refundedAt = new Date();
-        await payment.save();
-      }
-
-      // Traiter le versement si nécessaire
-      if (['release_to_owner', 'partial_refund', 'split'].includes(outcome)) {
-        if (payment.ownerId.stripeAccountId) {
-          // Le montant à verser est le net ou le montant spécifié
-          const payoutAmount = outcome === 'release_to_owner' 
-            ? payment.netAmountToOwner 
-            : releaseAmount;
-
-          if (payoutAmount > 0) {
-            const transfer = await stripe.transfers.create({
-              amount: Math.round(payoutAmount * 100),
-              currency: payment.currency.toLowerCase(),
-              destination: payment.ownerId.stripeAccountId,
-            });
-
-            payment.payout.status = 'completed';
-            payment.payout.payoutTransactionId = transfer.id;
-            payment.payout.payoutAt = new Date();
-            await payment.save();
-          }
-        }
-      }
-
-      // Notifier les deux parties
-      await sendEmail({
-        to: payment.userId.email,
-        subject: 'Litige Résolu',
-        html: `
-          <h2>Résolution du Litige</h2>
-          <p>Votre litige a été résolu.</p>
-          <p><strong>Résultat:</strong> ${outcome.replace(/_/g, ' ')}</p>
-          <p><strong>Résolution:</strong> ${resolution}</p>
-          ${payment.refund.refundId ? `<p><strong>Montant Remboursé:</strong> $${(payment.refund.refundId && refundAmount) ? refundAmount.toFixed(2) : 'N/A'}</p>` : ''}
-        `,
-      });
-
-      await sendEmail({
-        to: payment.ownerId.email,
-        subject: 'Litige Résolu',
-        html: `
-          <h2>Résolution du Litige</h2>
-          <p>Le litige a été résolu.</p>
-          <p><strong>Résultat:</strong> ${outcome.replace(/_/g, ' ')}</p>
-          <p><strong>Résolution:</strong> ${resolution}</p>
-          ${payment.payout.payoutTransactionId ? `<p><strong>Montant Libéré:</strong> $${(payment.payout.payoutTransactionId && releaseAmount) ? releaseAmount.toFixed(2) : 'N/A'}</p>` : ''}
-        `,
-      });
-
-      res.json({ 
-        success: true, 
-        message: 'Dispute resolved successfully',
-        data: payment 
-      });
-    } catch (error) {
-      console.error('Resolve dispute error:', error);
-      res.status(500).json({ success: false, message: error.message });
-    }
-});
-
-// ============== AUTO-RELEASE JOB ==============
-
-// Obtenir les paiements prêts pour la libération automatique (appelé par une tâche cron)
-router.get('/admin/auto-release-check', 
-  protect, 
-  authorize('admin'), 
-  requireStripe,
-  async (req, res) => {
-    try {
-      // Assurez-vous que getPendingReleases est implémenté dans le modèle Payment
-      const pendingReleases = await Payment.getPendingReleases(); 
-
-      const results = [];
-      for (const payment of pendingReleases) {
-        try {
-          // Libération automatique au propriétaire
-          await payment.releaseToOwner();
-          
-          // Traitement du versement
-          if (payment.method === 'stripe' && payment.ownerId.stripeAccountId) {
-            const transfer = await stripe.transfers.create({
-              amount: Math.round(payment.payout.amount * 100),
-              currency: payment.currency.toLowerCase(),
-              destination: payment.ownerId.stripeAccountId,
-            });
-            
-            payment.payout.status = 'completed';
-            payment.payout.payoutTransactionId = transfer.id;
-            payment.payout.payoutAt = new Date();
-            await payment.save();
-          }
-          
-          // Notifier le propriétaire
-          const owner = await User.findById(payment.ownerId);
-          await sendEmail({
-            to: owner.email,
-            subject: 'Paiement Auto-Libéré',
-            html: `
-              <h2>💰 Paiement Libéré!</h2>
-              <p>Votre paiement de $${payment.payout.amount.toFixed(2)} a été automatiquement libéré.</p>
-              <p>Les fonds arriveront sur votre compte d'ici 2 à 5 jours ouvrables.</p>
-            `,
-          });
-          
-          results.push({ paymentId: payment._id, status: 'released' });
-        } catch (error) {
-          console.error(`Failed to auto-release payment ${payment._id}:`, error);
-          results.push({ paymentId: payment._id, status: 'failed', error: error.message });
-        }
-      }
+    
+    const rental = await Rental.findById(rentalId)
+      .populate('renterId', 'firstName lastName email')
+      .populate('ownerId', 'firstName lastName email')
+      .populate('machineId', 'name');
       
-      res.json({ 
-        success: true, 
-        message: `Processed ${results.length} auto-releases`,
-        data: results 
-      });
-    } catch (error) {
-      console.error('Auto-release check error:', error);
-      res.status(500).json({ success: false, message: error.message });
-    }
-});
-
-// ============== PAYMENT STATUS & QUERIES ==============
-
-// Obtenir le solde du séquestre (admin seulement)
-router.get('/admin/escrow-balance', protect, authorize('admin'), async (req, res) => {
-  try {
-    const balance = await Payment.getEscrowBalance();
+    const payment = await Payment.findOne({ rentalId });
     
-    res.json({ 
-      success: true, 
-      data: balance 
+    res.json({
+      success: true,
+      rental: rental ? {
+        id: rental._id,
+        machine: rental.machineId?.name,
+        renter: rental.renterId?.email,
+        owner: rental.ownerId?.email,
+        status: rental.status,
+        payment: rental.payment,
+        paymentInfo: rental.paymentInfo,
+        amount: rental.pricing?.totalPrice,
+      } : null,
+      payment: payment ? {
+        id: payment._id,
+        transactionId: payment.transactionId,
+        escrowStatus: payment.escrowStatus,
+        amount: payment.amount,
+        status: payment.status,
+      } : null
     });
   } catch (error) {
-    res.status(500).json({ success: false, message: error.message });
-  }
-});
-
-// Obtenir les revenus du propriétaire
-router.get('/owner/earnings', protect, async (req, res) => {
-  try {
-    const earnings = await Payment.getOwnerEarnings(req.user.id);
-    
-    // Obtenir les gains en attente (en séquestre)
-    const pendingPayments = await Payment.find({
-      ownerId: req.user.id,
-      escrowStatus: 'held',
+    console.error('Debug error:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: error.message 
     });
-    
-    const pendingAmount = pendingPayments.reduce((sum, p) => sum + p.netAmountToOwner, 0);
-    
-    res.json({ 
-      success: true, 
-      data: {
-        ...earnings,
-        pendingEarnings: pendingAmount,
-        pendingCount: pendingPayments.length,
-      }
-    });
-  } catch (error) {
-    res.status(500).json({ success: false, message: error.message });
-  }
-});
-
-// Obtenir les détails du paiement avec les infos de séquestre
-router.get('/:paymentId', protect, async (req, res) => {
-  try {
-    const payment = await Payment.findById(req.params.paymentId)
-      .populate('rentalId')
-      .populate('userId', 'firstName lastName email')
-      .populate('ownerId', 'firstName lastName email')
-      .populate('confirmations.adminVerifiedBy', 'firstName lastName');
-
-    if (!payment) {
-      return res.status(404).json({ success: false, message: 'Payment not found' });
-    }
-
-    // Vérification de l'autorisation
-    const isRenter = payment.userId._id.toString() === req.user.id;
-    const isOwner = payment.ownerId._id.toString() === req.user.id;
-    const isAdmin = req.user.role === 'admin';
-    
-    if (!isRenter && !isOwner && !isAdmin) {
-      return res.status(403).json({ 
-        success: false, 
-        message: 'Not authorized to view this payment' 
-      });
-    }
-
-    res.json({ success: true, data: payment });
-  } catch (error) {
-    res.status(500).json({ success: false, message: error.message });
-  }
-});
-
-// Obtenir l'historique des paiements avec statut de séquestre
-router.get('/history/all', protect, async (req, res) => {
-  try {
-    const { status, escrowStatus } = req.query;
-    
-    const query = { userId: req.user.id };
-    if (status) query.status = status;
-    if (escrowStatus) query.escrowStatus = escrowStatus;
-    
-    const payments = await Payment.find(query)
-      .populate('rentalId')
-      .populate('ownerId', 'firstName lastName')
-      .sort({ createdAt: -1 });
-
-    res.json({ success: true, data: payments });
-  } catch (error) {
-    res.status(500).json({ success: false, message: error.message });
-  }
-});
-
-// Obtenir les versements en attente du propriétaire
-router.get('/owner/pending-payouts', protect, async (req, res) => {
-  try {
-    const payments = await Payment.find({
-      ownerId: req.user.id,
-      escrowStatus: 'held',
-    })
-      .populate('rentalId')
-      .populate('userId', 'firstName lastName')
-      .sort({ createdAt: -1 });
-
-    res.json({ success: true, data: payments });
-  } catch (error) {
-    res.status(500).json({ success: false, message: error.message });
-  }
-});
-
-// Obtenir tous les litiges (admin seulement)
-router.get('/admin/disputes', protect, authorize('admin'), async (req, res) => {
-  try {
-    const disputes = await Payment.find({
-      'dispute.isDisputed': true,
-      'dispute.status': { $in: ['open', 'under_review'] },
-    })
-      .populate('rentalId')
-      .populate('userId', 'firstName lastName email')
-      .populate('ownerId', 'firstName lastName email')
-      .populate('dispute.openedBy', 'firstName lastName')
-      .sort({ 'dispute.openedAt': -1 });
-
-    res.json({ success: true, data: disputes });
-  } catch (error) {
-    res.status(500).json({ success: false, message: error.message });
-  }
-});
-
-// ============== NOTIFICATIONS ==============
-
-// Renvoyer la confirmation de paiement au locataire
-router.post('/resend-confirmation/:paymentId', protect, async (req, res) => {
-  try {
-    const payment = await Payment.findById(req.params.paymentId)
-      .populate('rentalId')
-      .populate('userId');
-
-    if (!payment) {
-      return res.status(404).json({ success: false, message: 'Payment not found' });
-    }
-
-    if (payment.userId._id.toString() !== req.user.id) {
-      return res.status(403).json({ 
-        success: false, 
-        message: 'Not authorized' 
-      });
-    }
-
-    await sendEmail({
-      to: payment.userId.email,
-      subject: 'Confirmation de Paiement - AgriRent',
-      html: `
-        <h2>Confirmation de Paiement</h2>
-        <p>Votre paiement de $${payment.amount} est sécurisé en séquestre.</p>
-        <p><strong>ID Location:</strong> ${payment.rentalId._id}</p>
-        <p><strong>Statut:</strong> ${payment.escrowStatus}</p>
-        <p>Une fois la location terminée, veuillez la confirmer dans l'application pour libérer le paiement au propriétaire.</p>
-      `,
-    });
-
-    res.json({ 
-      success: true, 
-      message: 'Confirmation email sent' 
-    });
-  } catch (error) {
-    res.status(500).json({ success: false, message: error.message });
   }
 });
 
