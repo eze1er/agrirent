@@ -4,6 +4,7 @@ import Dashboard from './pages/Dashboard';
 import Auth from './components/Auth';
 import ForgotPassword from './pages/ForgotPassword';
 import ResetPassword from './pages/ResetPassword';
+import AdminEscrowDashboard from './components/AdminEscrowDashboard';
 
 function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -101,6 +102,19 @@ function App() {
       />
       <Route path="/forgot-password" element={<ForgotPassword />} />
       <Route path="/reset-password" element={<ResetPassword />} />
+      
+      {/* ✅ Admin Escrow Dashboard Route */}
+      <Route 
+        path="/admin/escrow" 
+        element={
+          isAuthenticated && currentUser?.role === 'admin' ? (
+            <AdminEscrowDashboard user={currentUser} onLogout={handleLogout} />
+          ) : (
+            <Navigate to="/" replace />
+          )
+        } 
+      />
+      
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );

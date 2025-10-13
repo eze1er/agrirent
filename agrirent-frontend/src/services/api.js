@@ -160,6 +160,10 @@ confirmCompletion: (rentalId, data) =>
   markNotificationRead: (notificationId) =>
     api.patch(`/payments/notifications/${notificationId}/read`),
   setupPaymentWebhook: (data) => api.post("/payments/webhooks/setup", data),
+  // Admin functions
+getPendingReleases: () => api.get('/payments/admin/pending-releases'),
+
+
   
   // ========== SECURITY & VERIFICATION ==========
   
