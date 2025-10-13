@@ -5,7 +5,7 @@ const machineSchema = new mongoose.Schema({
   category: { 
     type: String, 
     required: true,
-    enum: ['tractor', 'harvester', 'planter', 'sprayer', 'cultivator']
+    enum: ['tractor', 'harvester', 'planter', 'sprayer', 'cultivator', 'excavator', 'desherbeuse']
   },
   brand: { type: String, required: true },
   model: String,

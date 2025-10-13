@@ -4,6 +4,7 @@ const { protect } = require("../middleware/auth");
 const Rental = require("../models/Rental");
 const Machine = require("../models/Machine");
 const User = require("../models/User");
+const Payment = require("../models/Payment"); 
 const Notification = require("../models/Notification");
 const { sendEmail } = require("../services/emailService");
 const twilio = require("twilio");

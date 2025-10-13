@@ -32,7 +32,8 @@ export default function Dashboard({ user: currentUser, onLogout }) {
   // Payment and completion states
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [paymentRental, setPaymentRental] = useState(null);
-  const [showConfirmCompletionModal, setShowConfirmCompletionModal] = useState(false);
+  const [showConfirmCompletionModal, setShowConfirmCompletionModal] =
+    useState(false);
   const [confirmingRental, setConfirmingRental] = useState(null);
   const [completionNote, setCompletionNote] = useState("");
   const [showDisputeModal, setShowDisputeModal] = useState(false);
@@ -99,7 +100,9 @@ export default function Dashboard({ user: currentUser, onLogout }) {
     await fetchRentals();
     setShowPaymentModal(false);
     setPaymentRental(null);
-    alert(`✅ Payment successful! Your funds are secured in escrow.\n\nTransaction ID: ${paymentData.transactionId}\n\nThe owner will be notified and can now provide the service. Once completed, you'll confirm to release the payment.`);
+    alert(
+      `✅ Payment successful! Your funds are secured in escrow.\n\nTransaction ID: ${paymentData.transactionId}\n\nThe owner will be notified and can now provide the service. Once completed, you'll confirm to release the payment.`
+    );
   };
 
   // ============== RENTER CONFIRMS COMPLETION ==============
@@ -110,12 +113,17 @@ export default function Dashboard({ user: currentUser, onLogout }) {
     }
 
     try {
-      const response = await paymentAPI.confirmCompletion(confirmingRental._id, {
-        confirmationNote: completionNote,
-      });
+      const response = await paymentAPI.confirmCompletion(
+        confirmingRental._id,
+        {
+          confirmationNote: completionNote,
+        }
+      );
 
       if (response.data.success) {
-        alert("✅ Thank you! You've confirmed the rental is complete.\n\nAgriRent will verify and release the payment to the owner within 24-48 hours.");
+        alert(
+          "✅ Thank you! You've confirmed the rental is complete.\n\nAgriRent will verify and release the payment to the owner within 24-48 hours."
+        );
         setShowConfirmCompletionModal(false);
         setConfirmingRental(null);
         setCompletionNote("");
@@ -129,7 +137,9 @@ export default function Dashboard({ user: currentUser, onLogout }) {
   // ============== OPEN DISPUTE ==============
   const handleOpenDispute = async () => {
     if (!disputeReason.trim() || disputeReason.length < 20) {
-      alert("Please provide a detailed reason for the dispute (minimum 20 characters)");
+      alert(
+        "Please provide a detailed reason for the dispute (minimum 20 characters)"
+      );
       return;
     }
 
@@ -139,7 +149,9 @@ export default function Dashboard({ user: currentUser, onLogout }) {
       });
 
       if (response.data.success) {
-        alert("⚠️ Dispute opened successfully.\n\nOur team will review your case within 24 hours and contact both parties. Your payment is secure.");
+        alert(
+          "⚠️ Dispute opened successfully.\n\nOur team will review your case within 24 hours and contact both parties. Your payment is secure."
+        );
         setShowDisputeModal(false);
         setDisputingRental(null);
         setDisputeReason("");
@@ -249,18 +261,17 @@ export default function Dashboard({ user: currentUser, onLogout }) {
                 <span className="text-sm font-semibold">Rental Requests</span>
               </button>
             </>
-            
           )}
         </div>
-          {currentUser?.role === 'admin' && (
-    <button
-      onClick={() => window.location.href = '/admin/escrow'}
-      className="bg-gradient-to-br from-red-500 to-rose-500 p-5 rounded-2xl shadow-lg flex flex-col items-center gap-3 hover:scale-105 transition text-white"
-    >
-      <Shield size={28} />
-      <span className="text-sm font-semibold">Admin Panel</span>
-    </button>
-  )}
+        {currentUser?.role === "admin" && (
+          <button
+            onClick={() => (window.location.href = "/admin/escrow")}
+            className="bg-gradient-to-br from-red-500 to-rose-500 p-5 rounded-2xl shadow-lg flex flex-col items-center gap-3 hover:scale-105 transition text-white"
+          >
+            <Shield size={28} />
+            <span className="text-sm font-semibold">Admin Panel</span>
+          </button>
+        )}
       </div>
     );
   };
@@ -672,7 +683,8 @@ export default function Dashboard({ user: currentUser, onLogout }) {
                 ) : (
                   <>
                     <p className="text-sm text-gray-600">
-                      Work Date: {new Date(rental.workDate).toLocaleDateString()}
+                      Work Date:{" "}
+                      {new Date(rental.workDate).toLocaleDateString()}
                     </p>
                     <p className="text-sm text-gray-600">
                       Hectares: {rental.pricing?.numberOfHectares} Ha
@@ -719,20 +731,20 @@ export default function Dashboard({ user: currentUser, onLogout }) {
                 )}
 
                 {/* ACTION BUTTONS BASED ON STATUS */}
-
                 {/* 1. APPROVED - Need to Pay */}
-                {rental.status === "approved" && !rental.payment?.status && (
-                  <button
-                    onClick={() => {
-                      setPaymentRental(rental);
-                      setShowPaymentModal(true);
-                    }}
-                    className="w-full mt-4 bg-gradient-to-r from-emerald-500 to-teal-500 text-white py-3 rounded-xl font-bold hover:shadow-xl transition"
-                  >
-                    💳 Pay Now - ${rental.pricing?.totalPrice?.toFixed(2)}
-                  </button>
-                )}
-
+                {rental.status === "approved" &&
+                  (!rental.payment?.status ||
+                    rental.payment?.status === "pending") && (
+                    <button
+                      onClick={() => {
+                        setPaymentRental(rental);
+                        setShowPaymentModal(true);
+                      }}
+                      className="w-full mt-4 bg-gradient-to-r from-emerald-500 to-teal-500 text-white py-3 rounded-xl font-bold hover:shadow-xl transition"
+                    >
+                      💳 Pay Now - ${rental.pricing?.totalPrice?.toFixed(2)}
+                    </button>
+                  )}
                 {/* 2. ACTIVE/COMPLETED - Waiting for Confirmation */}
                 {["active", "completed"].includes(rental.status) &&
                   rental.payment?.status === "held_in_escrow" &&
@@ -793,7 +805,8 @@ export default function Dashboard({ user: currentUser, onLogout }) {
                       ⚠️ Dispute in Progress
                     </p>
                     <p className="text-xs text-gray-600 mt-1">
-                      Our team is reviewing this case. We'll contact you shortly.
+                      Our team is reviewing this case. We'll contact you
+                      shortly.
                     </p>
                   </div>
                 )}
@@ -1429,6 +1442,8 @@ export default function Dashboard({ user: currentUser, onLogout }) {
                 <option value="harvester">Harvester</option>
                 <option value="planter">Planter</option>
                 <option value="sprayer">Sprayer</option>
+                <option value="desherbeuse">Desherbeuse</option>
+                <option value="excavator">Excavator</option>
                 <option value="cultivator">Cultivator</option>
               </select>
             </div>
@@ -1756,6 +1771,8 @@ export default function Dashboard({ user: currentUser, onLogout }) {
                 <option value="harvester">Harvester</option>
                 <option value="planter">Planter</option>
                 <option value="sprayer">Sprayer</option>
+                <option value="desherbeuse">Desherbeuse</option>
+                <option value="excavator">Excavator</option>
                 <option value="cultivator">Cultivator</option>
               </select>
             </div>
@@ -2104,7 +2121,34 @@ export default function Dashboard({ user: currentUser, onLogout }) {
   };
 
   // ============== CONFIRMATION MODAL ==============
-  const ConfirmCompletionModal = () => (
+// ============== CONFIRMATION MODAL ==============
+const ConfirmCompletionModal = () => {
+  const [localNote, setLocalNote] = useState(completionNote || "");
+
+  const handleConfirm = async () => {
+    if (!localNote.trim() || localNote.length < 10) {
+      alert("Please provide details about the service (minimum 10 characters)");
+      return;
+    }
+
+    try {
+      const response = await paymentAPI.confirmCompletion(confirmingRental._id, {
+        confirmationNote: localNote,
+      });
+
+      if (response.data.success) {
+        alert("✅ Thank you! You've confirmed the rental is complete.\n\nAgriRent will verify and release the payment to the owner within 24-48 hours.");
+        setShowConfirmCompletionModal(false);
+        setConfirmingRental(null);
+        setCompletionNote("");
+        await fetchRentals();
+      }
+    } catch (error) {
+      alert(error.response?.data?.message || "Failed to confirm completion");
+    }
+  };
+
+  return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
       <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl">
         <h2 className="text-2xl font-bold mb-4 bg-gradient-to-r from-emerald-600 to-teal-600 bg-clip-text text-transparent">
@@ -2119,15 +2163,16 @@ export default function Dashboard({ user: currentUser, onLogout }) {
             How was the service? (Optional)
           </label>
           <textarea
-            value={completionNote}
-            onChange={(e) => setCompletionNote(e.target.value)}
+            value={localNote}
+            onChange={(e) => setLocalNote(e.target.value)}
             placeholder="The tractor worked perfectly, job completed on time..."
             rows={4}
             className="w-full p-3 border-2 border-gray-200 rounded-xl focus:border-emerald-500 focus:outline-none text-sm"
             maxLength={500}
+            autoComplete="off"
           />
           <small className="text-gray-500 text-xs">
-            {completionNote.length}/500 characters (minimum 10)
+            {localNote.length}/500 characters (minimum 10)
           </small>
         </div>
         <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 mb-4">
@@ -2149,8 +2194,8 @@ export default function Dashboard({ user: currentUser, onLogout }) {
             Cancel
           </button>
           <button
-            onClick={handleConfirmCompletion}
-            disabled={completionNote.length < 10}
+            onClick={handleConfirm}
+            disabled={localNote.length < 10}
             className="flex-1 px-4 py-3 bg-gradient-to-r from-emerald-500 to-teal-500 text-white rounded-xl font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
           >
             Confirm & Release Payment
@@ -2159,6 +2204,7 @@ export default function Dashboard({ user: currentUser, onLogout }) {
       </div>
     </div>
   );
+};
 
   // ============== DISPUTE MODAL ==============
   const DisputeModal = () => (
@@ -2189,8 +2235,9 @@ export default function Dashboard({ user: currentUser, onLogout }) {
         </div>
         <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 mb-4">
           <p className="text-xs text-gray-700">
-            ⚠️ Your payment of ${disputingRental?.pricing?.totalPrice?.toFixed(2)}{" "}
-            is secure. Our team will investigate and resolve within 24-48 hours.
+            ⚠️ Your payment of $
+            {disputingRental?.pricing?.totalPrice?.toFixed(2)} is secure. Our
+            team will investigate and resolve within 24-48 hours.
           </p>
         </div>
         <div className="flex gap-3">
@@ -2230,7 +2277,7 @@ export default function Dashboard({ user: currentUser, onLogout }) {
       {currentView === "profile" && <ProfileScreen />}
       {currentView === "myMachines" && <MyMachinesScreen />}
       {currentView === "requests" && <RentalRequestsScreen />}
-      
+
       {/* All Modals */}
       {showAddMachineForm && <AddMachineForm />}
       {showEditMachineForm && editingMachine && <EditMachineForm />}
@@ -2260,9 +2307,7 @@ export default function Dashboard({ user: currentUser, onLogout }) {
       {showConfirmCompletionModal && confirmingRental && (
         <ConfirmCompletionModal />
       )}
-      {showDisputeModal && disputingRental && (
-        <DisputeModal />
-      )}
+      {showDisputeModal && disputingRental && <DisputeModal />}
 
       <div className="fixed bottom-0 left-0 right-0 bg-white/80 backdrop-blur-lg border-t px-4 py-3 flex justify-around shadow-lg max-w-md mx-auto">
         <button
