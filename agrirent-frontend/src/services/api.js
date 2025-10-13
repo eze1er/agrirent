@@ -86,8 +86,8 @@ export const paymentAPI = {
   // ========== ESCROW MANAGEMENT ==========
   
   // Renter Actions
-  confirmCompletion: (rentalId, data) =>
-    api.post(`/payments/escrow/confirm-completion/${rentalId}`, data),
+confirmCompletion: (rentalId, data) =>
+    api.post(`/payments/confirm-completion/${rentalId}`, data),
   openDispute: (rentalId, data) =>
     api.post(`/payments/escrow/open-dispute/${rentalId}`, data),
   withdrawDispute: (rentalId) =>

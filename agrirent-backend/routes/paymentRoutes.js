@@ -409,6 +409,112 @@ router.post('/confirm-completion/:rentalId', protect, async (req, res) => {
   }
 });
 
+// ============== ADMIN VERIFICATION & RELEASE ==============
+
+// Admin verifies and releases payment
+router.post('/admin/verify-and-release/:paymentId', 
+  protect, 
+  authorize('admin'), 
+  requireStripe,
+  async (req, res) => {
+    try {
+      const { paymentId } = req.params;
+      const { adminNote } = req.body;
+
+      const payment = await Payment.findById(paymentId)
+        .populate('userId', 'firstName lastName email')
+        .populate('ownerId', 'firstName lastName email stripeAccountId')
+        .populate('rentalId');
+
+      if (!payment) {
+        return res.status(404).json({ success: false, message: 'Payment not found' });
+      }
+
+      if (payment.escrowStatus !== 'held') {
+        return res.status(400).json({ 
+          success: false, 
+          message: 'Payment is not in escrow' 
+        });
+      }
+
+      if (!payment.confirmations?.renterConfirmed) {
+        return res.status(400).json({ 
+          success: false, 
+          message: 'Renter has not confirmed completion yet' 
+        });
+      }
+
+      // Mark as verified and released
+      payment.escrowStatus = 'released';
+      payment.status = 'completed';
+      payment.confirmations = payment.confirmations || {};
+      payment.confirmations.adminVerified = true;
+      payment.confirmations.adminVerifiedAt = new Date();
+      payment.confirmations.adminVerifiedBy = req.user.id;
+      payment.confirmations.adminNote = adminNote;
+      
+      if (!payment.escrowTimeline) payment.escrowTimeline = {};
+      payment.escrowTimeline.releasedAt = new Date();
+      
+      await payment.save();
+
+      // Update rental payment status
+      await Rental.findByIdAndUpdate(payment.rentalId, {
+        'payment.status': 'completed',
+        'paymentInfo.status': 'released'
+      });
+
+      // TODO: Transfer to owner's Stripe account if connected
+      // if (payment.ownerId.stripeAccountId) {
+      //   const transfer = await stripe.transfers.create({
+      //     amount: Math.round(payment.amount * 100),
+      //     currency: 'usd',
+      //     destination: payment.ownerId.stripeAccountId,
+      //   });
+      // }
+
+      // Notify owner
+      await sendEmail({
+        to: payment.ownerId.email,
+        subject: '💰 Payment Released - Funds Available!',
+        html: `
+          <h2>🎉 Payment Released!</h2>
+          <p>Great news! Your payment has been released by AgriRent.</p>
+          <p><strong>Amount:</strong> $${payment.amount.toFixed(2)}</p>
+          <p><strong>Rental ID:</strong> ${payment.rentalId._id}</p>
+          <p>The funds will arrive in your account within 2-5 business days.</p>
+        `,
+      });
+
+      res.json({ 
+        success: true, 
+        message: 'Payment verified and released to owner',
+        data: payment 
+      });
+    } catch (error) {
+      console.error('Release error:', error);
+      res.status(500).json({ success: false, message: error.message });
+    }
+});
+
+// Get all pending releases (admin only)
+router.get('/admin/pending-releases', protect, authorize('admin'), async (req, res) => {
+  try {
+    const pendingPayments = await Payment.find({
+      escrowStatus: 'held',
+      'confirmations.renterConfirmed': true,
+      'confirmations.adminVerified': false
+    })
+      .populate('userId', 'firstName lastName email')
+      .populate('ownerId', 'firstName lastName email')
+      .populate('rentalId', 'machineId status')
+      .sort({ 'confirmations.renterConfirmedAt': 1 });
+
+    res.json({ success: true, data: pendingPayments });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
 // Keep all your other existing routes...
 // (I'm keeping the code shorter here, but include ALL your other routes)
 
