@@ -461,6 +461,28 @@ router.get('/admin/pending-releases', protect, authorize('admin'), async (req, r
   }
 });
 
+// Get all released payments (admin only)
+router.get('/admin/released-payments', protect, authorize('admin'), async (req, res) => {
+  try {
+    const releasedPayments = await Payment.find({
+      escrowStatus: 'released',
+      'confirmations.adminVerified': true
+    })
+      .populate('userId', 'firstName lastName email')
+      .populate('ownerId', 'firstName lastName email')
+      .populate('rentalId', 'machineId status')
+      .sort({ 'escrowTimeline.releasedAt': -1 }) // Most recent first
+      .limit(50); // Limit to last 50 releases
+
+    console.log(`✅ Found ${releasedPayments.length} released payments`);
+
+    res.json({ success: true, data: releasedPayments });
+  } catch (error) {
+    console.error('❌ Error fetching released payments:', error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
 // ============== DEBUG ENDPOINT ==============
 router.post('/debug-payment', protect, async (req, res) => {
   try {

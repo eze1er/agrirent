@@ -263,15 +263,17 @@ export default function Dashboard({ user: currentUser, onLogout }) {
             </>
           )}
         </div>
-        {currentUser?.role === "admin" && (
-          <button
-            onClick={() => (window.location.href = "/admin/escrow")}
-            className="bg-gradient-to-br from-red-500 to-rose-500 p-5 rounded-2xl shadow-lg flex flex-col items-center gap-3 hover:scale-105 transition text-white"
-          >
-            <Shield size={28} />
-            <span className="text-sm font-semibold">Admin Panel</span>
-          </button>
-        )}
+{currentUser?.role === 'admin' && (
+  <button
+    onClick={() => {
+      window.location.href = '/admin/escrow';
+    }}
+    className="bg-gradient-to-br from-red-500 to-rose-500 p-5 rounded-2xl shadow-lg flex flex-col items-center gap-3 hover:scale-105 transition text-white"
+  >
+    <Shield size={28} />
+    <span className="text-sm font-semibold">Admin Panel</span>
+  </button>
+)}
       </div>
     );
   };
