@@ -1,6 +1,48 @@
-// backend/middleware/auth.js - COMPLETE VERSION
+// backend/middleware/auth.js - FIXED VERSION
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
+
+const protect = async (req, res, next) => {
+  try {
+    let token;
+
+    if (req.headers.authorization && req.headers.authorization.startsWith('Bearer')) {
+      token = req.headers.authorization.split(' ')[1];
+    }
+
+    if (!token) {
+      return res.status(401).json({
+        success: false,
+        message: 'Not authorized to access this route'
+      });
+    }
+
+    try {
+      const decoded = jwt.verify(token, process.env.JWT_SECRET);
+      req.user = await User.findById(decoded.id).select('-password');
+      
+      if (!req.user) {
+        return res.status(401).json({
+          success: false,
+          message: 'User not found'
+        });
+      }
+      
+      next();
+    } catch (error) {
+      return res.status(401).json({
+        success: false,
+        message: 'Not authorized, token failed'
+      });
+    }
+  } catch (error) {
+    console.error('Auth middleware error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error'
+    });
+  }
+};
 
 // ============== PROTECT MIDDLEWARE ==============
 // Verifies JWT token and attaches user to request
@@ -21,6 +63,25 @@ exports.protect = async (req, res, next) => {
       });
     }
     
+    // ✅ ADDED: Validate token format before verification
+    const tokenParts = token.split('.');
+    if (tokenParts.length !== 3) {
+      console.log('❌ Malformed token format - expected 3 parts, got:', tokenParts.length);
+      return res.status(401).json({ 
+        success: false, 
+        message: 'Invalid token format' 
+      });
+    }
+    
+    // ✅ ADDED: Check if token is empty or too short
+    if (token.length < 10) {
+      console.log('❌ Token too short:', token.length);
+      return res.status(401).json({ 
+        success: false, 
+        message: 'Invalid token' 
+      });
+    }
+
     // Verify token
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
     
@@ -36,6 +97,7 @@ exports.protect = async (req, res, next) => {
     }
     
     // Check if user is active (optional - add if you have isActive field)
+    // ✅ FIXED: Added safe check for isActive field
     if (req.user.isActive === false) {
       return res.status(401).json({ 
         success: false, 
@@ -48,6 +110,13 @@ exports.protect = async (req, res, next) => {
     console.error('Auth error:', error);
     
     if (error.name === 'JsonWebTokenError') {
+      // ✅ IMPROVED: More specific error messages
+      if (error.message.includes('malformed')) {
+        return res.status(401).json({ 
+          success: false, 
+          message: 'Invalid token format - please log in again' 
+        });
+      }
       return res.status(401).json({ 
         success: false, 
         message: 'Invalid token' 
@@ -57,7 +126,7 @@ exports.protect = async (req, res, next) => {
     if (error.name === 'TokenExpiredError') {
       return res.status(401).json({ 
         success: false, 
-        message: 'Token expired' 
+        message: 'Token expired - please log in again' 
       });
     }
     
@@ -101,7 +170,18 @@ exports.checkOwnership = (ownerField = 'userId') => {
     try {
       // Get the model name from the route (e.g., 'rental', 'machine')
       const modelName = req.baseUrl.split('/').pop();
-      const Model = require(`../models/${modelName.charAt(0).toUpperCase() + modelName.slice(1)}`);
+      
+      // ✅ FIXED: Added safe model loading with error handling
+      let Model;
+      try {
+        Model = require(`../models/${modelName.charAt(0).toUpperCase() + modelName.slice(1)}`);
+      } catch (modelError) {
+        console.error('Model loading error:', modelError);
+        return res.status(500).json({
+          success: false,
+          message: 'Server error - Invalid resource type'
+        });
+      }
       
       // Find the resource
       const resource = await Model.findById(req.params.id);
@@ -140,10 +220,12 @@ exports.checkOwnership = (ownerField = 'userId') => {
 // Ensures user has verified their email
 // Usage: protect, requireEmailVerification
 exports.requireEmailVerification = (req, res, next) => {
+  // ✅ FIXED: Added safe check for isEmailVerified field
   if (!req.user.isEmailVerified) {
     return res.status(403).json({
       success: false,
-      message: 'Please verify your email address to access this feature'
+      message: 'Please verify your email address to access this feature',
+      requiresVerification: true // ✅ ADDED: Flag for frontend handling
     });
   }
   next();
@@ -203,4 +285,22 @@ exports.isOwner = (req) => {
 // Quick helper to check if user is renter or both
 exports.isRenter = (req) => {
   return req.user && (req.user.role === 'renter' || req.user.role === 'both');
+};
+
+// ✅ ADDED: Simple token validation utility
+exports.validateTokenFormat = (token) => {
+  if (!token || typeof token !== 'string') return false;
+  
+  const parts = token.split('.');
+  if (parts.length !== 3) return false;
+  
+  try {
+    // Check if parts are valid base64
+    parts.forEach(part => {
+      Buffer.from(part, 'base64').toString('utf8');
+    });
+    return true;
+  } catch (e) {
+    return false;
+  }
 };

@@ -7,6 +7,7 @@ const session = require("express-session");
 const passport = require("passport");
 const stripe = require("stripe");
 const paymentRoutes = require("./routes/paymentRoutes");
+const userRoutes = require('./routes/users');
 
 // ✅ ADD THIS DEBUG LINE
 console.log(
@@ -269,9 +270,11 @@ app.use("/api/auth", require("./routes/auth"));
 app.use("/api/users", require("./routes/users"));
 app.use("/api/machines", require("./routes/machines"));
 app.use("/api/rentals", require("./routes/rentals"));
+app.use('/api/users', require('./routes/users'));  // ← ADD THIS
 app.use("/api/notifications", require("./routes/notifications"));
 app.use("/api/upload", require("./routes/upload"));
-app.use("/api/payments", paymentRoutes);
+app.use('/api/payments', require('./routes/paymentRoutes'));
+
 
 // 404 handler
 app.use((req, res) => {

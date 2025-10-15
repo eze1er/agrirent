@@ -1,13 +1,15 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { Mail, Lock, Phone, UserCircle, AlertCircle } from "lucide-react";
 import { authAPI } from "../services/api";
-import { Link } from 'react-router-dom';
+import { Link, useLocation } from "react-router-dom";
 
 export default function Auth({ onLoginSuccess }) {
   const [isLogin, setIsLogin] = useState(true);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [phoneError, setPhoneError] = useState(""); // Added phone-specific error state
+  const [phoneError, setPhoneError] = useState("");
+  const location = useLocation();
+  const [prefilledEmail, setPrefilledEmail] = useState("");
   const [formData, setFormData] = useState({
     firstName: "",
     lastName: "",
@@ -17,26 +19,39 @@ export default function Auth({ onLoginSuccess }) {
     role: "renter",
   });
 
+  useEffect(() => {
+    if (location.state?.email) {
+      setPrefilledEmail(location.state.email);
+      setFormData(prev => ({ ...prev, email: location.state.email }));
+    }
+    if (location.state?.message) {
+      // Show success message if coming from verification
+      setTimeout(() => {
+        alert(location.state.message);
+      }, 500);
+    }
+  }, [location]);
+
   // Phone number validation function
   const validatePhoneNumber = (phone) => {
     if (!phone) return ""; // Phone is optional, so empty is valid
-    
+
     // Basic international phone validation
     const phoneRegex = /^\+\d{1,4}\d{6,14}$/; // + followed by country code (1-4 digits) and phone number (6-14 digits)
-    
+
     if (!phoneRegex.test(phone)) {
       return "Please enter a valid international phone number (e.g., +12125551234)";
     }
-    
+
     // Additional validation for specific countries
-    if (phone.startsWith('+1') && phone.length !== 12) {
+    if (phone.startsWith("+1") && phone.length !== 12) {
       return "US/Canada numbers should be 11 digits including +1 (e.g., +12125551234)";
     }
-    
-    if (phone.startsWith('+44') && phone.length !== 13) {
+
+    if (phone.startsWith("+44") && phone.length !== 13) {
       return "UK numbers should be 13 digits including +44 (e.g., +447911123456)";
     }
-    
+
     return ""; // No error
   };
 
@@ -71,26 +86,29 @@ export default function Auth({ onLoginSuccess }) {
             role: formData.role,
           });
 
-      if (response.data.success) {
-        if (isLogin) {
-          // Login successful
-          localStorage.setItem("token", response.data.token);
-          localStorage.setItem("user", JSON.stringify(response.data.user));
-          onLoginSuccess(response.data.user);
-        } else {
-          // Registration successful
-          alert(response.data.message || "Registration successful! Please check your email to verify your account.");
-          setIsLogin(true); // Switch to login view
-          setFormData({
-            firstName: "",
-            lastName: "",
-            email: "",
-            password: "",
-            phone: "",
-            role: "renter",
-          });
-        }
-      } else {
+if (response.data.success) {
+  if (isLogin) {
+    // Login flow
+    localStorage.setItem("token", response.data.token);
+    localStorage.setItem("user", JSON.stringify(response.data.user));
+
+    // ✅ CHECK IF VERIFICATION IS REQUIRED
+    if (response.data.requiresVerification) {
+      // Redirect to verification page
+      window.location.href = `/verify-email?email=${encodeURIComponent(formData.email)}`;
+    } else {
+      // User is verified, proceed to dashboard
+      onLoginSuccess(response.data.user);
+    }
+  } else {
+    // ✅ REGISTRATION FLOW - Store token but redirect to verification
+    localStorage.setItem("token", response.data.token);
+    localStorage.setItem("user", JSON.stringify(response.data.user));
+    
+    // Redirect to verification page WITHOUT making another API call
+    window.location.href = `/verify-email?email=${encodeURIComponent(formData.email)}`;
+  }
+} else {
         setError(response.data.message || "Authentication failed");
       }
     } catch (err) {
@@ -110,24 +128,24 @@ export default function Auth({ onLoginSuccess }) {
 
   const handleChange = (e) => {
     const { name, value } = e.target;
-    
+
     // Special handling for phone number
     if (name === "phone") {
       // Remove any non-digit characters except +
-      let cleanedValue = value.replace(/[^\d+]/g, '');
-      
+      let cleanedValue = value.replace(/[^\d+]/g, "");
+
       // Ensure it starts with + if it contains numbers
-      if (cleanedValue && !cleanedValue.startsWith('+')) {
-        cleanedValue = '+' + cleanedValue;
+      if (cleanedValue && !cleanedValue.startsWith("+")) {
+        cleanedValue = "+" + cleanedValue;
       }
-      
+
       // Limit length to prevent extremely long numbers
       if (cleanedValue.length > 16) {
         cleanedValue = cleanedValue.slice(0, 16);
       }
-      
+
       setFormData({ ...formData, [name]: cleanedValue });
-      
+
       // Validate phone number in real-time
       if (!isLogin) {
         const validationError = validatePhoneNumber(cleanedValue);
@@ -136,7 +154,7 @@ export default function Auth({ onLoginSuccess }) {
     } else {
       setFormData({ ...formData, [name]: value });
     }
-    
+
     // Clear general error when user types
     if (error) setError("");
   };
@@ -247,9 +265,9 @@ export default function Auth({ onLoginSuccess }) {
                     onChange={handleChange}
                     placeholder="+12125551234"
                     className={`w-full border-2 rounded-xl pl-12 pr-4 py-3 focus:outline-none transition ${
-                      phoneError 
-                        ? 'border-rose-500 focus:border-rose-500' 
-                        : 'border-gray-200 focus:border-indigo-500'
+                      phoneError
+                        ? "border-rose-500 focus:border-rose-500"
+                        : "border-gray-200 focus:border-indigo-500"
                     }`}
                   />
                 </div>
@@ -259,15 +277,19 @@ export default function Auth({ onLoginSuccess }) {
                     {phoneError}
                   </p>
                 )}
-                
+
                 {/* Phone format guidance */}
                 <div className="bg-blue-50 border-l-4 border-blue-500 p-3 rounded mt-2">
                   <p className="text-sm text-blue-800 font-semibold mb-1">
                     📱 Phone Number Format
                   </p>
                   <p className="text-xs text-blue-700">
-                    <strong>USA/Canada:</strong> +1 followed by 10 digits (e.g., +12125551234)<br/>
-                    <strong>UK:</strong> +44 followed by 10 digits (e.g., +447911123456)<br/>
+                    <strong>USA/Canada:</strong> +1 followed by 10 digits (e.g.,
+                    +12125551234)
+                    <br />
+                    <strong>UK:</strong> +44 followed by 10 digits (e.g.,
+                    +447911123456)
+                    <br />
                     <strong>Other:</strong> +[country code][phone number]
                   </p>
                 </div>
@@ -397,7 +419,7 @@ export default function Auth({ onLoginSuccess }) {
 
         {isLogin && (
           <div className="mt-4 text-center">
-            <Link 
+            <Link
               to="/forgot-password"
               className="text-sm text-indigo-600 hover:text-indigo-700 font-medium"
             >

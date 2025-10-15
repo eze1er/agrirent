@@ -348,6 +348,7 @@ router.post('/register', async (req, res) => {
 });
 
 // Traditional email/password login
+// Traditional email/password login
 router.post('/login', async (req, res) => {
   try {
     const { email, password } = req.body;
@@ -378,12 +379,37 @@ router.post('/login', async (req, res) => {
       });
     }
 
+    // ✅ ADD THIS CHECK: If user is not verified
+    if (!user.isEmailVerified) {
+      console.log('⚠️ User not verified:', email);
+      return res.json({
+        success: true,
+        token: jwt.sign(
+          { id: user._id, role: user.role },
+          process.env.JWT_SECRET,
+          { expiresIn: '7d' }
+        ),
+        user: {
+          id: user._id,
+          firstName: user.firstName,
+          lastName: user.lastName,
+          email: user.email,
+          role: user.role,
+          isEmailVerified: user.isEmailVerified
+        },
+        requiresVerification: true, // ← NEW FLAG
+        message: 'Please verify your email to continue'
+      });
+    }
+
+    console.log('✅ Login successful:', email);
+    
     const token = jwt.sign(
       { id: user._id, role: user.role },
       process.env.JWT_SECRET,
       { expiresIn: '7d' }
     );
-console.log('✅ Login successful:', email);
+
     res.json({
       success: true,
       token,
@@ -394,7 +420,8 @@ console.log('✅ Login successful:', email);
         email: user.email,
         role: user.role,
         isEmailVerified: user.isEmailVerified
-      }
+      },
+      requiresVerification: false // ← NEW FLAG
     });
   } catch (error) {
     console.error('Login error:', error);
@@ -406,6 +433,7 @@ console.log('✅ Login successful:', email);
 });
 
 // Resend verification email
+// Resend verification email - FIXED VERSION
 router.post('/resend-verification', async (req, res) => {
   try {
     const { email } = req.body;
@@ -435,7 +463,7 @@ router.post('/resend-verification', async (req, res) => {
       hasToken: !!user.emailVerificationToken
     });
 
-    // ✅ Check verification status
+    // ✅ CRITICAL: Check verification status FIRST
     if (user.isEmailVerified) {
       console.log('✅ Email already verified for:', user.email);
       return res.json({
@@ -478,62 +506,51 @@ router.post('/resend-verification', async (req, res) => {
     });
   }
 });
+
 // Email verification endpoint
 router.get('/verify-email/:token', async (req, res) => {
   try {
     const { token } = req.params;
 
-    if (!token) {
-      return res.status(400).json({
-        success: false,
-        message: 'Verification token is required'
-      });
-    }
+    console.log('🔍 Email verification attempt with token:', token.substring(0, 10) + '...');
 
+    // Find user with valid verification token
     const user = await User.findOne({
       emailVerificationToken: token,
       emailVerificationExpires: { $gt: Date.now() }
     });
 
     if (!user) {
-      return res.status(400).json({
-        success: false,
-        message: 'Invalid or expired verification token'
-      });
+      console.log('❌ Invalid or expired verification token');
+      // Redirect to frontend with error - DON'T include email to prevent loops
+      return res.redirect(`${process.env.FRONTEND_URL}/verify-email?verified=false&error=invalid_token`);
     }
 
-    // Check if already verified
-    if (user.isEmailVerified) {
-      return res.json({
-        success: true,
-        message: 'Email is already verified',
-        alreadyVerified: true
-      });
+    console.log('✅ Valid token found for user:', user.email, 'Current verified status:', user.isEmailVerified);
+
+    // ✅ CRITICAL: Only update if not already verified
+    if (!user.isEmailVerified) {
+      user.isEmailVerified = true;
+      user.emailVerificationToken = undefined;
+      user.emailVerificationExpires = undefined;
+      await user.save();
+      console.log('✅ User email marked as verified:', user.email);
+    } else {
+      console.log('ℹ️ Email already verified for:', user.email);
     }
 
-    // Verify the email
-    user.isEmailVerified = true;
-    user.emailVerificationToken = undefined;
-    user.emailVerificationExpires = undefined;
-    await user.save();
+    // ✅ CRITICAL: Generate a proper JWT token for immediate login
+    const loginToken = jwt.sign(
+      { id: user._id, role: user.role },
+      process.env.JWT_SECRET,
+      { expiresIn: '7d' }
+    );
 
-    console.log('✅ Email verified:', user.email);
-
-    // ✅ NOW send the welcome email after verification
-    sendWelcomeEmail(user).catch(emailError => {
-      console.error('❌ Welcome email failed:', emailError);
-    });
-
-    res.json({
-      success: true,
-      message: 'Email verified successfully! Welcome to AgriRent! 🎉'
-    });
+    // ✅ CRITICAL: Redirect to dashboard with token for immediate access
+    res.redirect(`${process.env.FRONTEND_URL}/verify-email?verified=true&email=${encodeURIComponent(user.email)}&token=${loginToken}&userId=${user._id}`);
   } catch (error) {
-    console.error('Email verification error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Email verification failed'
-    });
+    console.error('❌ Email verification error:', error);
+    res.redirect(`${process.env.FRONTEND_URL}/verify-email?verified=false&error=server_error`);
   }
 });
 // Forgot password

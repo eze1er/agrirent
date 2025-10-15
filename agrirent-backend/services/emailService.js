@@ -10,7 +10,7 @@ const transporter = nodemailer.createTransport({
   }
 });
 
-// Generic email sender ✅
+// Generic email sender
 const sendEmail = async (to, subject, html) => {
   const mailOptions = {
     from: process.env.EMAIL_FROM,
@@ -54,7 +54,8 @@ const sendWelcomeEmail = async (user) => {
 };
 
 const sendVerificationEmail = async (user, token) => {
-  const verificationUrl = `${process.env.FRONTEND_URL}/verify-email?token=${token}`;
+  // ✅ Point to BACKEND endpoint
+  const verificationUrl = `${process.env.BACKEND_URL || 'http://localhost:3001'}/api/auth/verify-email/${token}`;
   
   const mailOptions = {
     from: process.env.EMAIL_FROM,
@@ -77,9 +78,10 @@ const sendVerificationEmail = async (user, token) => {
 
   try {
     await transporter.sendMail(mailOptions);
-    console.log('Verification email sent to:', user.email);
+    console.log('✅ Verification email sent to:', user.email);
+    console.log('🔗 Verification URL:', verificationUrl);
   } catch (error) {
-    console.error('Failed to send verification email:', error.message);
+    console.error('❌ Failed to send verification email:', error.message);
     throw error;
   }
 };
@@ -115,7 +117,6 @@ const sendPasswordResetEmail = async (user, token) => {
   }
 };
 
-// ✅ SINGLE EXPORT - NO DUPLICATES
 module.exports = { 
   sendEmail,
   sendWelcomeEmail, 

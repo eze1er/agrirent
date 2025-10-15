@@ -7,11 +7,8 @@ import {
   Search,
   Plus,
   Star,
-  TrendingUp,
-  Package,
-  Shield,
 } from "lucide-react";
-import { machineAPI, rentalAPI, uploadAPI, paymentAPI } from "../services/api";
+import { machineAPI, rentalAPI, uploadAPI, paymentAPI, userAPI } from "../services/api";
 import BookingModal from "../components/BookingModal";
 import PaymentModal from "../components/PaymentModal";
 
@@ -28,11 +25,14 @@ export default function Dashboard({ user: currentUser, onLogout }) {
   const [loadingRentals, setLoadingRentals] = useState(false);
   const [showBookingModal, setShowBookingModal] = useState(false);
   const [bookingMachine, setBookingMachine] = useState(null);
+  
+  // ✅ FIXED: Define localUser properly at the component level
   const [localUser, setLocalUser] = useState(() => {
     if (currentUser) return currentUser;
     const stored = localStorage.getItem('user');
     return stored ? JSON.parse(stored) : null;
   });
+
   // Payment and completion states
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [paymentRental, setPaymentRental] = useState(null);
@@ -48,56 +48,113 @@ export default function Dashboard({ user: currentUser, onLogout }) {
   const [reviewingRental, setReviewingRental] = useState(null);
   const [reviewData, setReviewData] = useState({ rating: 5, comment: "" });
 
-  useEffect(() => {
-    // ✅ Ensure we have user data
-    if (!localUser && currentUser) {
-      setLocalUser(currentUser);
-    }
-    
-    checkVerificationStatus();
-    fetchMachines();
-    fetchRentals();
-  }, []);
-
-// ✅ UPDATE: Function to check verification status
+  // ✅ FIXED: Function to check verification status
   const checkVerificationStatus = async () => {
-  try {
-    const token = localStorage.getItem('token');
-    if (!token) return;
-
-    // Use the /users/verification-status endpoint
-    const response = await fetch('http://localhost:3001/api/users/verification-status', {
-      headers: {
-        'Authorization': `Bearer ${token}`
+    try {
+      const token = localStorage.getItem('token');
+      if (!token) {
+        console.log('⚠️ No token found');
+        return false;
       }
-    });
 
-    const data = await response.json();
-    
-    if (data.success) {
-      console.log('📊 Verification check result:', data.data);
+      const response = await userAPI.getVerificationStatus();
       
-      // Update local user state
-      const updatedUser = {
-        ...localUser,
-        isEmailVerified: data.data.isEmailVerified
-      };
-      setLocalUser(updatedUser);
+      if (response.data.success) {
+        console.log('📊 Verification check result:', response.data.data);
+        
+        // Update local user state
+        const updatedUser = {
+          ...localUser,
+          isEmailVerified: response.data.data.isEmailVerified
+        };
+        setLocalUser(updatedUser);
+        
+        // Also update localStorage
+        const storedUser = JSON.parse(localStorage.getItem('user') || '{}');
+        const newStoredUser = {
+          ...storedUser,
+          isEmailVerified: response.data.data.isEmailVerified
+        };
+        localStorage.setItem('user', JSON.stringify(newStoredUser));
+        
+        return response.data.data.isEmailVerified;
+      }
       
-      // Also update localStorage
-      const storedUser = JSON.parse(localStorage.getItem('user') || '{}');
-      const newStoredUser = {
-        ...storedUser,
-        isEmailVerified: data.data.isEmailVerified
-      };
-      localStorage.setItem('user', JSON.stringify(newStoredUser));
-      
-      return data.data.isEmailVerified;
+      return false;
+    } catch (error) {
+      console.error('❌ Error checking verification status:', error);
+      // If we get a 401, the token is invalid - redirect to login
+      if (error.response?.status === 401) {
+        console.log('⚠️ Invalid token, redirecting to login');
+        localStorage.clear();
+        window.location.href = '/auth';
+      }
+      return false;
     }
-  } catch (error) {
-    console.error('❌ Error checking verification status:', error);
-  }
-};
+  };
+
+  // ✅ FIXED: Main useEffect with proper authentication check
+  useEffect(() => {
+    // Check authentication first
+    const token = localStorage.getItem('token');
+    const user = localStorage.getItem('user');
+    
+    if (!token || !user) {
+      console.log('❌ No valid authentication found, redirecting to login');
+      window.location.href = '/auth';
+      return;
+    }
+
+    let pollInterval;
+    
+    const startPolling = async () => {
+      // Don't poll if already verified
+      if (localUser?.isEmailVerified) {
+        return;
+      }
+      
+      // Only poll for owners
+      if (localUser?.role !== 'owner' && localUser?.role !== 'both') {
+        return;
+      }
+      
+      pollInterval = setInterval(async () => {
+        try {
+          console.log('🔄 Polling verification status...');
+          const isVerified = await checkVerificationStatus();
+          
+          if (isVerified) {
+            console.log('✅ Email verified! Stopping poll.');
+            clearInterval(pollInterval);
+          }
+        } catch (error) {
+          console.error('❌ Poll error:', error);
+          // Stop polling on error
+          clearInterval(pollInterval);
+        }
+      }, 10000); // Poll every 10 seconds
+    };
+    
+    // Initialize data
+    const initializeData = async () => {
+      try {
+        await checkVerificationStatus();
+        await fetchMachines();
+        await fetchRentals();
+        startPolling();
+      } catch (error) {
+        console.error('Error initializing dashboard data:', error);
+      }
+    };
+    
+    initializeData();
+    
+    return () => {
+      if (pollInterval) {
+        clearInterval(pollInterval);
+      }
+    };
+  }, [localUser?.isEmailVerified, localUser?.role]);
 
   const fetchMachines = async () => {
     setLoadingMachines(true);
@@ -206,94 +263,91 @@ export default function Dashboard({ user: currentUser, onLogout }) {
    const isOwner = (localUser?.role === "owner" || localUser?.role === "both") ||
                   (currentUser?.role === "owner" || currentUser?.role === "both");
 
-  // ============== VERIFICATION BANNER ==============
-  const VerificationBanner = () => {
-    const [dismissed, setDismissed] = useState(false);
-    const [resending, setResending] = useState(false);
+// ============== VERIFICATION BANNER ==============
+const VerificationBanner = () => {
+  const [dismissed, setDismissed] = useState(false);
+  const [resending, setResending] = useState(false);
+  const [checking, setChecking] = useState(false);
 
-    // Don't show if user is verified OR banner was dismissed OR user is not owner
-    if (!localUser || localUser.isEmailVerified || dismissed) return null;
-    if (localUser.role !== "owner" && localUser.role !== "both") return null;
+  // Don't show if user is verified OR banner was dismissed OR user is not owner
+  if (!localUser || localUser.isEmailVerified || dismissed) return null;
+  if (localUser.role !== "owner" && localUser.role !== "both") return null;
 
-    const handleResendEmail = async () => {
-      setResending(true);
-      try {
-        const response = await fetch("http://localhost:3001/api/auth/resend-verification", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ email: localUser.email }),
-        });
-        
-        const data = await response.json();
-        
-        console.log('📧 Resend response:', data);
-        
-        if (data.success) {
-          if (data.alreadyVerified) {
-            // ✅ Email is verified, update state
-            const updatedUser = { ...localUser, isEmailVerified: true };
-            setLocalUser(updatedUser);
-            localStorage.setItem('user', JSON.stringify(updatedUser));
-            alert("✅ Your email is already verified! You can now list machines.");
-          } else {
-            alert("✅ Verification email sent! Please check your inbox.");
-          }
+  const handleResendEmail = async () => {
+    setResending(true);
+    try {
+      const response = await fetch("http://localhost:3001/api/auth/resend-verification", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: localUser.email }),
+      });
+      
+      const data = await response.json();
+      
+      console.log('📧 Resend response:', data);
+      
+      if (data.success) {
+        if (data.alreadyVerified) {
+          // ✅ Email is verified, update state
+          const updatedUser = { ...localUser, isEmailVerified: true };
+          setLocalUser(updatedUser);
+          localStorage.setItem('user', JSON.stringify(updatedUser));
+          alert("✅ Your email is already verified! You can now list machines.");
         } else {
-          alert("❌ " + data.message);
+          alert("✅ Verification email sent! Please check your inbox.");
         }
-      } catch (err) {
-        console.error('❌ Resend error:', err);
-        alert("❌ Failed to resend email. Please try again.");
-      } finally {
-        setResending(false);
-      }
-    };
-
-    const handleCheckVerification = async () => {
-      await checkVerificationStatus();
-      if (localUser.isEmailVerified) {
-        alert("✅ Your email has been verified! You can now list machines.");
       } else {
-        alert("⏳ Your email is not verified yet. Please check your inbox and click the verification link.");
+        alert("❌ " + data.message);
       }
-    };
-
-    return (
-      <div className="bg-amber-100 border-l-4 border-amber-500 text-amber-800 p-4 m-4 rounded-lg">
-        <div className="flex items-center justify-between">
-          <div className="flex-1">
-            <p className="font-semibold">📧 Email Verification Required</p>
-            <p className="text-sm mt-1">
-              You must verify your email before you can list equipment for rent.
-            </p>
-            <div className="flex gap-2 mt-3">
-              <button
-                onClick={handleResendEmail}
-                disabled={resending}
-                className="text-sm bg-amber-600 text-white px-4 py-2 rounded-lg hover:bg-amber-700 transition disabled:opacity-50"
-              >
-                {resending ? "Sending..." : "Resend Email"}
-              </button>
-              <button
-                onClick={handleCheckVerification}
-                className="text-sm bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition"
-              >
-                I've Verified
-              </button>
-            </div>
-          </div>
-          <button
-            onClick={() => setDismissed(true)}
-            className="text-amber-600 hover:text-amber-800 ml-4"
-          >
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          </button>
-        </div>
-      </div>
-    );
+    } catch (err) {
+      console.error('❌ Resend error:', err);
+      alert("❌ Failed to resend email. Please try again.");
+    } finally {
+      setResending(false);
+    }
   };
+
+  const handleRedirectToVerification = () => {
+    // Redirect to the new verification page
+    window.location.href = '/verify-email';
+  };
+
+  return (
+    <div className="bg-amber-100 border-l-4 border-amber-500 text-amber-800 p-4 m-4 rounded-lg">
+      <div className="flex items-center justify-between">
+        <div className="flex-1">
+          <p className="font-semibold">📧 Email Verification Required</p>
+          <p className="text-sm mt-1">
+            You must verify your email before you can list equipment for rent.
+          </p>
+          <div className="flex gap-2 mt-3">
+            <button
+              onClick={handleResendEmail}
+              disabled={resending}
+              className="text-sm bg-amber-600 text-white px-4 py-2 rounded-lg hover:bg-amber-700 transition disabled:opacity-50"
+            >
+              {resending ? "Sending..." : "Resend Email"}
+            </button>
+            <button
+              onClick={handleRedirectToVerification}
+              className="text-sm bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition"
+            >
+              Verify Email
+            </button>
+          </div>
+        </div>
+        <button
+          onClick={() => setDismissed(true)}
+          className="text-amber-600 hover:text-amber-800 ml-4"
+        >
+          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+          </svg>
+        </button>
+      </div>
+    </div>
+  );
+};
 
   // ============== HOME SCREEN ==============
   const HomeScreen = () => {
@@ -1336,325 +1390,342 @@ export default function Dashboard({ user: currentUser, onLogout }) {
   );
 
   // ============== ADD MACHINE FORM ==============
-  const AddMachineForm = () => {
-    const [formData, setFormData] = useState({
-      name: "",
-      category: "",
-      brand: "",
-      year: "",
-      pricingType: "daily",
-      pricePerDay: "",
-      pricePerHectare: "",
-      minimumHectares: "1",
-      horsepower: "",
-      description: "",
-    });
-    const [imageFiles, setImageFiles] = useState([]);
-    const [localUploadedImages, setLocalUploadedImages] = useState([]);
-    const [loading, setLoading] = useState(false);
-    const [error, setError] = useState("");
+const AddMachineForm = () => {
+  const [formData, setFormData] = useState({
+    name: "",
+    category: "",
+    brand: "",
+    year: "",
+    pricingType: "daily",
+    pricePerDay: "",
+    pricePerHectare: "",
+    minimumHectares: "1",
+    horsepower: "",
+    description: "",
+  });
+  const [imageFiles, setImageFiles] = useState([]);
+  const [localUploadedImages, setLocalUploadedImages] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
 
-    const handleChange = (e) => {
-      setFormData({ ...formData, [e.target.name]: e.target.value });
-    };
+  const handleChange = (e) => {
+    setFormData({ ...formData, [e.target.name]: e.target.value });
+  };
 
-    const handleImageUpload = (e) => {
-      const files = Array.from(e.target.files);
-      setImageFiles([...imageFiles, ...files]);
-      const previewUrls = files.map((file) => URL.createObjectURL(file));
-      setLocalUploadedImages([...localUploadedImages, ...previewUrls]);
-    };
-
-    const removeImage = (index) => {
-      setImageFiles(imageFiles.filter((_, i) => i !== index));
-      setLocalUploadedImages(localUploadedImages.filter((_, i) => i !== index));
-    };
-
-    const handleSubmit = async (e) => {
+  // ✅ ADD THIS: Prevent form submission on Enter key
+  const handleKeyDown = (e) => {
+    if (e.key === 'Enter') {
       e.preventDefault();
-      setLoading(true);
-      setError("");
+    }
+  };
 
-      try {
-        let imageUrls = [];
-        if (imageFiles.length > 0) {
-          const uploadResponse = await uploadAPI.uploadImages(imageFiles);
-          imageUrls = uploadResponse.data.images.map((img) => img.url);
-        }
+  const handleImageUpload = (e) => {
+    const files = Array.from(e.target.files);
+    setImageFiles([...imageFiles, ...files]);
+    const previewUrls = files.map((file) => URL.createObjectURL(file));
+    setLocalUploadedImages([...localUploadedImages, ...previewUrls]);
+  };
 
-        const machineData = {
-          name: formData.name,
-          category: formData.category.toLowerCase(),
-          brand: formData.brand,
-          year: parseInt(formData.year),
-          pricingType: formData.pricingType,
-          specifications: {
-            horsepower: parseInt(formData.horsepower || 0),
-          },
-          description: formData.description,
-          location: {
-            type: "Point",
-            coordinates: [-79.5, 43.8],
-          },
-          address: {
-            city: "Vaughan",
-            state: "ON",
-          },
-          images:
-            imageUrls.length > 0
-              ? imageUrls
-              : ["https://images.unsplash.com/photo-1625246333195-78d9c38ad449?w=400"],
-        };
+  const removeImage = (index) => {
+    setImageFiles(imageFiles.filter((_, i) => i !== index));
+    setLocalUploadedImages(localUploadedImages.filter((_, i) => i !== index));
+  };
 
-        if (formData.pricingType === "daily" || formData.pricingType === "both") {
-          machineData.pricePerDay = parseFloat(formData.pricePerDay);
-        }
-        if (formData.pricingType === "per_hectare" || formData.pricingType === "both") {
-          machineData.pricePerHectare = parseFloat(formData.pricePerHectare);
-          machineData.minimumHectares = parseFloat(formData.minimumHectares);
-        }
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setLoading(true);
+    setError("");
 
-        const response = await machineAPI.create(machineData);
-        if (response.data.success) {
-          setShowAddMachineForm(false);
-          setLocalUploadedImages([]);
-          setImageFiles([]);
-          await fetchMachines();
-          setCurrentView("machines");
-          alert("Machine added successfully!");
-        }
-      } catch (err) {
-        console.error("Error adding machine:", err);
-              if (err.response?.data?.needsVerification) {
-        setError("⚠️ Please verify your email before listing machines. Check your inbox!");
-        } else {
-        // Keep modal open so user sees the error
-        setError(err.response?.data?.message || "Failed to add machine");}
-      } finally {
-        setLoading(false);
+    try {
+      let imageUrls = [];
+      if (imageFiles.length > 0) {
+        const uploadResponse = await uploadAPI.uploadImages(imageFiles);
+        imageUrls = uploadResponse.data.images.map((img) => img.url);
       }
-    };
 
-    return (
-      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50 overflow-y-auto">
-        <div className="bg-white rounded-2xl p-6 max-w-md w-full my-8 shadow-2xl max-h-[90vh] overflow-y-auto">
-          <h2 className="text-2xl font-bold mb-4 bg-gradient-to-r from-blue-600 to-cyan-600 bg-clip-text text-transparent">
-            Add New Machine
-          </h2>
-          {error && (
-            <div className="bg-rose-100 border border-rose-300 text-rose-700 px-4 py-3 rounded-xl mb-4 text-sm">
-              {error}
-            </div>
-          )}
-          <form onSubmit={handleSubmit} className="space-y-4">
+      const machineData = {
+        name: formData.name,
+        category: formData.category.toLowerCase(),
+        brand: formData.brand,
+        year: parseInt(formData.year),
+        pricingType: formData.pricingType,
+        specifications: {
+          horsepower: parseInt(formData.horsepower || 0),
+        },
+        description: formData.description,
+        location: {
+          type: "Point",
+          coordinates: [-79.5, 43.8],
+        },
+        address: {
+          city: "Vaughan",
+          state: "ON",
+        },
+        images:
+          imageUrls.length > 0
+            ? imageUrls
+            : ["https://images.unsplash.com/photo-1625246333195-78d9c38ad449?w=400"],
+      };
+
+      if (formData.pricingType === "daily" || formData.pricingType === "both") {
+        machineData.pricePerDay = parseFloat(formData.pricePerDay);
+      }
+      if (formData.pricingType === "per_hectare" || formData.pricingType === "both") {
+        machineData.pricePerHectare = parseFloat(formData.pricePerHectare);
+        machineData.minimumHectares = parseFloat(formData.minimumHectares);
+      }
+
+      const response = await machineAPI.create(machineData);
+      if (response.data.success) {
+        setShowAddMachineForm(false);
+        setLocalUploadedImages([]);
+        setImageFiles([]);
+        await fetchMachines();
+        setCurrentView("machines");
+        alert("Machine added successfully!");
+      }
+    } catch (err) {
+      console.error("Error adding machine:", err);
+      
+      // ✅ IMPROVED ERROR HANDLING FOR VERIFICATION
+      if (err.response?.status === 403 && err.response?.data?.requiresVerification) {
+        setError("⚠️ Email verification required! Please verify your email before listing machines.");
+        
+        // Update local user state to reflect unverified status
+        const updatedUser = { ...localUser, isEmailVerified: false };
+        setLocalUser(updatedUser);
+        localStorage.setItem('user', JSON.stringify(updatedUser));
+      } else {
+        setError(err.response?.data?.message || "Failed to add machine");
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50 overflow-y-auto">
+      <div className="bg-white rounded-2xl p-6 max-w-md w-full my-8 shadow-2xl max-h-[90vh] overflow-y-auto">
+        <h2 className="text-2xl font-bold mb-4 bg-gradient-to-r from-blue-600 to-cyan-600 bg-clip-text text-transparent">
+          Add New Machine
+        </h2>
+        {error && (
+          <div className="bg-rose-100 border border-rose-300 text-rose-700 px-4 py-3 rounded-xl mb-4 text-sm">
+            {error}
+          </div>
+        )}
+        {/* ✅ ADD onKeyDown={handleKeyDown} TO THE FORM */}
+        <form onSubmit={handleSubmit} onKeyDown={handleKeyDown} className="space-y-4">
+          <div>
+            <label className="block text-sm font-semibold mb-2">Machine Name *</label>
+            <input
+              type="text"
+              name="name"
+              value={formData.name}
+              onChange={handleChange}
+              required
+              placeholder="e.g., John Deere 8R 370"
+              className="w-full border-2 border-gray-200 rounded-xl px-4 py-3 focus:border-blue-500 focus:outline-none"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-semibold mb-2">Category *</label>
+            <select
+              name="category"
+              value={formData.category}
+              onChange={handleChange}
+              required
+              className="w-full border-2 border-gray-200 rounded-xl px-4 py-3 focus:border-blue-500 focus:outline-none"
+            >
+              <option value="">Select Category</option>
+              <option value="tractor">Tractor</option>
+              <option value="harvester">Harvester</option>
+              <option value="planter">Planter</option>
+              <option value="sprayer">Sprayer</option>
+              <option value="desherbeuse">Desherbeuse</option>
+              <option value="excavator">Excavator</option>
+              <option value="cultivator">Cultivator</option>
+            </select>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-sm font-semibold mb-2">Machine Name *</label>
+              <label className="block text-sm font-semibold mb-2">Brand *</label>
               <input
                 type="text"
-                name="name"
-                value={formData.name}
+                name="brand"
+                value={formData.brand}
                 onChange={handleChange}
                 required
-                placeholder="e.g., John Deere 8R 370"
+                placeholder="John Deere"
                 className="w-full border-2 border-gray-200 rounded-xl px-4 py-3 focus:border-blue-500 focus:outline-none"
               />
             </div>
-
             <div>
-              <label className="block text-sm font-semibold mb-2">Category *</label>
-              <select
-                name="category"
-                value={formData.category}
-                onChange={handleChange}
-                required
-                className="w-full border-2 border-gray-200 rounded-xl px-4 py-3 focus:border-blue-500 focus:outline-none"
-              >
-                <option value="">Select Category</option>
-                <option value="tractor">Tractor</option>
-                <option value="harvester">Harvester</option>
-                <option value="planter">Planter</option>
-                <option value="sprayer">Sprayer</option>
-                <option value="desherbeuse">Desherbeuse</option>
-                <option value="excavator">Excavator</option>
-                <option value="cultivator">Cultivator</option>
-              </select>
-            </div>
-
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="block text-sm font-semibold mb-2">Brand *</label>
-                <input
-                  type="text"
-                  name="brand"
-                  value={formData.brand}
-                  onChange={handleChange}
-                  required
-                  placeholder="John Deere"
-                  className="w-full border-2 border-gray-200 rounded-xl px-4 py-3 focus:border-blue-500 focus:outline-none"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-semibold mb-2">Year *</label>
-                <input
-                  type="number"
-                  name="year"
-                  value={formData.year}
-                  onChange={handleChange}
-                  required
-                  placeholder="2024"
-                  className="w-full border-2 border-gray-200 rounded-xl px-4 py-3 focus:border-blue-500 focus:outline-none"
-                />
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-sm font-semibold mb-2">Pricing Type *</label>
-              <select
-                name="pricingType"
-                value={formData.pricingType}
-                onChange={handleChange}
-                required
-                className="w-full border-2 border-gray-200 rounded-xl px-4 py-3 focus:border-blue-500 focus:outline-none"
-              >
-                <option value="daily">Daily Rental</option>
-                <option value="per_hectare">Per Hectare</option>
-                <option value="both">Both (Daily & Per Hectare)</option>
-              </select>
-            </div>
-
-            {(formData.pricingType === "daily" || formData.pricingType === "both") && (
-              <div>
-                <label className="block text-sm font-semibold mb-2">Price per Day ($) *</label>
-                <input
-                  type="number"
-                  name="pricePerDay"
-                  value={formData.pricePerDay}
-                  onChange={handleChange}
-                  required
-                  placeholder="450"
-                  className="w-full border-2 border-gray-200 rounded-xl px-4 py-3 focus:border-blue-500 focus:outline-none"
-                />
-              </div>
-            )}
-
-            {(formData.pricingType === "per_hectare" || formData.pricingType === "both") && (
-              <>
-                <div>
-                  <label className="block text-sm font-semibold mb-2">
-                    Price per Hectare ($) *
-                  </label>
-                  <input
-                    type="number"
-                    name="pricePerHectare"
-                    value={formData.pricePerHectare}
-                    onChange={handleChange}
-                    required
-                    placeholder="75"
-                    className="w-full border-2 border-gray-200 rounded-xl px-4 py-3 focus:border-blue-500 focus:outline-none"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-semibold mb-2">Minimum Hectares</label>
-                  <input
-                    type="number"
-                    name="minimumHectares"
-                    value={formData.minimumHectares}
-                    onChange={handleChange}
-                    placeholder="1"
-                    className="w-full border-2 border-gray-200 rounded-xl px-4 py-3 focus:border-blue-500 focus:outline-none"
-                  />
-                </div>
-              </>
-            )}
-
-            <div>
-              <label className="block text-sm font-semibold mb-2">Horsepower</label>
+              <label className="block text-sm font-semibold mb-2">Year *</label>
               <input
                 type="number"
-                name="horsepower"
-                value={formData.horsepower}
+                name="year"
+                value={formData.year}
                 onChange={handleChange}
-                placeholder="370"
+                required
+                placeholder="2024"
+                // ✅ ADD onKeyDown HERE TOO FOR EXTRA SAFETY
+                onKeyDown={handleKeyDown}
                 className="w-full border-2 border-gray-200 rounded-xl px-4 py-3 focus:border-blue-500 focus:outline-none"
               />
             </div>
+          </div>
 
-            <div>
-              <label className="block text-sm font-semibold mb-2">Description</label>
-              <textarea
-                name="description"
-                value={formData.description}
-                onChange={handleChange}
-                placeholder="Describe your machine..."
-                rows="3"
-                className="w-full border-2 border-gray-200 rounded-xl px-4 py-3 focus:border-blue-500 focus:outline-none"
-              />
-            </div>
+          <div>
+            <label className="block text-sm font-semibold mb-2">Pricing Type *</label>
+            <select
+              name="pricingType"
+              value={formData.pricingType}
+              onChange={handleChange}
+              required
+              className="w-full border-2 border-gray-200 rounded-xl px-4 py-3 focus:border-blue-500 focus:outline-none"
+            >
+              <option value="daily">Daily Rental</option>
+              <option value="per_hectare">Per Hectare</option>
+              <option value="both">Both (Daily & Per Hectare)</option>
+            </select>
+          </div>
 
+          {(formData.pricingType === "daily" || formData.pricingType === "both") && (
             <div>
-              <label className="block text-sm font-semibold mb-2">Upload Images</label>
+              <label className="block text-sm font-semibold mb-2">Price per Day ($) *</label>
               <input
-                type="file"
-                accept="image/*"
-                multiple
-                onChange={handleImageUpload}
-                className="hidden"
-                id="imageUpload"
+                type="number"
+                name="pricePerDay"
+                value={formData.pricePerDay}
+                onChange={handleChange}
+                required
+                placeholder="450"
+                className="w-full border-2 border-gray-200 rounded-xl px-4 py-3 focus:border-blue-500 focus:outline-none"
               />
-              <label
-                htmlFor="imageUpload"
-                className="border-2 border-dashed border-blue-300 rounded-xl p-6 text-center cursor-pointer hover:border-blue-500 hover:bg-blue-50 transition block"
-              >
-                <Plus size={32} className="mx-auto text-blue-400 mb-2" />
-                <p className="text-sm text-gray-600">Click to upload images</p>
-              </label>
-              {localUploadedImages.length > 0 && (
-                <div className="grid grid-cols-3 gap-2 mt-3">
-                  {localUploadedImages.map((img, idx) => (
-                    <div key={idx} className="relative">
-                      <img
-                        src={img}
-                        alt={`Preview ${idx}`}
-                        className="w-full h-20 object-cover rounded-lg"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => removeImage(idx)}
-                        className="absolute -top-2 -right-2 bg-rose-500 text-white rounded-full w-6 h-6 flex items-center justify-center text-xs"
-                      >
-                        ×
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              )}
             </div>
+          )}
 
-            <div className="flex gap-3 mt-6">
-              <button
-                type="button"
-                onClick={() => {
-                  setShowAddMachineForm(false);
-                  setLocalUploadedImages([]);
-                  setImageFiles([]);
-                }}
-                className="flex-1 bg-gray-200 text-gray-700 py-3 rounded-xl font-semibold"
-              >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                disabled={loading}
-                className="flex-1 bg-gradient-to-r from-blue-600 to-cyan-600 text-white py-3 rounded-xl font-semibold disabled:opacity-50"
-              >
-                {loading ? "Saving..." : "Add Machine"}
-              </button>
-            </div>
-          </form>
-        </div>
+          {(formData.pricingType === "per_hectare" || formData.pricingType === "both") && (
+            <>
+              <div>
+                <label className="block text-sm font-semibold mb-2">
+                  Price per Hectare ($) *
+                </label>
+                <input
+                  type="number"
+                  name="pricePerHectare"
+                  value={formData.pricePerHectare}
+                  onChange={handleChange}
+                  required
+                  placeholder="75"
+                  className="w-full border-2 border-gray-200 rounded-xl px-4 py-3 focus:border-blue-500 focus:outline-none"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-semibold mb-2">Minimum Hectares</label>
+                <input
+                  type="number"
+                  name="minimumHectares"
+                  value={formData.minimumHectares}
+                  onChange={handleChange}
+                  placeholder="1"
+                  className="w-full border-2 border-gray-200 rounded-xl px-4 py-3 focus:border-blue-500 focus:outline-none"
+                />
+              </div>
+            </>
+          )}
+
+          <div>
+            <label className="block text-sm font-semibold mb-2">Horsepower</label>
+            <input
+              type="number"
+              name="horsepower"
+              value={formData.horsepower}
+              onChange={handleChange}
+              placeholder="370"
+              className="w-full border-2 border-gray-200 rounded-xl px-4 py-3 focus:border-blue-500 focus:outline-none"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-semibold mb-2">Description</label>
+            <textarea
+              name="description"
+              value={formData.description}
+              onChange={handleChange}
+              placeholder="Describe your machine..."
+              rows="3"
+              className="w-full border-2 border-gray-200 rounded-xl px-4 py-3 focus:border-blue-500 focus:outline-none"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-semibold mb-2">Upload Images</label>
+            <input
+              type="file"
+              accept="image/*"
+              multiple
+              onChange={handleImageUpload}
+              className="hidden"
+              id="imageUpload"
+            />
+            <label
+              htmlFor="imageUpload"
+              className="border-2 border-dashed border-blue-300 rounded-xl p-6 text-center cursor-pointer hover:border-blue-500 hover:bg-blue-50 transition block"
+            >
+              <Plus size={32} className="mx-auto text-blue-400 mb-2" />
+              <p className="text-sm text-gray-600">Click to upload images</p>
+            </label>
+            {localUploadedImages.length > 0 && (
+              <div className="grid grid-cols-3 gap-2 mt-3">
+                {localUploadedImages.map((img, idx) => (
+                  <div key={idx} className="relative">
+                    <img
+                      src={img}
+                      alt={`Preview ${idx}`}
+                      className="w-full h-20 object-cover rounded-lg"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => removeImage(idx)}
+                      className="absolute -top-2 -right-2 bg-rose-500 text-white rounded-full w-6 h-6 flex items-center justify-center text-xs"
+                    >
+                      ×
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className="flex gap-3 mt-6">
+            <button
+              type="button"
+              onClick={() => {
+                setShowAddMachineForm(false);
+                setLocalUploadedImages([]);
+                setImageFiles([]);
+              }}
+              className="flex-1 bg-gray-200 text-gray-700 py-3 rounded-xl font-semibold"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={loading}
+              className="flex-1 bg-gradient-to-r from-blue-600 to-cyan-600 text-white py-3 rounded-xl font-semibold disabled:opacity-50"
+            >
+              {loading ? "Saving..." : "Add Machine"}
+            </button>
+          </div>
+        </form>
       </div>
-    );
-  };
+    </div>
+  );
+};
 
   // ============== EDIT MACHINE FORM ==============
   const EditMachineForm = () => {
