@@ -5,18 +5,37 @@ const Machine = require('../models/Machine');
 const User = require('../models/User');
 const Rental = require('../models/Rental');
 
-// ✅ SPECIFIC ROUTES FIRST (before /:id)
-
-// Get owner's machines - MUST BE BEFORE /:id
-router.get('/my-machines', protect, async (req, res) => {
+// ✅ ADD THIS: Middleware to check email verification for owners
+const requireVerifiedEmail = async (req, res, next) => {
   try {
-    const machines = await Machine.find({ ownerId: req.user.id })
-      .sort({ createdAt: -1 });
-    res.json({ success: true, data: machines });
+    const user = await User.findById(req.user.id);
+    
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
+    // Only require verification for owners trying to list machines
+    if ((user.role === 'owner' || user.role === 'both') && !user.isEmailVerified) {
+      return res.status(403).json({
+        success: false,
+        message: 'Please verify your email before listing machines',
+        needsVerification: true
+      });
+    }
+
+    next();
   } catch (error) {
-    res.status(500).json({ success: false, message: error.message });
+    res.status(500).json({
+      success: false,
+      message: 'Error checking verification status'
+    });
   }
-});
+};
+
+// ✅ SPECIFIC ROUTES FIRST (before /:id)
 
 // Get all machines
 router.get('/', async (req, res) => {
@@ -29,6 +48,18 @@ router.get('/', async (req, res) => {
     res.status(500).json({ success: false, message: error.message });
   }
 });
+// Get owner's machines - MUST BE BEFORE /:id
+router.get('/my-machines', protect, async (req, res) => {
+  try {
+    const machines = await Machine.find({ ownerId: req.user.id })
+      .sort({ createdAt: -1 });
+    res.json({ success: true, data: machines });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+
 
 // ✅ DYNAMIC ROUTES LAST (/:id must be after specific routes)
 
@@ -49,76 +80,58 @@ router.get('/:id', async (req, res) => {
 });
 
 // Create machine
-router.post('/', protect, async (req, res) => {
+// ✅ UPDATED: Create machine (requires verification)
+router.post('/', protect, requireVerifiedEmail, async (req, res) => {
   try {
-    const user = await User.findById(req.user.id);
-    
-    // Check if owner is verified
-    if (!user.isEmailVerified && (user.role === 'owner' || user.role === 'both')) {
-      return res.status(403).json({ 
-        success: false, 
-        message: 'Please verify your email before listing equipment' 
-      });
-    }
-
     const machineData = {
       ...req.body,
-      ownerId: req.user.id
+      ownerId: req.user.id,
+      isActive: true
     };
 
     const machine = await Machine.create(machineData);
     
-    res.status(201).json({ 
-      success: true, 
+    res.status(201).json({
+      success: true,
       data: machine,
-      message: 'Machine added successfully' 
+      message: 'Machine added successfully'
     });
   } catch (error) {
-    console.error('Machine creation error:', error);
-    res.status(500).json({ 
-      success: false, 
-      message: error.message 
+    console.error('Error creating machine:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message
     });
   }
 });
 
 // Update machine
-router.put('/:id', protect, async (req, res) => {
+router.put('/:id', protect, requireVerifiedEmail, async (req, res) => {
   try {
-    const machine = await Machine.findById(req.params.id);
-    
+    const machine = await Machine.findOne({
+      _id: req.params.id,
+      ownerId: req.user.id
+    });
+
     if (!machine) {
-      return res.status(404).json({ 
-        success: false, 
-        message: 'Machine not found' 
+      return res.status(404).json({
+        success: false,
+        message: 'Machine not found or you are not the owner'
       });
     }
-    
-    if (machine.ownerId.toString() !== req.user.id) {
-      return res.status(403).json({ 
-        success: false, 
-        message: 'Not authorized to edit this machine' 
-      });
-    }
-    
-    delete req.body.ownerId;
-    
-    const updated = await Machine.findByIdAndUpdate(
-      req.params.id,
-      req.body,
-      { new: true, runValidators: true }
-    ).populate('ownerId', 'firstName lastName email');
-    
-    res.json({ 
-      success: true, 
-      data: updated,
+
+    Object.assign(machine, req.body);
+    await machine.save();
+
+    res.json({
+      success: true,
+      data: machine,
       message: 'Machine updated successfully'
     });
   } catch (error) {
-    console.error('Machine update error:', error);
-    res.status(500).json({ 
-      success: false, 
-      message: error.message 
+    res.status(500).json({
+      success: false,
+      message: error.message
     });
   }
 });

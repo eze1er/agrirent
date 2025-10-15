@@ -1,24 +1,52 @@
 const mongoose = require("mongoose");
 const bcrypt = require("bcryptjs");
 
-const userSchema = new mongoose.Schema(
-  {
-    firstName: { type: String, trim: true },
-    lastName: { type: String, trim: true },
-    email: {
-      type: String,
-      required: true,
-      unique: true,
-      lowercase: true,
-      trim: true,
-    },
-    password: { type: String, minlength: 6, select: false },
-    
-    // Email verification
-    isEmailVerified: { type: Boolean, default: false },
-    emailVerificationToken: String,
-    emailVerificationExpires: Date,
-    
+const userSchema = new mongoose.Schema({
+  firstName: {
+    type: String,
+    required: [true, 'First name is required'],
+    trim: true,
+  },
+  lastName: {
+    type: String,
+    required: [true, 'Last name is required'],
+    trim: true,
+  },
+  email: {
+    type: String,
+    required: [true, 'Email is required'],
+    unique: true,
+    lowercase: true,
+    trim: true,
+    match: [/^\S+@\S+\.\S+$/, 'Please enter a valid email'],
+  },
+  password: {
+    type: String,
+    required: [true, 'Password is required'],
+    minlength: [6, 'Password must be at least 6 characters'],
+    select: false, // Don't return password by default
+  },
+  phone: {
+    type: String,
+    trim: true,
+  },
+  role: {
+    type: String,
+    enum: ['renter', 'owner', 'both', 'admin'],
+    default: 'renter',
+  },
+  
+  // ✅ EMAIL VERIFICATION FIELDS
+  isEmailVerified: {
+    type: Boolean,
+    default: false, // ← CRITICAL: Must be false by default
+  },
+  emailVerificationToken: {
+    type: String,
+  },
+  emailVerificationExpires: {
+    type: Date,
+  },
     // Password reset
     passwordResetToken: String,
     passwordResetExpires: Date,

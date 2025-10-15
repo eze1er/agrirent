@@ -184,7 +184,6 @@ const paymentSchema = new mongoose.Schema({
 paymentSchema.index({ userId: 1, createdAt: -1 });
 paymentSchema.index({ ownerId: 1, createdAt: -1 });
 paymentSchema.index({ rentalId: 1 });
-paymentSchema.index({ transactionId: 1 });
 paymentSchema.index({ escrowStatus: 1 });
 paymentSchema.index({ 'autoRelease.scheduledReleaseDate': 1 });
 

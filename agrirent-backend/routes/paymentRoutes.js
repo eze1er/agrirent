@@ -237,15 +237,17 @@ router.post('/stripe/confirm', protect, requireStripe, async (req, res) => {
         return res.status(404).json({ success: false, message: 'Payment record not found' });
       }
 
-      // Update payment and rental
+      // Update payment
       payment.status = 'completed';
       payment.escrowStatus = 'held';
       payment.escrowTimeline = payment.escrowTimeline || {};
       payment.escrowTimeline.paidAt = new Date();
+      payment.escrowTimeline.heldAt = new Date();  // ← Add this
       await payment.save();
 
+      // ✅ FIX: Update rental to 'active'
       await Rental.findByIdAndUpdate(payment.rentalId, {
-        status: 'active',
+        status: 'active',  // ← This is critical!
         'payment.status': 'held_in_escrow',
         'payment.transactionId': paymentIntentId,
         'payment.method': 'stripe',
@@ -255,7 +257,7 @@ router.post('/stripe/confirm', protect, requireStripe, async (req, res) => {
 
       res.json({ 
         success: true, 
-        message: 'Payment held in escrow',
+        message: 'Payment held in escrow, rental is now active',
         data: payment 
       });
     } else {
@@ -444,8 +446,14 @@ router.get('/admin/pending-releases', protect, authorize('admin'), async (req, r
   try {
     const pendingPayments = await Payment.find({
       escrowStatus: 'held',
-      'confirmations.renterConfirmed': true,
-      'confirmations.adminVerified': { $ne: true } // ✅ Use $ne instead of false
+      $or: [
+        { 'confirmations.renterConfirmed': true },
+        { renterConfirmed: true }  // ✅ Add this to check both locations
+      ],
+      $or: [
+        { 'confirmations.adminVerified': { $ne: true } },
+        { adminVerified: { $ne: true } }
+      ]
     })
       .populate('userId', 'firstName lastName email')
       .populate('ownerId', 'firstName lastName email')
@@ -526,6 +534,56 @@ router.post('/debug-payment', protect, async (req, res) => {
       error: error.message 
     });
   }
+});
+
+const crypto = require('crypto');
+
+router.post('/webhooks/stripe', express.raw({ type: 'application/json' }), async (req, res) => {
+  const sig = req.headers['stripe-signature'];
+  const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
+
+  let event;
+  try {
+    event = stripe.webhooks.constructEvent(req.body, sig, webhookSecret);
+  } catch (err) {
+    console.error('❌ Webhook signature invalid:', err.message);
+    return res.status(400).send(`Webhook Error: ${err.message}`);
+  }
+
+  // Handle successful checkout
+  if (event.type === 'checkout.session.completed') {
+    const session = event.data.object;
+    const rentalId = session.metadata?.rentalId;
+
+    if (rentalId) {
+      // ✅ FIX: Update rental to 'active' when payment succeeds
+      const rental = await Rental.findByIdAndUpdate(
+        rentalId, 
+        { 
+          status: 'active',  // ← Changed from whatever it was
+          'payment.status': 'held_in_escrow',
+          'payment.transactionId': session.payment_intent,
+          'payment.paidAt': new Date()
+        },
+        { new: true }
+      );
+
+      // Update payment to 'held in escrow'
+      await Payment.findOneAndUpdate(
+        { rentalId },
+        {
+          status: 'completed',
+          escrowStatus: 'held',
+          'escrowTimeline.paidAt': new Date(),
+          'escrowTimeline.heldAt': new Date()
+        }
+      );
+      
+      console.log(`✅ Rental ${rentalId} activated via webhook, status: ${rental.status}`);
+    }
+  }
+
+  res.json({ received: true });
 });
 
 module.exports = router;

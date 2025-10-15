@@ -1,4 +1,4 @@
-// ✅ /agrirent-backend/models/Rental.js - FIXED VERSION
+// ✅ /agrirent-backend/models/Rental.js - FINAL VERSION WITH ESCROW
 const mongoose = require('mongoose');
 
 const rentalSchema = new mongoose.Schema({
@@ -48,7 +48,6 @@ const rentalSchema = new mongoose.Schema({
     required: function() { return this.rentalType === 'per_hectare'; }
   },
   
-  // ✅ SINGLE STATUS FIELD
   status: {
     type: String,
     enum: [
@@ -87,32 +86,66 @@ const rentalSchema = new mongoose.Schema({
   },
 
   // ============== PAYMENT & ESCROW FIELDS ==============
-  payment: {
-    status: {
-      type: String,
-      enum: ['pending', 'held_in_escrow', 'completed', 'failed', 'refunded'],
-      default: 'pending'
-    },
-    method: String,
-    transactionId: String,
-    amount: Number,
-    paidAt: Date
-  },
-
-  paymentInfo: {
-    status: String,
-    method: String,
-    transactionId: String,
-    amount: Number
+ // ESCROW STATUS FLOW
+  escrowStatus: {
+    type: String,
+    required: true,
+    enum: [
+      'pending',           // Payment initiated but not completed
+      'held', 
+      'approved',             // Payment received and held in AgriRent account
+      'released',          // Released to owner after renter confirmation
+      'disputed',          // Under dispute resolution
+      'refunded',          // Refunded to renter
+      'cancelled'          // Cancelled before payment
+    ],
+    default: 'pending',
   },
   
-  // ============== COMPLETION CONFIRMATION ==============
-  renterConfirmedCompletion: {
-    type: Boolean,
-    default: false
+  status: {
+    type: String,
+    required: true,
+    enum: ['pending', 'processing', 'completed', 'failed', 'refunded', 'approved', 'cancelled'],
+    default: 'pending',
   },
-  renterConfirmedAt: Date,
-  renterConfirmationNote: String,
+  
+  transactionId: {
+    type: String,
+    required: false,
+    unique: true,
+  },
+  
+  // ESCROW TIMELINE
+  escrowTimeline: {
+    paidAt: Date,              // When renter paid
+    heldAt: Date,              // When funds moved to escrow
+    renterConfirmedAt: Date,   // When renter confirmed job done
+    adminVerifiedAt: Date,     // When admin verified (optional)
+    releasedAt: Date,          // When released to owner
+    disputedAt: Date,          // If disputed
+    resolvedAt: Date,          // When dispute resolved
+  },
+
+  // ============== COMPLETION CONFIRMATION ==============
+  confirmations: {
+    renterConfirmed: {
+      type: Boolean,
+      default: false,
+    },
+    renterConfirmedAt: Date,
+    renterConfirmationNote: String,
+    
+    adminVerified: {
+      type: Boolean,
+      default: false,
+    },
+    adminVerifiedAt: Date,
+    adminVerifiedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+    },
+    adminNote: String,
+  },
 
   // ============== REVIEW SYSTEM ==============
   review: {
@@ -145,10 +178,8 @@ const rentalSchema = new mongoose.Schema({
   },
 
   // ============== TIMESTAMPS ==============
-  completedAt: Date,
+  completedAt: Date,  // When owner marked as completed
   cancelledAt: Date,
-  paymentDate: Date,
-  paymentStatus: String,
   
 }, { timestamps: true });
 
@@ -246,6 +277,48 @@ rentalSchema.statics.getActiveRentalsForMachine = async function(machineId) {
   }).sort({ startDate: 1 });
 };
 
+// Get rentals needing confirmation
+rentalSchema.statics.getPendingConfirmations = async function(renterId) {
+  return await this.find({
+    renterId,
+    status: 'completed',
+    'payment.status': 'held_in_escrow',
+    renterConfirmedCompletion: false
+  }).populate('machineId ownerId');
+};
+
+// Get owner's completed rentals
+rentalSchema.statics.getOwnerCompletedRentals = async function(ownerId) {
+  return await this.find({
+    ownerId,
+    status: 'completed',
+    'payment.status': 'completed'
+  }).populate('machineId renterId');
+};
+
+// Get rental statistics
+rentalSchema.statics.getRentalStats = async function(userId) {
+  const stats = await this.aggregate([
+    {
+      $match: {
+        $or: [
+          { renterId: mongoose.Types.ObjectId(userId) },
+          { ownerId: mongoose.Types.ObjectId(userId) }
+        ]
+      }
+    },
+    {
+      $group: {
+        _id: '$status',
+        count: { $sum: 1 },
+        totalRevenue: { $sum: '$pricing.totalPrice' }
+      }
+    }
+  ]);
+
+  return stats;
+};
+
 // ============== MIDDLEWARE ==============
 
 // Pre-save validation
@@ -291,7 +364,7 @@ rentalSchema.post('save', async function(doc, next) {
           const averageRating = totalRating / reviews.length;
 
           machine.rating = {
-            average: Math.round(averageRating * 10) / 10,
+            average: Math.round(averageRating * 10) / 10, // Round to 1 decimal
             count: reviews.length
           };
 

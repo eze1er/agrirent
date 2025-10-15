@@ -16,6 +16,15 @@ const validatePassword = (password) => {
   return password && password.length >= 6;
 };
 
+    const validatePhoneNumber = (phone) => {
+  if (!phone) return true; // Phone is optional
+  
+  // E.164 format: +[country code][number]
+  // Example: +12125551234 (US), +447911123456 (UK)
+  const phoneRegex = /^\+[1-9]\d{1,14}$/;
+  return phoneRegex.test(phone);
+};
+
 // ============================================
 // DEBUG ROUTES (Remove in production!)
 // ============================================
@@ -209,9 +218,20 @@ router.post('/debug/update-phone', async (req, res) => {
 // ============================================
 
 // Traditional email/password registration
+// Traditional email/password registration
+// Traditional email/password registration
 router.post('/register', async (req, res) => {
   try {
     const { firstName, lastName, email, password, phone, role } = req.body;
+
+    console.log('📝 Registration attempt:', {
+      firstName,
+      lastName,
+      email,
+      hasPassword: !!password,
+      phone,
+      role
+    });
 
     // Validation
     if (!firstName || !lastName || !email || !password) {
@@ -235,7 +255,6 @@ router.post('/register', async (req, res) => {
       });
     }
 
-        // ✅ NEW: Validate phone number if provided
     if (phone && !validatePhoneNumber(phone)) {
       return res.status(400).json({
         success: false,
@@ -243,7 +262,6 @@ router.post('/register', async (req, res) => {
       });
     }
 
-    // Validate role
     const validRoles = ['renter', 'owner', 'both'];
     const userRole = role || 'renter';
     if (!validRoles.includes(userRole)) {
@@ -252,15 +270,6 @@ router.post('/register', async (req, res) => {
         message: 'Invalid role. Must be renter, owner, or both'
       });
     }
-
-    const validatePhoneNumber = (phone) => {
-  if (!phone) return true; // Phone is optional
-  
-  // E.164 format: +[country code][number]
-  // Example: +12125551234 (US), +447911123456 (UK)
-  const phoneRegex = /^\+[1-9]\d{1,14}$/;
-  return phoneRegex.test(phone);
-};
 
     const existingUser = await User.findOne({ email: email.toLowerCase() });
     if (existingUser) {
@@ -273,6 +282,7 @@ router.post('/register', async (req, res) => {
     // Generate verification token
     const verificationToken = crypto.randomBytes(32).toString('hex');
 
+    // ✅ CRITICAL: Explicitly set isEmailVerified to false
     const user = await User.create({
       firstName: firstName.trim(),
       lastName: lastName.trim(),
@@ -280,16 +290,16 @@ router.post('/register', async (req, res) => {
       password,
       phone: phone?.trim(),
       role: userRole,
+      isEmailVerified: false, // ← EXPLICITLY SET TO FALSE
       emailVerificationToken: verificationToken,
       emailVerificationExpires: Date.now() + 24 * 60 * 60 * 1000
     });
 
-    // Send emails asynchronously (don't wait)
-    Promise.all([
-      sendVerificationEmail(user, verificationToken),
-      sendWelcomeEmail(user)
-    ]).catch(emailError => {
-      console.error('Email sending failed:', emailError);
+    console.log('✅ User created:', user.email, 'Verified:', user.isEmailVerified);
+
+    // Send verification email only (NOT welcome email)
+    sendVerificationEmail(user, verificationToken).catch(emailError => {
+      console.error('❌ Verification email failed:', emailError);
     });
 
     const token = jwt.sign(
@@ -307,12 +317,12 @@ router.post('/register', async (req, res) => {
         lastName: user.lastName,
         email: user.email,
         role: user.role,
-        isEmailVerified: user.isEmailVerified
+        isEmailVerified: user.isEmailVerified // Should be false
       },
       message: 'Registration successful! Please check your email to verify your account.'
     });
   } catch (error) {
-    console.error('Registration error:', error);
+    console.error('❌ Registration error:', error);
 
     if (error.code === 11000) {
       return res.status(400).json({
@@ -321,9 +331,18 @@ router.post('/register', async (req, res) => {
       });
     }
 
+    if (error.name === 'ValidationError') {
+      const messages = Object.values(error.errors).map(e => e.message);
+      return res.status(400).json({
+        success: false,
+        message: messages.join(', ')
+      });
+    }
+
     res.status(500).json({
       success: false,
-      message: 'Registration failed. Please try again.'
+      message: 'Registration failed. Please try again.',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
   }
 });
@@ -386,6 +405,79 @@ console.log('✅ Login successful:', email);
   }
 });
 
+// Resend verification email
+router.post('/resend-verification', async (req, res) => {
+  try {
+    const { email } = req.body;
+
+    console.log('📧 Resend verification request for:', email);
+
+    if (!email) {
+      return res.status(400).json({
+        success: false,
+        message: 'Email is required'
+      });
+    }
+
+    const user = await User.findOne({ email: email.toLowerCase() });
+
+    if (!user) {
+      console.log('❌ User not found:', email);
+      return res.status(404).json({
+        success: false,
+        message: 'No account found with this email'
+      });
+    }
+
+    console.log('📊 User verification status:', {
+      email: user.email,
+      isEmailVerified: user.isEmailVerified,
+      hasToken: !!user.emailVerificationToken
+    });
+
+    // ✅ Check verification status
+    if (user.isEmailVerified) {
+      console.log('✅ Email already verified for:', user.email);
+      return res.json({
+        success: true,
+        alreadyVerified: true,
+        message: 'Your email is already verified!'
+      });
+    }
+
+    // Generate NEW verification token
+    const verificationToken = crypto.randomBytes(32).toString('hex');
+    user.emailVerificationToken = verificationToken;
+    user.emailVerificationExpires = Date.now() + 24 * 60 * 60 * 1000; // 24 hours
+    await user.save();
+
+    console.log('🔑 New verification token generated for:', user.email);
+
+    // Send verification email
+    try {
+      await sendVerificationEmail(user, verificationToken);
+      console.log('✅ Verification email sent to:', user.email);
+    } catch (emailError) {
+      console.error('❌ Failed to send verification email:', emailError);
+      return res.status(500).json({
+        success: false,
+        message: 'Failed to send verification email. Please try again.'
+      });
+    }
+
+    res.json({
+      success: true,
+      alreadyVerified: false,
+      message: 'Verification email sent! Please check your inbox.'
+    });
+  } catch (error) {
+    console.error('❌ Resend verification error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to resend verification email'
+    });
+  }
+});
 // Email verification endpoint
 router.get('/verify-email/:token', async (req, res) => {
   try {
@@ -410,14 +502,31 @@ router.get('/verify-email/:token', async (req, res) => {
       });
     }
 
+    // Check if already verified
+    if (user.isEmailVerified) {
+      return res.json({
+        success: true,
+        message: 'Email is already verified',
+        alreadyVerified: true
+      });
+    }
+
+    // Verify the email
     user.isEmailVerified = true;
     user.emailVerificationToken = undefined;
     user.emailVerificationExpires = undefined;
     await user.save();
 
+    console.log('✅ Email verified:', user.email);
+
+    // ✅ NOW send the welcome email after verification
+    sendWelcomeEmail(user).catch(emailError => {
+      console.error('❌ Welcome email failed:', emailError);
+    });
+
     res.json({
       success: true,
-      message: 'Email verified successfully!'
+      message: 'Email verified successfully! Welcome to AgriRent! 🎉'
     });
   } catch (error) {
     console.error('Email verification error:', error);
@@ -427,94 +536,6 @@ router.get('/verify-email/:token', async (req, res) => {
     });
   }
 });
-
-// Resend verification email
-router.post('/resend-verification', async (req, res) => {
-  try {
-    const { email } = req.body;
-
-    if (!email) {
-      return res.status(400).json({
-        success: false,
-        message: 'Email is required'
-      });
-    }
-
-    const user = await User.findOne({ email: email.toLowerCase() });
-
-    if (!user) {
-      return res.status(404).json({
-        success: false,
-        message: 'No account found with this email'
-      });
-    }
-
-    if (user.isEmailVerified) {
-      return res.json({
-        success: true,
-        message: 'Your email is already verified'
-      });
-    }
-
-    const verificationToken = crypto.randomBytes(32).toString('hex');
-    user.emailVerificationToken = verificationToken;
-    user.emailVerificationExpires = Date.now() + 24 * 60 * 60 * 1000;
-    await user.save();
-
-    try {
-      await sendVerificationEmail(user, verificationToken);
-    } catch (emailError) {
-      console.error('Failed to send verification email:', emailError);
-      return res.status(500).json({
-        success: false,
-        message: 'Failed to send verification email'
-      });
-    }
-
-    res.json({
-      success: true,
-      message: 'Verification email sent successfully'
-    });
-  } catch (error) {
-    console.error('Resend verification error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to resend verification email'
-    });
-  }
-});
-
-// Google OAuth routes
-router.get('/google', passport.authenticate('google', {
-  scope: ['profile', 'email'],
-  session: false
-}));
-
-router.get('/google/callback',
-  passport.authenticate('google', {
-    failureRedirect: `${process.env.FRONTEND_URL}/?error=auth_failed`,
-    session: false
-  }),
-  (req, res) => {
-    try {
-      if (!req.user) {
-        return res.redirect(`${process.env.FRONTEND_URL}/?error=auth_failed`);
-      }
-
-      const token = jwt.sign(
-        { id: req.user._id, role: req.user.role },
-        process.env.JWT_SECRET,
-        { expiresIn: '7d' }
-      );
-
-      res.redirect(`${process.env.FRONTEND_URL}/?token=${token}`);
-    } catch (error) {
-      console.error('Google callback error:', error);
-      res.redirect(`${process.env.FRONTEND_URL}/?error=auth_failed`);
-    }
-  }
-);
-
 // Forgot password
 router.post('/forgot-password', async (req, res) => {
   try {
@@ -559,7 +580,6 @@ router.post('/forgot-password', async (req, res) => {
     });
   }
 });
-
 // Reset password
 router.post('/reset-password/:token', async (req, res) => {
   try {
@@ -602,5 +622,64 @@ router.post('/reset-password/:token', async (req, res) => {
     });
   }
 });
+// Check email verification status
+// router.get('/verification-status', protect, async (req, res) => {
+//   try {
+//     const user = await User.findById(req.user.id).select('email isEmailVerified role');
+    
+//     if (!user) {
+//       return res.status(404).json({
+//         success: false,
+//         message: 'User not found'
+//       });
+//     }
+
+//     res.json({
+//       success: true,
+//       data: {
+//         email: user.email,
+//         isEmailVerified: user.isEmailVerified,
+//         role: user.role
+//       }
+//     });
+//   } catch (error) {
+//     console.error('Error checking verification status:', error);
+//     res.status(500).json({
+//       success: false,
+//       message: 'Failed to check verification status'
+//     });
+//   }
+// });
+
+// Google OAuth routes
+router.get('/google', passport.authenticate('google', {
+  scope: ['profile', 'email'],
+  session: false
+}));
+
+router.get('/google/callback',
+  passport.authenticate('google', {
+    failureRedirect: `${process.env.FRONTEND_URL}/?error=auth_failed`,
+    session: false
+  }),
+  (req, res) => {
+    try {
+      if (!req.user) {
+        return res.redirect(`${process.env.FRONTEND_URL}/?error=auth_failed`);
+      }
+
+      const token = jwt.sign(
+        { id: req.user._id, role: req.user.role },
+        process.env.JWT_SECRET,
+        { expiresIn: '7d' }
+      );
+
+      res.redirect(`${process.env.FRONTEND_URL}/?token=${token}`);
+    } catch (error) {
+      console.error('Google callback error:', error);
+      res.redirect(`${process.env.FRONTEND_URL}/?error=auth_failed`);
+    }
+  }
+);
 
 module.exports = router;
