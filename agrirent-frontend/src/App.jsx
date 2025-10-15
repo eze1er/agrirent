@@ -5,7 +5,7 @@ import Auth from './components/Auth';
 import ForgotPassword from './pages/ForgotPassword';
 import ResetPassword from './pages/ResetPassword';
 import AdminEscrowDashboard from './components/AdminEscrowDashboard';
-import EmailVerification from './pages/EmailVerification';
+import PhoneVerificationPage from './pages/PhoneVerificationPage'; 
 import { userAPI } from './services/api';
 
 // Clear invalid tokens
@@ -28,15 +28,14 @@ function App() {
   const [currentUser, setCurrentUser] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  // ✅ ONLY handle OAuth callback (NOT email verification)
+  // Handle OAuth callback only
   useEffect(() => {
     const urlParams = new URLSearchParams(window.location.search);
     const token = urlParams.get('token');
     const error = urlParams.get('error');
-    const verified = urlParams.get('verified');
     
-    // ⚠️ CRITICAL: Skip if this is email verification - let EmailVerification page handle it
-    if (verified || window.location.pathname === '/verify-email') {
+    // ⚠️ Skip if this is phone verification page
+    if (window.location.pathname === '/verify-phone') {
       setLoading(false);
       return;
     }
@@ -99,7 +98,7 @@ function App() {
       setCurrentUser(userData);
       
       // Fetch real user data if needed
-      if (userData.email === 'loading@example.com' || !userData.hasOwnProperty('isEmailVerified')) {
+      if (userData.email === 'loading@example.com' || !userData.hasOwnProperty('isPhoneVerified')) {
         try {
           const response = await userAPI.getProfile();
           if (response.data.success) {
@@ -141,7 +140,7 @@ function App() {
   };
 
   // Show loading screen only when not on verification page
-  if (loading && window.location.pathname !== '/verify-email') {
+  if (loading && window.location.pathname !== '/verify-phone') {
     return (
       <div className="flex items-center justify-center h-screen bg-gradient-to-br from-gray-50 to-blue-50">
         <div className="text-center">
@@ -167,8 +166,8 @@ function App() {
       <Route path="/forgot-password" element={<ForgotPassword />} />
       <Route path="/reset-password" element={<ResetPassword />} />
       
-      {/* Email Verification Route - PUBLIC, handles its own logic */}
-      <Route path="/verify-email" element={<EmailVerification />} />
+      {/* ✅ Phone Verification Route - PUBLIC */}
+      <Route path="/verify-phone" element={<PhoneVerificationPage />} />
       
       {/* Admin Escrow Dashboard - Protected */}
       <Route 

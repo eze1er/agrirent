@@ -26,7 +26,10 @@ api.interceptors.request.use(
 api.interceptors.response.use(
   (response) => response,
   (error) => {
-    if (error.response?.status === 403 && error.response?.data?.requiresVerification) {
+    if (
+      error.response?.status === 403 &&
+      error.response?.data?.requiresVerification
+    ) {
       // This will be caught by components and handled appropriately
       return Promise.reject(error);
     }
@@ -39,8 +42,11 @@ export const authAPI = {
   register: (data) => api.post("/auth/register", data),
   login: (data) => api.post("/auth/login", data),
   resendVerification: (data) => api.post("/auth/resend-verification", data),
+    sendSMSVerification: (data) => api.post("/auth/send-sms-verification", data),
+  verifySMSCode: (data) => api.post("/auth/verify-sms-code", data),
   forgotPassword: (data) => api.post("/auth/forgot-password", data),
-  resetPassword: (token, data) => api.post(`/auth/reset-password/${token}`, data),
+  resetPassword: (token, data) =>
+    api.post(`/auth/reset-password/${token}`, data),
   verifyEmail: (token) => api.get(`/auth/verify-email/${token}`),
 };
 
@@ -105,10 +111,10 @@ export const uploadAPI = {
 export const userAPI = {
   getProfile: () => api.get("/users/profile"),
   updateProfile: (data) => api.put("/users/profile", data),
-  
+
   // ✅ ADDED: Verification status endpoint
   getVerificationStatus: () => api.get("/users/verification-status"),
-  
+
   updatePaymentPreferences: (data) =>
     api.put("/users/payment-preferences", data),
   getPaymentMethods: () => api.get("/users/payment-methods"),

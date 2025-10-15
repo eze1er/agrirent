@@ -2,6 +2,7 @@ const mongoose = require("mongoose");
 const bcrypt = require("bcryptjs");
 
 const userSchema = new mongoose.Schema({
+  // Basic Info
   firstName: {
     type: String,
     required: [true, 'First name is required'],
@@ -22,96 +23,107 @@ const userSchema = new mongoose.Schema({
   },
   password: {
     type: String,
-    required: [true, 'Password is required'],
+    required: function() {
+      return !this.googleId;
+    },
     minlength: [6, 'Password must be at least 6 characters'],
-    select: false, // Don't return password by default
+    select: false,
   },
+  
+  // Phone (REQUIRED for verification)
   phone: {
     type: String,
+    required: [true, 'Phone number is required'],
     trim: true,
+    validate: {
+      validator: function (v) {
+        return !v || /^\+[1-9]\d{1,14}$/.test(v);
+      },
+      message: "Phone number must be in international format (e.g., +16472377070)",
+    },
   },
+  
+  // Role
   role: {
     type: String,
     enum: ['renter', 'owner', 'both', 'admin'],
     default: 'renter',
   },
   
-  // ✅ EMAIL VERIFICATION FIELDS
-  isEmailVerified: {
+  // ✅ ONLY Phone Verification (no email verification)
+  isPhoneVerified: {
     type: Boolean,
-    default: false, // ← CRITICAL: Must be false by default
+    default: false,
   },
-  emailVerificationToken: {
+  phoneVerificationCode: {
     type: String,
   },
-  emailVerificationExpires: {
+  phoneVerificationExpires: {
     type: Date,
   },
-    // Password reset
-    passwordResetToken: String,
-    passwordResetExpires: Date,
-    
-    // Google OAuth fields
-    googleId: { type: String, sparse: true, unique: true },
-    avatar: { type: String },
-    
-    // Phone number for SMS notifications (E.164 format: +16472377070)
-    phone: {
-      type: String,
-      trim: true,
-      validate: {
-        validator: function (v) {
-          // E.164 format validation: +[country code][number]
-          return !v || /^\+[1-9]\d{1,14}$/.test(v);
-        },
-        message: "Phone number must be in international format (e.g., +16472377070)",
-      },
-    },
-    
-    // User role
-    role: {
-      type: String,
-      enum: ["owner", "renter", "both", "admin"],
-      default: "renter",
-    },
-    
-    // Profile
-    profileImage: String,
-    
-    // Address
-    address: {
-      street: String,
-      city: String,
-      state: String,
-      zipCode: String,
-      country: String,
-    },
-    
-    // Rating system
-    rating: {
-      average: { type: Number, default: 0 },
-      count: { type: Number, default: 0 },
-    },
-    
-    // Verification status
-    verificationStatus: {
-      type: String,
-      enum: ["pending", "verified", "rejected"],
-      default: "pending",
-    },
-    
-    // Active status
-    isActive: { type: Boolean, default: true },
+  phoneVerificationAttempts: {
+    type: Number,
+    default: 0,
   },
-  { timestamps: true }
+  
+  // Password Reset (still use email for password reset)
+  passwordResetToken: String,
+  passwordResetExpires: Date,
+  
+  // Google OAuth
+  googleId: { 
+    type: String, 
+    sparse: true, 
+    unique: true 
+  },
+  avatar: { 
+    type: String 
+  },
+  
+  // Profile
+  profileImage: String,
+  
+  // Address
+  address: {
+    street: String,
+    city: String,
+    state: String,
+    zipCode: String,
+    country: String,
+  },
+  
+  // Rating system
+  rating: {
+    average: { type: Number, default: 0 },
+    count: { type: Number, default: 0 },
+  },
+  
+  // Verification status (for document verification, NOT phone)
+  verificationStatus: {
+    type: String,
+    enum: ["pending", "verified", "rejected"],
+    default: "pending",
+  },
+  
+  // Active status
+  isActive: { 
+    type: Boolean, 
+    default: true 
+  },
+}, 
+{ timestamps: true }
 );
 
 // Hash password before saving
 userSchema.pre("save", async function (next) {
-  // Skip hashing if password not modified or if user signs up with Google
   if (!this.isModified("password") || !this.password) return next();
-  this.password = await bcrypt.hash(this.password, 12);
-  next();
+  
+  try {
+    this.password = await bcrypt.hash(this.password, 12);
+    next();
+  } catch (error) {
+    next(error);
+  }
 });
 
 // Compare password method

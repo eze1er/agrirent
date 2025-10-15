@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from "react";
-import { Mail, Lock, Phone, UserCircle, AlertCircle } from "lucide-react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
+import { Mail, Lock, Phone, AlertCircle } from "lucide-react";
 import { authAPI } from "../services/api";
 import { Link, useLocation } from "react-router-dom";
 
@@ -9,7 +9,6 @@ export default function Auth({ onLoginSuccess }) {
   const [error, setError] = useState("");
   const [phoneError, setPhoneError] = useState("");
   const location = useLocation();
-  const [prefilledEmail, setPrefilledEmail] = useState("");
   const [formData, setFormData] = useState({
     firstName: "",
     lastName: "",
@@ -19,41 +18,49 @@ export default function Auth({ onLoginSuccess }) {
     role: "renter",
   });
 
+  // ✅ Use ref to store validation timeout
+  const phoneValidationTimeoutRef = useRef(null);
+
   useEffect(() => {
     if (location.state?.email) {
-      setPrefilledEmail(location.state.email);
       setFormData(prev => ({ ...prev, email: location.state.email }));
     }
     if (location.state?.message) {
-      // Show success message if coming from verification
       setTimeout(() => {
         alert(location.state.message);
       }, 500);
     }
   }, [location]);
 
-  // Phone number validation function
-  const validatePhoneNumber = (phone) => {
-    if (!phone) return ""; // Phone is optional, so empty is valid
+  // ✅ Clean up timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (phoneValidationTimeoutRef.current) {
+        clearTimeout(phoneValidationTimeoutRef.current);
+      }
+    };
+  }, []);
 
-    // Basic international phone validation
-    const phoneRegex = /^\+\d{1,4}\d{6,14}$/; // + followed by country code (1-4 digits) and phone number (6-14 digits)
+  // Phone number validation function
+  const validatePhoneNumber = useCallback((phone) => {
+    if (!phone) return "Phone number is required";
+
+    const phoneRegex = /^\+\d{1,4}\d{6,14}$/;
 
     if (!phoneRegex.test(phone)) {
-      return "Please enter a valid international phone number (e.g., +12125551234)";
+      return "Please enter a valid international phone number (e.g., +16472377070)";
     }
 
-    // Additional validation for specific countries
     if (phone.startsWith("+1") && phone.length !== 12) {
-      return "US/Canada numbers should be 11 digits including +1 (e.g., +12125551234)";
+      return "US/Canada numbers should be 11 digits including +1 (e.g., +16472377070)";
     }
 
     if (phone.startsWith("+44") && phone.length !== 13) {
       return "UK numbers should be 13 digits including +44 (e.g., +447911123456)";
     }
 
-    return ""; // No error
-  };
+    return "";
+  }, []);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -61,8 +68,8 @@ export default function Auth({ onLoginSuccess }) {
     setError("");
     setPhoneError("");
 
-    // Validate phone number if provided
-    if (!isLogin && formData.phone) {
+    // Validate phone number for registration
+    if (!isLogin) {
       const phoneValidationError = validatePhoneNumber(formData.phone);
       if (phoneValidationError) {
         setPhoneError(phoneValidationError);
@@ -88,29 +95,25 @@ export default function Auth({ onLoginSuccess }) {
 
 if (response.data.success) {
   if (isLogin) {
-    // Login flow
     localStorage.setItem("token", response.data.token);
     localStorage.setItem("user", JSON.stringify(response.data.user));
 
-    // ✅ CHECK IF VERIFICATION IS REQUIRED
     if (response.data.requiresVerification) {
-      // Redirect to verification page
-      window.location.href = `/verify-email?email=${encodeURIComponent(formData.email)}`;
+      window.location.href = `/verify-phone?email=${encodeURIComponent(formData.email)}&phone=${encodeURIComponent(response.data.user.phone)}`;
     } else {
-      // User is verified, proceed to dashboard
       onLoginSuccess(response.data.user);
     }
   } else {
-    // ✅ REGISTRATION FLOW - Store token but redirect to verification
+    // Registration successful
     localStorage.setItem("token", response.data.token);
     localStorage.setItem("user", JSON.stringify(response.data.user));
     
-    // Redirect to verification page WITHOUT making another API call
-    window.location.href = `/verify-email?email=${encodeURIComponent(formData.email)}`;
+    window.location.href = `/verify-phone?email=${encodeURIComponent(formData.email)}&phone=${encodeURIComponent(formData.phone)}`;
   }
 } else {
-        setError(response.data.message || "Authentication failed");
-      }
+  // ✅ JUST SHOW ERROR - Don't redirect anywhere
+  setError(response.data.message || "Authentication failed");
+}
     } catch (err) {
       console.error("Auth error:", err);
       setError(
@@ -126,43 +129,57 @@ if (response.data.success) {
     window.location.href = "http://localhost:3001/api/auth/google";
   };
 
-  const handleChange = (e) => {
+  // ✅ STABLE handleChange with useCallback
+  const handleChange = useCallback((e) => {
     const { name, value } = e.target;
 
-    // Special handling for phone number
     if (name === "phone") {
-      // Remove any non-digit characters except +
       let cleanedValue = value.replace(/[^\d+]/g, "");
 
-      // Ensure it starts with + if it contains numbers
       if (cleanedValue && !cleanedValue.startsWith("+")) {
         cleanedValue = "+" + cleanedValue;
       }
 
-      // Limit length to prevent extremely long numbers
       if (cleanedValue.length > 16) {
         cleanedValue = cleanedValue.slice(0, 16);
       }
 
-      setFormData({ ...formData, [name]: cleanedValue });
+      setFormData(prev => ({ ...prev, [name]: cleanedValue }));
 
-      // Validate phone number in real-time
-      if (!isLogin) {
-        const validationError = validatePhoneNumber(cleanedValue);
-        setPhoneError(validationError);
+      // Clear previous timeout
+      if (phoneValidationTimeoutRef.current) {
+        clearTimeout(phoneValidationTimeoutRef.current);
       }
+
+      // Only validate after user stops typing for 800ms
+      phoneValidationTimeoutRef.current = setTimeout(() => {
+        const validationError = cleanedValue ? 
+          (cleanedValue.length < 10 ? "Phone number is too short" : 
+           /^\+\d{1,4}\d{6,14}$/.test(cleanedValue) ? "" : 
+           "Please enter a valid phone number") : 
+          "";
+        setPhoneError(validationError);
+      }, 800);
     } else {
-      setFormData({ ...formData, [name]: value });
+      setFormData(prev => ({ ...prev, [name]: value }));
     }
 
-    // Clear general error when user types
+    // Clear error when typing
     if (error) setError("");
-  };
+  }, [error]);
 
   const switchMode = () => {
     setIsLogin(!isLogin);
     setError("");
     setPhoneError("");
+    setFormData({
+      firstName: "",
+      lastName: "",
+      email: "",
+      password: "",
+      phone: "",
+      role: "renter",
+    });
   };
 
   return (
@@ -215,7 +232,7 @@ if (response.data.success) {
           </div>
         )}
 
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <form onSubmit={handleSubmit} className="space-y-4" autoComplete="off">
           {!isLogin && (
             <>
               <div className="grid grid-cols-2 gap-3">
@@ -229,6 +246,7 @@ if (response.data.success) {
                     value={formData.firstName}
                     onChange={handleChange}
                     required={!isLogin}
+                    autoComplete="off"
                     className="w-full border-2 border-gray-200 rounded-xl px-4 py-3 focus:border-indigo-500 focus:outline-none transition"
                     placeholder="John"
                   />
@@ -243,6 +261,7 @@ if (response.data.success) {
                     value={formData.lastName}
                     onChange={handleChange}
                     required={!isLogin}
+                    autoComplete="off"
                     className="w-full border-2 border-gray-200 rounded-xl px-4 py-3 focus:border-indigo-500 focus:outline-none transition"
                     placeholder="Doe"
                   />
@@ -251,7 +270,7 @@ if (response.data.success) {
 
               <div>
                 <label className="block text-sm font-semibold mb-2 text-gray-700">
-                  Phone Number (Optional)
+                  Phone Number *
                 </label>
                 <div className="relative">
                   <Phone
@@ -263,7 +282,9 @@ if (response.data.success) {
                     name="phone"
                     value={formData.phone}
                     onChange={handleChange}
-                    placeholder="+12125551234"
+                    required={!isLogin}
+                    autoComplete="off"
+                    placeholder="+16472377070"
                     className={`w-full border-2 rounded-xl pl-12 pr-4 py-3 focus:outline-none transition ${
                       phoneError
                         ? "border-rose-500 focus:border-rose-500"
@@ -278,19 +299,18 @@ if (response.data.success) {
                   </p>
                 )}
 
-                {/* Phone format guidance */}
                 <div className="bg-blue-50 border-l-4 border-blue-500 p-3 rounded mt-2">
                   <p className="text-sm text-blue-800 font-semibold mb-1">
                     📱 Phone Number Format
                   </p>
                   <p className="text-xs text-blue-700">
-                    <strong>USA/Canada:</strong> +1 followed by 10 digits (e.g.,
-                    +12125551234)
+                    <strong>Canada:</strong> +1 followed by 10 digits (e.g., +16472377070)
                     <br />
-                    <strong>UK:</strong> +44 followed by 10 digits (e.g.,
-                    +447911123456)
+                    <strong>USA:</strong> +1 followed by 10 digits (e.g., +12125551234)
                     <br />
-                    <strong>Other:</strong> +[country code][phone number]
+                    <strong>UK:</strong> +44 followed by 10 digits (e.g., +447911123456)
+                    <br />
+                    <strong>France:</strong> +33 followed by 9 digits (e.g., +33612345678)
                   </p>
                 </div>
               </div>
@@ -329,7 +349,7 @@ if (response.data.success) {
                 value={formData.email}
                 onChange={handleChange}
                 required
-                autoComplete={isLogin ? "email" : "email"}
+                autoComplete="off"
                 className="w-full border-2 border-gray-200 rounded-xl pl-12 pr-4 py-3 focus:border-indigo-500 focus:outline-none transition"
                 placeholder="your@email.com"
               />
@@ -352,7 +372,7 @@ if (response.data.success) {
                 onChange={handleChange}
                 required
                 minLength={6}
-                autoComplete={isLogin ? "current-password" : "new-password"}
+                autoComplete="new-password"
                 className="w-full border-2 border-gray-200 rounded-xl pl-12 pr-4 py-3 focus:border-indigo-500 focus:outline-none transition"
                 placeholder="••••••••"
               />

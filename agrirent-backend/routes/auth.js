@@ -5,6 +5,9 @@ const crypto = require('crypto');
 const passport = require('../middleware/config/passport');
 const User = require('../models/User');
 const { sendWelcomeEmail, sendVerificationEmail, sendPasswordResetEmail } = require('../services/emailService');
+const { sendVerificationSMS, generateVerificationCode } = require('../services/smsService');
+
+const smsSendLocks = new Map();
 
 // Validation helper
 const validateEmail = (email) => {
@@ -217,9 +220,7 @@ router.post('/debug/update-phone', async (req, res) => {
 // REGULAR AUTH ROUTES
 // ============================================
 
-// Traditional email/password registration
-// Traditional email/password registration
-// Traditional email/password registration
+// Traditional email/password registration - PHONE VERIFICATION ONLY
 router.post('/register', async (req, res) => {
   try {
     const { firstName, lastName, email, password, phone, role } = req.body;
@@ -234,10 +235,10 @@ router.post('/register', async (req, res) => {
     });
 
     // Validation
-    if (!firstName || !lastName || !email || !password) {
+    if (!firstName || !lastName || !email || !password || !phone) {
       return res.status(400).json({
         success: false,
-        message: 'First name, last name, email, and password are required'
+        message: 'First name, last name, email, password, and phone number are required'
       });
     }
 
@@ -255,7 +256,7 @@ router.post('/register', async (req, res) => {
       });
     }
 
-    if (phone && !validatePhoneNumber(phone)) {
+    if (!validatePhoneNumber(phone)) {
       return res.status(400).json({
         success: false,
         message: 'Invalid phone number format. Please use international format with country code (e.g., +12125551234)'
@@ -279,28 +280,26 @@ router.post('/register', async (req, res) => {
       });
     }
 
-    // Generate verification token
-    const verificationToken = crypto.randomBytes(32).toString('hex');
+    // ✅ Generate SMS verification code
+    const verificationCode = Math.floor(100000 + Math.random() * 900000).toString();
 
-    // ✅ CRITICAL: Explicitly set isEmailVerified to false
+    // Create user with phone verification code
     const user = await User.create({
       firstName: firstName.trim(),
       lastName: lastName.trim(),
       email: email.toLowerCase().trim(),
       password,
-      phone: phone?.trim(),
+      phone: phone.trim(),
       role: userRole,
-      isEmailVerified: false, // ← EXPLICITLY SET TO FALSE
-      emailVerificationToken: verificationToken,
-      emailVerificationExpires: Date.now() + 24 * 60 * 60 * 1000
+      isPhoneVerified: false,
+      phoneVerificationCode: verificationCode,
+      phoneVerificationExpires: Date.now() + 10 * 60 * 1000, // 10 minutes
+      phoneVerificationAttempts: 1
     });
 
-    console.log('✅ User created:', user.email, 'Verified:', user.isEmailVerified);
+    console.log('✅ User created:', user.email, 'Phone:', user.phone);
 
-    // Send verification email only (NOT welcome email)
-    sendVerificationEmail(user, verificationToken).catch(emailError => {
-      console.error('❌ Verification email failed:', emailError);
-    });
+    // ✅ Send ONLY SMS verification code (NO EMAIL)
 
     const token = jwt.sign(
       { id: user._id, role: user.role },
@@ -316,10 +315,11 @@ router.post('/register', async (req, res) => {
         firstName: user.firstName,
         lastName: user.lastName,
         email: user.email,
+        phone: user.phone,
         role: user.role,
-        isEmailVerified: user.isEmailVerified // Should be false
+        isPhoneVerified: user.isPhoneVerified
       },
-      message: 'Registration successful! Please check your email to verify your account.'
+      message: 'Registration successful! Please check your phone for verification code.'
     });
   } catch (error) {
     console.error('❌ Registration error:', error);
@@ -347,7 +347,6 @@ router.post('/register', async (req, res) => {
   }
 });
 
-// Traditional email/password login
 // Traditional email/password login
 router.post('/login', async (req, res) => {
   try {
@@ -379,9 +378,9 @@ router.post('/login', async (req, res) => {
       });
     }
 
-    // ✅ ADD THIS CHECK: If user is not verified
-    if (!user.isEmailVerified) {
-      console.log('⚠️ User not verified:', email);
+    // ✅ Check if phone is verified
+    if (!user.isPhoneVerified) {
+      console.log('⚠️ User phone not verified:', email);
       return res.json({
         success: true,
         token: jwt.sign(
@@ -394,11 +393,12 @@ router.post('/login', async (req, res) => {
           firstName: user.firstName,
           lastName: user.lastName,
           email: user.email,
+          phone: user.phone,
           role: user.role,
-          isEmailVerified: user.isEmailVerified
+          isPhoneVerified: user.isPhoneVerified
         },
-        requiresVerification: true, // ← NEW FLAG
-        message: 'Please verify your email to continue'
+        requiresVerification: true,
+        message: 'Please verify your phone number to continue'
       });
     }
 
@@ -418,10 +418,11 @@ router.post('/login', async (req, res) => {
         firstName: user.firstName,
         lastName: user.lastName,
         email: user.email,
+        phone: user.phone,
         role: user.role,
-        isEmailVerified: user.isEmailVerified
+        isPhoneVerified: user.isPhoneVerified
       },
-      requiresVerification: false // ← NEW FLAG
+      requiresVerification: false
     });
   } catch (error) {
     console.error('Login error:', error);
@@ -433,7 +434,6 @@ router.post('/login', async (req, res) => {
 });
 
 // Resend verification email
-// Resend verification email - FIXED VERSION
 router.post('/resend-verification', async (req, res) => {
   try {
     const { email } = req.body;
@@ -639,34 +639,399 @@ router.post('/reset-password/:token', async (req, res) => {
     });
   }
 });
-// Check email verification status
-// router.get('/verification-status', protect, async (req, res) => {
-//   try {
-//     const user = await User.findById(req.user.id).select('email isEmailVerified role');
-    
-//     if (!user) {
-//       return res.status(404).json({
-//         success: false,
-//         message: 'User not found'
-//       });
-//     }
 
-//     res.json({
-//       success: true,
-//       data: {
-//         email: user.email,
-//         isEmailVerified: user.isEmailVerified,
-//         role: user.role
-//       }
-//     });
-//   } catch (error) {
-//     console.error('Error checking verification status:', error);
-//     res.status(500).json({
-//       success: false,
-//       message: 'Failed to check verification status'
-//     });
-//   }
-// });
+// ============================================
+// SMS VERIFICATION ROUTES
+// ============================================
+
+// Send SMS verification code
+router.post('/send-sms-verification', async (req, res) => {
+  const requestId = Math.random().toString(36).substring(7);
+  console.log(`\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
+  console.log(`📱 [${requestId}] SMS REQUEST STARTED`);
+  console.log(`📱 [${requestId}] Email:`, req.body.email);
+  console.log(`📱 [${requestId}] Phone:`, req.body.phone);
+  console.log(`📱 [${requestId}] Time:`, new Date().toISOString());
+  
+  try {
+    const { email, phone } = req.body;
+
+    if (!phone) {
+      console.log(`❌ [${requestId}] No phone provided`);
+      return res.status(400).json({
+        success: false,
+        message: 'Phone number is required'
+      });
+    }
+
+    // CHECK LOCK
+    const lockKey = phone;
+    console.log(`🔒 [${requestId}] Checking lock for:`, lockKey);
+    console.log(`🔒 [${requestId}] Lock exists?`, smsSendLocks.has(lockKey));
+    
+    if (smsSendLocks.has(lockKey)) {
+      console.log(`⛔ [${requestId}] BLOCKED - Lock exists!`);
+      console.log(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`);
+      return res.json({
+        success: true,
+        message: 'Verification code is being sent. Please wait...',
+        expiresIn: '10 minutes'
+      });
+    }
+
+    // SET LOCK
+    console.log(`🔒 [${requestId}] Setting lock for:`, lockKey);
+    smsSendLocks.set(lockKey, true);
+    console.log(`🔒 [${requestId}] Lock set. Current locks:`, Array.from(smsSendLocks.keys()));
+    
+    setTimeout(() => {
+      console.log(`🔓 [${requestId}] Removing lock for:`, lockKey);
+      smsSendLocks.delete(lockKey);
+    }, 5000);
+
+    console.log(`🔍 [${requestId}] Finding user...`);
+    const user = await User.findOne({ 
+      $or: [
+        { email: email?.toLowerCase() },
+        { phone }
+      ]
+    });
+
+    if (!user) {
+      console.log(`❌ [${requestId}] User not found`);
+      smsSendLocks.delete(lockKey);
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
+    console.log(`✅ [${requestId}] User found:`, user.email);
+    console.log(`📋 [${requestId}] User verified?`, user.isPhoneVerified);
+    console.log(`📋 [${requestId}] Has code?`, !!user.phoneVerificationCode);
+    console.log(`📋 [${requestId}] Code expires:`, user.phoneVerificationExpires);
+    console.log(`📋 [${requestId}] Attempts:`, user.phoneVerificationAttempts);
+
+    if (user.isPhoneVerified) {
+      console.log(`✅ [${requestId}] Already verified - skipping`);
+      smsSendLocks.delete(lockKey);
+      return res.json({
+        success: true,
+        alreadyVerified: true,
+        message: 'Phone number is already verified'
+      });
+    }
+
+    // CHECK IF CODE EXISTS
+    const hasValidCode = user.phoneVerificationCode && 
+                        user.phoneVerificationExpires && 
+                        user.phoneVerificationExpires > Date.now();
+    
+    console.log(`📋 [${requestId}] Has valid code?`, hasValidCode);
+
+    let code;
+    
+    if (hasValidCode) {
+      console.log(`♻️ [${requestId}] REUSING existing code`);
+      code = user.phoneVerificationCode;
+    } else {
+      console.log(`🆕 [${requestId}] GENERATING new code`);
+      
+      // Rate limiting check
+      if (user.phoneVerificationAttempts >= 5) {
+        const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
+        const lastExpiry = user.phoneVerificationExpires || new Date(0);
+        
+        if (lastExpiry > oneHourAgo) {
+          console.log(`⛔ [${requestId}] Rate limit exceeded`);
+          smsSendLocks.delete(lockKey);
+          return res.status(429).json({
+            success: false,
+            message: 'Too many verification attempts. Please try again later.'
+          });
+        }
+        user.phoneVerificationAttempts = 0;
+      }
+
+      const { generateVerificationCode } = require('../services/smsService');
+      code = generateVerificationCode();
+      user.phoneVerificationCode = code;
+      user.phoneVerificationExpires = Date.now() + 10 * 60 * 1000;
+      user.phoneVerificationAttempts += 1;
+      await user.save();
+      console.log(`💾 [${requestId}] Code saved. Attempts now:`, user.phoneVerificationAttempts);
+    }
+
+    // SEND SMS
+    console.log(`📤 [${requestId}] Attempting to send SMS...`);
+    console.log(`📤 [${requestId}] To:`, user.phone);
+    console.log(`📤 [${requestId}] Code:`, code);
+    
+    try {
+      const { sendVerificationSMS } = require('../services/smsService');
+      await sendVerificationSMS(user.phone, code, user.firstName);
+      
+      console.log(`✅ [${requestId}] SMS SENT SUCCESSFULLY!`);
+      console.log(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`);
+      
+      res.json({
+        success: true,
+        message: 'Verification code sent to your phone',
+        expiresIn: '10 minutes'
+      });
+    } catch (smsError) {
+      console.error(`❌ [${requestId}] SMS send failed:`, smsError.message);
+      smsSendLocks.delete(lockKey);
+      console.log(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`);
+      return res.status(500).json({
+        success: false,
+        message: 'Failed to send SMS. Please check your phone number.'
+      });
+    }
+  } catch (error) {
+    console.error(`❌ [${requestId}] ERROR:`, error);
+    if (req.body.phone) {
+      smsSendLocks.delete(req.body.phone);
+    }
+    console.log(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to send verification code'
+    });
+  }
+});
+
+// Verify SMS code
+router.post('/verify-sms-code', async (req, res) => {
+  try {
+    const { email, phone, code } = req.body;
+
+    console.log('🔍 SMS code verification attempt:', { email, phone, code });
+
+    if (!code) {
+      return res.status(400).json({
+        success: false,
+        message: 'Verification code is required'
+      });
+    }
+
+    // Find user
+    const user = await User.findOne({ 
+      $or: [
+        { email: email?.toLowerCase() },
+        { phone }
+      ]
+    });
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
+    // Check if already verified
+    if (user.isPhoneVerified) {
+      return res.json({
+        success: true,
+        alreadyVerified: true,
+        message: 'Phone number is already verified'
+      });
+    }
+
+    // Check if code exists
+    if (!user.phoneVerificationCode) {
+      return res.status(400).json({
+        success: false,
+        message: 'No verification code found. Please request a new one.'
+      });
+    }
+
+    // Check if code expired
+    if (user.phoneVerificationExpires < Date.now()) {
+      return res.status(400).json({
+        success: false,
+        message: 'Verification code expired. Please request a new one.'
+      });
+    }
+
+    // Verify code
+    if (user.phoneVerificationCode !== code.trim()) {
+      console.log('❌ Invalid code. Expected:', user.phoneVerificationCode, 'Got:', code);
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid verification code'
+      });
+    }
+
+    // ✅ Mark phone AND overall account as verified
+    user.isPhoneVerified = true;
+    user.phoneVerificationCode = undefined;
+    user.phoneVerificationExpires = undefined;
+    user.phoneVerificationAttempts = 0;
+    await user.save();
+
+    console.log('✅ Phone verified for:', user.email);
+
+    // Generate new token with verified status
+    const jwt = require('jsonwebtoken');
+    const token = jwt.sign(
+      { id: user._id, role: user.role },
+      process.env.JWT_SECRET,
+      { expiresIn: '7d' }
+    );
+
+    res.json({
+      success: true,
+      token,
+      message: 'Phone number verified successfully!',
+      user: {
+        id: user._id,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        email: user.email,
+        phone: user.phone,
+        role: user.role,
+        isPhoneVerified: user.isPhoneVerified
+      }
+    });
+  } catch (error) {
+    console.error('❌ Verify SMS code error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to verify code'
+    });
+  }
+});
+// Verify SMS code
+// Traditional email/password registration - PHONE VERIFICATION ONLY
+router.post('/register', async (req, res) => {
+  try {
+    const { firstName, lastName, email, password, phone, role } = req.body;
+
+    console.log('📝 Registration attempt:', {
+      firstName,
+      lastName,
+      email,
+      hasPassword: !!password,
+      phone,
+      role
+    });
+
+    // Validation
+    if (!firstName || !lastName || !email || !password || !phone) {
+      return res.status(400).json({
+        success: false,
+        message: 'First name, last name, email, password, and phone number are required'
+      });
+    }
+
+    if (!validateEmail(email)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid email format'
+      });
+    }
+
+    if (!validatePassword(password)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Password must be at least 6 characters'
+      });
+    }
+
+    if (!validatePhoneNumber(phone)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid phone number format. Please use international format with country code (e.g., +12125551234)'
+      });
+    }
+
+    const validRoles = ['renter', 'owner', 'both'];
+    const userRole = role || 'renter';
+    if (!validRoles.includes(userRole)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid role. Must be renter, owner, or both'
+      });
+    }
+
+    const existingUser = await User.findOne({ email: email.toLowerCase() });
+    if (existingUser) {
+      return res.status(400).json({
+        success: false,
+        message: 'User already exists with this email'
+      });
+    }
+
+    // Generate SMS verification code
+    const verificationCode = Math.floor(100000 + Math.random() * 900000).toString();
+
+    // Create user with phone verification code
+    const user = await User.create({
+      firstName: firstName.trim(),
+      lastName: lastName.trim(),
+      email: email.toLowerCase().trim(),
+      password,
+      phone: phone.trim(),
+      role: userRole,
+      isPhoneVerified: false,
+      phoneVerificationCode: verificationCode,
+      phoneVerificationExpires: Date.now() + 10 * 60 * 1000,
+      phoneVerificationAttempts: 1 // Mark as code generated
+    });
+
+    console.log('✅ User created:', user.email, 'Phone:', user.phone);
+    console.log('📋 Code generated but NOT sent. Frontend will send it.');
+
+    // ✅ DO NOT SEND SMS HERE!
+    // Frontend will call /send-sms-verification which will reuse this code
+
+    const token = jwt.sign(
+      { id: user._id, role: user.role },
+      process.env.JWT_SECRET,
+      { expiresIn: '7d' }
+    );
+
+    res.status(201).json({
+      success: true,
+      token,
+      user: {
+        id: user._id,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        email: user.email,
+        phone: user.phone,
+        role: user.role,
+        isPhoneVerified: user.isPhoneVerified
+      },
+      message: 'Registration successful! Please verify your phone number.'
+    });
+  } catch (error) {
+    console.error('❌ Registration error:', error);
+
+    if (error.code === 11000) {
+      return res.status(400).json({
+        success: false,
+        message: 'User already exists with this email'
+      });
+    }
+
+    if (error.name === 'ValidationError') {
+      const messages = Object.values(error.errors).map(e => e.message);
+      return res.status(400).json({
+        success: false,
+        message: messages.join(', ')
+      });
+    }
+
+    res.status(500).json({
+      success: false,
+      message: 'Registration failed. Please try again.',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+});
 
 // Google OAuth routes
 router.get('/google', passport.authenticate('google', {
@@ -698,5 +1063,6 @@ router.get('/google/callback',
     }
   }
 );
+
 
 module.exports = router;
