@@ -221,6 +221,7 @@ router.post('/debug/update-phone', async (req, res) => {
 // ============================================
 
 // Traditional email/password registration - PHONE VERIFICATION ONLY
+// Traditional email/password registration - PHONE VERIFICATION ONLY
 router.post('/register', async (req, res) => {
   try {
     const { firstName, lastName, email, password, phone, role } = req.body;
@@ -256,22 +257,27 @@ router.post('/register', async (req, res) => {
       });
     }
 
-    if (!validatePhoneNumber(phone)) {
+    // Clean phone number before validation
+    const cleanedPhone = phone.trim();
+    
+    if (!validatePhoneNumber(cleanedPhone)) {
+      console.log('❌ Phone validation failed for:', cleanedPhone);
       return res.status(400).json({
         success: false,
-        message: 'Invalid phone number format. Please use international format with country code (e.g., +12125551234)'
+        message: 'Invalid phone number format. Please use international format starting with + (e.g., +16472377070)'
       });
     }
 
-    const validRoles = ['renter', 'owner', 'both'];
+    const validRoles = ['renter', 'owner', 'both', 'admin'];
     const userRole = role || 'renter';
     if (!validRoles.includes(userRole)) {
       return res.status(400).json({
         success: false,
-        message: 'Invalid role. Must be renter, owner, or both'
+        message: 'Invalid role. Must be renter, owner, both, or admin'
       });
     }
 
+    // Check for existing email
     const existingUser = await User.findOne({ email: email.toLowerCase() });
     if (existingUser) {
       return res.status(400).json({
@@ -280,26 +286,45 @@ router.post('/register', async (req, res) => {
       });
     }
 
-    // ✅ Generate SMS verification code
+    // ✅ CHECK BYPASS MODE
+    const bypassVerification = process.env.BYPASS_PHONE_VERIFICATION === 'true';
+    console.log('🔧 Bypass phone verification?', bypassVerification);
+
+    // Check for existing phone number ONLY if NOT bypassing
+    if (!bypassVerification) {
+      const existingPhone = await User.findOne({ phone: cleanedPhone });
+      if (existingPhone) {
+        console.log('❌ Phone already registered:', cleanedPhone);
+        return res.status(400).json({
+          success: false,
+          message: 'This phone number is already registered'
+        });
+      }
+    }
+
+    // Generate SMS verification code (even in bypass mode, for consistency)
     const verificationCode = Math.floor(100000 + Math.random() * 900000).toString();
 
-    // Create user with phone verification code
+    // Create user
     const user = await User.create({
       firstName: firstName.trim(),
       lastName: lastName.trim(),
       email: email.toLowerCase().trim(),
       password,
-      phone: phone.trim(),
+      phone: cleanedPhone,
       role: userRole,
-      isPhoneVerified: false,
-      phoneVerificationCode: verificationCode,
-      phoneVerificationExpires: Date.now() + 10 * 60 * 1000, // 10 minutes
-      phoneVerificationAttempts: 1
+      isPhoneVerified: bypassVerification, // ✅ Auto-verify if bypass mode
+      phoneVerificationCode: bypassVerification ? undefined : verificationCode,
+      phoneVerificationExpires: bypassVerification ? undefined : Date.now() + 10 * 60 * 1000,
+      phoneVerificationAttempts: bypassVerification ? 0 : 1
     });
 
-    console.log('✅ User created:', user.email, 'Phone:', user.phone);
-
-    // ✅ Send ONLY SMS verification code (NO EMAIL)
+    if (bypassVerification) {
+      console.log('✅ User created with BYPASS:', user.email, 'Phone:', user.phone, '(Auto-verified)');
+    } else {
+      console.log('✅ User created:', user.email, 'Phone:', user.phone);
+      console.log('📋 Code generated but NOT sent. Frontend will send it.');
+    }
 
     const token = jwt.sign(
       { id: user._id, role: user.role },
@@ -319,15 +344,29 @@ router.post('/register', async (req, res) => {
         role: user.role,
         isPhoneVerified: user.isPhoneVerified
       },
-      message: 'Registration successful! Please check your phone for verification code.'
+      message: bypassVerification 
+        ? 'Registration successful! You can now use the app.' 
+        : 'Registration successful! Please verify your phone number.'
     });
   } catch (error) {
     console.error('❌ Registration error:', error);
 
     if (error.code === 11000) {
+      if (error.keyPattern?.email) {
+        return res.status(400).json({
+          success: false,
+          message: 'User already exists with this email'
+        });
+      }
+      if (error.keyPattern?.phone) {
+        return res.status(400).json({
+          success: false,
+          message: 'This phone number is already registered'
+        });
+      }
       return res.status(400).json({
         success: false,
-        message: 'User already exists with this email'
+        message: 'User already exists'
       });
     }
 
@@ -347,6 +386,7 @@ router.post('/register', async (req, res) => {
   }
 });
 
+// Traditional email/password login
 // Traditional email/password login
 router.post('/login', async (req, res) => {
   try {
@@ -378,7 +418,36 @@ router.post('/login', async (req, res) => {
       });
     }
 
-    // ✅ Check if phone is verified
+    // ✅ CHECK BYPASS MODE
+    const bypassVerification = process.env.BYPASS_PHONE_VERIFICATION === 'true';
+
+    // Skip phone verification for admin OR if bypass mode is on
+    if (user.role === 'admin' || bypassVerification) {
+      console.log('✅ Login successful (verification bypassed):', email);
+      
+      const token = jwt.sign(
+        { id: user._id, role: user.role },
+        process.env.JWT_SECRET,
+        { expiresIn: '7d' }
+      );
+
+      return res.json({
+        success: true,
+        token,
+        user: {
+          id: user._id,
+          firstName: user.firstName,
+          lastName: user.lastName,
+          email: user.email,
+          phone: user.phone,
+          role: user.role,
+          isPhoneVerified: true // Force true
+        },
+        requiresVerification: false
+      });
+    }
+
+    // Check if phone is verified (only when NOT bypassing)
     if (!user.isPhoneVerified) {
       console.log('⚠️ User phone not verified:', email);
       return res.json({

@@ -108,11 +108,15 @@ if (response.data.success) {
     localStorage.setItem("token", response.data.token);
     localStorage.setItem("user", JSON.stringify(response.data.user));
     
-    window.location.href = `/verify-phone?email=${encodeURIComponent(formData.email)}&phone=${encodeURIComponent(formData.phone)}`;
+    // ✅ CHECK IF PHONE IS ALREADY VERIFIED (bypass mode)
+    if (response.data.user.isPhoneVerified) {
+      console.log('✅ Phone already verified, going to dashboard');
+      onLoginSuccess(response.data.user);
+    } else {
+      console.log('⏳ Phone not verified, going to verification page');
+      window.location.href = `/verify-phone?email=${encodeURIComponent(formData.email)}&phone=${encodeURIComponent(formData.phone)}`;
+    }
   }
-} else {
-  // ✅ JUST SHOW ERROR - Don't redirect anywhere
-  setError(response.data.message || "Authentication failed");
 }
     } catch (err) {
       console.error("Auth error:", err);
