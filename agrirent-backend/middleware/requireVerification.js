@@ -2,6 +2,14 @@ const User = require('../models/User');
 
 const requireVerification = async (req, res, next) => {
   try {
+    // ✅ CHECK BYPASS MODE FIRST
+    const bypassMode = process.env.BYPASS_PHONE_VERIFICATION === 'true';
+    
+    if (bypassMode) {
+      console.log('🔓 Bypass mode enabled - skipping verification check');
+      return next();
+    }
+
     const user = await User.findById(req.user.id);
     
     if (!user) {
@@ -11,10 +19,11 @@ const requireVerification = async (req, res, next) => {
       });
     }
 
-    if (!user.isEmailVerified) {
+    // ✅ Check phone verification (not email)
+    if (!user.isPhoneVerified) {
       return res.status(403).json({
         success: false,
-        message: 'Email verification required',
+        message: 'Phone verification required',
         requiresVerification: true
       });
     }

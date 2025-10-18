@@ -8,7 +8,13 @@ import {
   Plus,
   Star,
 } from "lucide-react";
-import { machineAPI, rentalAPI, uploadAPI, paymentAPI, userAPI } from "../services/api";
+import {
+  machineAPI,
+  rentalAPI,
+  uploadAPI,
+  paymentAPI,
+  userAPI,
+} from "../services/api";
 import BookingModal from "../components/BookingModal";
 import PaymentModal from "../components/PaymentModal";
 
@@ -25,18 +31,19 @@ export default function Dashboard({ user: currentUser, onLogout }) {
   const [loadingRentals, setLoadingRentals] = useState(false);
   const [showBookingModal, setShowBookingModal] = useState(false);
   const [bookingMachine, setBookingMachine] = useState(null);
-  
+
   // ✅ FIXED: Define localUser properly at the component level
   const [localUser, setLocalUser] = useState(() => {
     if (currentUser) return currentUser;
-    const stored = localStorage.getItem('user');
+    const stored = localStorage.getItem("user");
     return stored ? JSON.parse(stored) : null;
   });
 
   // Payment and completion states
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [paymentRental, setPaymentRental] = useState(null);
-  const [showConfirmCompletionModal, setShowConfirmCompletionModal] = useState(false);
+  const [showConfirmCompletionModal, setShowConfirmCompletionModal] =
+    useState(false);
   const [confirmingRental, setConfirmingRental] = useState(null);
   const [completionNote, setCompletionNote] = useState("");
   const [showDisputeModal, setShowDisputeModal] = useState(false);
@@ -51,43 +58,43 @@ export default function Dashboard({ user: currentUser, onLogout }) {
   // ✅ FIXED: Function to check verification status
   const checkVerificationStatus = async () => {
     try {
-      const token = localStorage.getItem('token');
+      const token = localStorage.getItem("token");
       if (!token) {
-        console.log('⚠️ No token found');
+        console.log("⚠️ No token found");
         return false;
       }
 
       const response = await userAPI.getVerificationStatus();
-      
+
       if (response.data.success) {
-        console.log('📊 Verification check result:', response.data.data);
-        
+        console.log("📊 Verification check result:", response.data.data);
+
         // Update local user state
         const updatedUser = {
           ...localUser,
-          isEmailVerified: response.data.data.isEmailVerified
+          isEmailVerified: response.data.data.isEmailVerified,
         };
         setLocalUser(updatedUser);
-        
+
         // Also update localStorage
-        const storedUser = JSON.parse(localStorage.getItem('user') || '{}');
+        const storedUser = JSON.parse(localStorage.getItem("user") || "{}");
         const newStoredUser = {
           ...storedUser,
-          isEmailVerified: response.data.data.isEmailVerified
+          isEmailVerified: response.data.data.isEmailVerified,
         };
-        localStorage.setItem('user', JSON.stringify(newStoredUser));
-        
+        localStorage.setItem("user", JSON.stringify(newStoredUser));
+
         return response.data.data.isEmailVerified;
       }
-      
+
       return false;
     } catch (error) {
-      console.error('❌ Error checking verification status:', error);
+      console.error("❌ Error checking verification status:", error);
       // If we get a 401, the token is invalid - redirect to login
       if (error.response?.status === 401) {
-        console.log('⚠️ Invalid token, redirecting to login');
+        console.log("⚠️ Invalid token, redirecting to login");
         localStorage.clear();
-        window.location.href = '/auth';
+        window.location.href = "/auth";
       }
       return false;
     }
@@ -96,65 +103,53 @@ export default function Dashboard({ user: currentUser, onLogout }) {
   // ✅ FIXED: Main useEffect with proper authentication check
   useEffect(() => {
     // Check authentication first
-    const token = localStorage.getItem('token');
-    const user = localStorage.getItem('user');
-    
+    const token = localStorage.getItem("token");
+    const user = localStorage.getItem("user");
+
     if (!token || !user) {
-      console.log('❌ No valid authentication found, redirecting to login');
-      window.location.href = '/auth';
+      console.log("❌ No valid authentication found, redirecting to login");
+      window.location.href = "/auth";
       return;
     }
 
-    let pollInterval;
-    
-    const startPolling = async () => {
-      // Don't poll if already verified
-      if (localUser?.isEmailVerified) {
-        return;
-      }
-      
-      // Only poll for owners
-      if (localUser?.role !== 'owner' && localUser?.role !== 'both') {
-        return;
-      }
-      
-      pollInterval = setInterval(async () => {
-        try {
-          console.log('🔄 Polling verification status...');
-          const isVerified = await checkVerificationStatus();
-          
-          if (isVerified) {
-            console.log('✅ Email verified! Stopping poll.');
-            clearInterval(pollInterval);
-          }
-        } catch (error) {
-          console.error('❌ Poll error:', error);
-          // Stop polling on error
-          clearInterval(pollInterval);
-        }
-      }, 10000); // Poll every 10 seconds
-    };
-    
-    // Initialize data
+    // ✅ CRITICAL: Only check import.meta.env (NOT process.env)
+    const bypassMode =
+      import.meta.env.VITE_BYPASS_PHONE_VERIFICATION === "true";
+
+    console.log("🔧 Bypass mode?", bypassMode);
+
+    // Initialize data ONCE
     const initializeData = async () => {
       try {
-        await checkVerificationStatus();
         await fetchMachines();
         await fetchRentals();
-        startPolling();
+
+        // ✅ ONLY start polling if bypass mode is OFF AND user is not verified
+        if (!bypassMode && !localUser?.isPhoneVerified) {
+          console.log("🔄 Starting verification polling...");
+          const pollInterval = setInterval(async () => {
+            try {
+              const isVerified = await checkVerificationStatus();
+              if (isVerified) {
+                console.log("✅ Verified! Stopping poll.");
+                clearInterval(pollInterval);
+              }
+            } catch (error) {
+              console.error("❌ Poll error:", error);
+              clearInterval(pollInterval);
+            }
+          }, 10000);
+
+          // Cleanup on unmount
+          return () => clearInterval(pollInterval);
+        }
       } catch (error) {
-        console.error('Error initializing dashboard data:', error);
+        console.error("Error initializing dashboard data:", error);
       }
     };
-    
+
     initializeData();
-    
-    return () => {
-      if (pollInterval) {
-        clearInterval(pollInterval);
-      }
-    };
-  }, [localUser?.isEmailVerified, localUser?.role]);
+  }, []); // ✅ Empty dependency array - run ONCE on mount
 
   const fetchMachines = async () => {
     setLoadingMachines(true);
@@ -217,9 +212,12 @@ export default function Dashboard({ user: currentUser, onLogout }) {
     }
 
     try {
-      const response = await paymentAPI.confirmCompletion(confirmingRental._id, {
-        confirmationNote: completionNote,
-      });
+      const response = await paymentAPI.confirmCompletion(
+        confirmingRental._id,
+        {
+          confirmationNote: completionNote,
+        }
+      );
 
       if (response.data.success) {
         alert(
@@ -237,7 +235,9 @@ export default function Dashboard({ user: currentUser, onLogout }) {
 
   const handleOpenDispute = async () => {
     if (!disputeReason.trim() || disputeReason.length < 20) {
-      alert("Please provide a detailed reason for the dispute (minimum 20 characters)");
+      alert(
+        "Please provide a detailed reason for the dispute (minimum 20 characters)"
+      );
       return;
     }
 
@@ -260,94 +260,112 @@ export default function Dashboard({ user: currentUser, onLogout }) {
     }
   };
 
-   const isOwner = (localUser?.role === "owner" || localUser?.role === "both") ||
-                  (currentUser?.role === "owner" || currentUser?.role === "both");
+  const isOwner =
+    localUser?.role === "owner" ||
+    localUser?.role === "both" ||
+    currentUser?.role === "owner" ||
+    currentUser?.role === "both";
 
-// ============== VERIFICATION BANNER ==============
-const VerificationBanner = () => {
-  const [dismissed, setDismissed] = useState(false);
-  const [resending, setResending] = useState(false);
-  const [checking, setChecking] = useState(false);
+  // ============== VERIFICATION BANNER ==============
+  const VerificationBanner = () => {
+    const [dismissed, setDismissed] = useState(false);
+    const [resending, setResending] = useState(false);
+    const [checking, setChecking] = useState(false);
 
-  // Don't show if user is verified OR banner was dismissed OR user is not owner
-  if (!localUser || localUser.isEmailVerified || dismissed) return null;
-  if (localUser.role !== "owner" && localUser.role !== "both") return null;
+    // Don't show if user is verified OR banner was dismissed OR user is not owner
+    if (!localUser || localUser.isEmailVerified || dismissed) return null;
+    if (localUser.role !== "owner" && localUser.role !== "both") return null;
 
-  const handleResendEmail = async () => {
-    setResending(true);
-    try {
-      const response = await fetch("http://localhost:3001/api/auth/resend-verification", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: localUser.email }),
-      });
-      
-      const data = await response.json();
-      
-      console.log('📧 Resend response:', data);
-      
-      if (data.success) {
-        if (data.alreadyVerified) {
-          // ✅ Email is verified, update state
-          const updatedUser = { ...localUser, isEmailVerified: true };
-          setLocalUser(updatedUser);
-          localStorage.setItem('user', JSON.stringify(updatedUser));
-          alert("✅ Your email is already verified! You can now list machines.");
+    const handleResendEmail = async () => {
+      setResending(true);
+      try {
+        const response = await fetch(
+          "http://localhost:3001/api/auth/resend-verification",
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ email: localUser.email }),
+          }
+        );
+
+        const data = await response.json();
+
+        console.log("📧 Resend response:", data);
+
+        if (data.success) {
+          if (data.alreadyVerified) {
+            // ✅ Email is verified, update state
+            const updatedUser = { ...localUser, isEmailVerified: true };
+            setLocalUser(updatedUser);
+            localStorage.setItem("user", JSON.stringify(updatedUser));
+            alert(
+              "✅ Your email is already verified! You can now list machines."
+            );
+          } else {
+            alert("✅ Verification email sent! Please check your inbox.");
+          }
         } else {
-          alert("✅ Verification email sent! Please check your inbox.");
+          alert("❌ " + data.message);
         }
-      } else {
-        alert("❌ " + data.message);
+      } catch (err) {
+        console.error("❌ Resend error:", err);
+        alert("❌ Failed to resend email. Please try again.");
+      } finally {
+        setResending(false);
       }
-    } catch (err) {
-      console.error('❌ Resend error:', err);
-      alert("❌ Failed to resend email. Please try again.");
-    } finally {
-      setResending(false);
-    }
-  };
+    };
 
-  const handleRedirectToVerification = () => {
-    // Redirect to the new verification page
-    window.location.href = '/verify-email';
-  };
+    const handleRedirectToVerification = () => {
+      // Redirect to the new verification page
+      window.location.href = "/verify-email";
+    };
 
-  return (
-    <div className="bg-amber-100 border-l-4 border-amber-500 text-amber-800 p-4 m-4 rounded-lg">
-      <div className="flex items-center justify-between">
-        <div className="flex-1">
-          <p className="font-semibold">📧 Email Verification Required</p>
-          <p className="text-sm mt-1">
-            You must verify your email before you can list equipment for rent.
-          </p>
-          <div className="flex gap-2 mt-3">
-            <button
-              onClick={handleResendEmail}
-              disabled={resending}
-              className="text-sm bg-amber-600 text-white px-4 py-2 rounded-lg hover:bg-amber-700 transition disabled:opacity-50"
-            >
-              {resending ? "Sending..." : "Resend Email"}
-            </button>
-            <button
-              onClick={handleRedirectToVerification}
-              className="text-sm bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition"
-            >
-              Verify Email
-            </button>
+    return (
+      <div className="bg-amber-100 border-l-4 border-amber-500 text-amber-800 p-4 m-4 rounded-lg">
+        <div className="flex items-center justify-between">
+          <div className="flex-1">
+            <p className="font-semibold">📧 Email Verification Required</p>
+            <p className="text-sm mt-1">
+              You must verify your email before you can list equipment for rent.
+            </p>
+            <div className="flex gap-2 mt-3">
+              <button
+                onClick={handleResendEmail}
+                disabled={resending}
+                className="text-sm bg-amber-600 text-white px-4 py-2 rounded-lg hover:bg-amber-700 transition disabled:opacity-50"
+              >
+                {resending ? "Sending..." : "Resend Email"}
+              </button>
+              <button
+                onClick={handleRedirectToVerification}
+                className="text-sm bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition"
+              >
+                Verify Email
+              </button>
+            </div>
           </div>
+          <button
+            onClick={() => setDismissed(true)}
+            className="text-amber-600 hover:text-amber-800 ml-4"
+          >
+            <svg
+              className="w-5 h-5"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth="2"
+                d="M6 18L18 6M6 6l12 12"
+              />
+            </svg>
+          </button>
         </div>
-        <button
-          onClick={() => setDismissed(true)}
-          className="text-amber-600 hover:text-amber-800 ml-4"
-        >
-          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
-          </svg>
-        </button>
       </div>
-    </div>
-  );
-};
+    );
+  };
 
   // ============== HOME SCREEN ==============
   const HomeScreen = () => {
@@ -359,7 +377,9 @@ const VerificationBanner = () => {
         <h2 className="text-3xl font-bold bg-gradient-to-r from-blue-600 via-cyan-600 to-teal-600 bg-clip-text text-transparent mb-2">
           Welcome, {localUser?.firstName}!
         </h2>
-        <p className="text-gray-600 mb-8">Find and rent agricultural equipment</p>
+        <p className="text-gray-600 mb-8">
+          Find and rent agricultural equipment
+        </p>
 
         {/* ... rest of HomeScreen ... */}
       </div>
@@ -460,7 +480,9 @@ const VerificationBanner = () => {
                   </span>
                 </div>
                 <div className="p-4">
-                  <h3 className="text-lg font-bold text-gray-800">{machine.name}</h3>
+                  <h3 className="text-lg font-bold text-gray-800">
+                    {machine.name}
+                  </h3>
                   <p className="text-sm text-gray-500 mt-1 capitalize">
                     {machine.category} • {machine.brand}
                   </p>
@@ -471,7 +493,8 @@ const VerificationBanner = () => {
                     </span>
                     {machine.rating?.count > 0 && (
                       <span className="text-xs text-gray-500">
-                        ({machine.rating.count} review{machine.rating.count !== 1 ? "s" : ""})
+                        ({machine.rating.count} review
+                        {machine.rating.count !== 1 ? "s" : ""})
                       </span>
                     )}
                     <span className="text-sm text-gray-500 ml-1">
@@ -510,7 +533,8 @@ const VerificationBanner = () => {
                           </span>
                         </div>
                         <div className="text-sm text-gray-600 italic">
-                          or ${machine.pricePerHectare}/hectare (min {machine.minimumHectares} Ha)
+                          or ${machine.pricePerHectare}/hectare (min{" "}
+                          {machine.minimumHectares} Ha)
                         </div>
                       </div>
                     )}
@@ -534,7 +558,9 @@ const VerificationBanner = () => {
       const fetchReviews = async () => {
         if (!selectedMachine?._id) return;
         try {
-          const response = await rentalAPI.getReviewsByMachine(selectedMachine._id);
+          const response = await rentalAPI.getReviewsByMachine(
+            selectedMachine._id
+          );
           if (response.data.success) {
             setMachineReviews(response.data.data || []);
           }
@@ -553,14 +579,18 @@ const VerificationBanner = () => {
     const images =
       selectedMachine.images && selectedMachine.images.length > 0
         ? selectedMachine.images
-        : ["https://images.unsplash.com/photo-1625246333195-78d9c38ad449?w=400"];
+        : [
+            "https://images.unsplash.com/photo-1625246333195-78d9c38ad449?w=400",
+          ];
 
     const nextImage = () => {
       setCurrentImageIndex((prev) => (prev + 1) % images.length);
     };
 
     const prevImage = () => {
-      setCurrentImageIndex((prev) => (prev - 1 + images.length) % images.length);
+      setCurrentImageIndex(
+        (prev) => (prev - 1 + images.length) % images.length
+      );
     };
 
     const isOwnMachine =
@@ -631,7 +661,9 @@ const VerificationBanner = () => {
           <div className="mt-4">
             <div className="flex items-center gap-1 mb-4">
               <Star size={20} className="text-amber-400 fill-amber-400" />
-              <span className="font-semibold">{selectedMachine.rating?.average || 0}</span>
+              <span className="font-semibold">
+                {selectedMachine.rating?.average || 0}
+              </span>
             </div>
 
             <div className="bg-gradient-to-br from-blue-50 to-cyan-50 rounded-xl p-4 mb-4">
@@ -663,7 +695,9 @@ const VerificationBanner = () => {
                     </div>
                   </div>
                   <div className="border-t border-gray-200 pt-3">
-                    <p className="text-sm text-gray-600 mb-1">Per Hectare Rate</p>
+                    <p className="text-sm text-gray-600 mb-1">
+                      Per Hectare Rate
+                    </p>
                     <div className="text-3xl font-bold bg-gradient-to-r from-emerald-600 to-teal-600 bg-clip-text text-transparent">
                       ${selectedMachine.pricePerHectare}/Ha
                     </div>
@@ -735,11 +769,18 @@ const VerificationBanner = () => {
         ) : (
           <div className="space-y-4">
             {rentals.map((rental) => (
-              <div key={rental._id} className="bg-white rounded-2xl p-5 shadow-lg">
+              <div
+                key={rental._id}
+                className="bg-white rounded-2xl p-5 shadow-lg"
+              >
                 <div className="flex justify-between items-start mb-3">
                   <div>
-                    <h3 className="font-bold">{rental.machineId?.name || "Machine"}</h3>
-                    <p className="text-sm text-gray-500">Status: {rental.status}</p>
+                    <h3 className="font-bold">
+                      {rental.machineId?.name || "Machine"}
+                    </h3>
+                    <p className="text-sm text-gray-500">
+                      Status: {rental.status}
+                    </p>
                   </div>
                   <span
                     className={`px-4 py-2 rounded-xl text-xs font-bold capitalize ${
@@ -775,9 +816,11 @@ const VerificationBanner = () => {
                 ) : (
                   <>
                     <p className="text-sm text-gray-600">
-                      Work Date: {new Date(rental.workDate).toLocaleDateString()}
+                      Work Date:{" "}
+                      {new Date(rental.workDate).toLocaleDateString()}
                     </p>
-                    <p className="text-sm text-gray-600">Hectares: {rental.pricing?.numberOfHectares} Ha
+                    <p className="text-sm text-gray-600">
+                      Hectares: {rental.pricing?.numberOfHectares} Ha
                     </p>
                     <p className="text-sm text-gray-600">
                       Location: {rental.fieldLocation}
@@ -813,7 +856,8 @@ const VerificationBanner = () => {
                     </div>
                     {rental.payment.status === "held_in_escrow" && (
                       <p className="text-xs text-gray-600 mt-1">
-                        Your payment is safely held by AgriRent until service is complete
+                        Your payment is safely held by AgriRent until service is
+                        complete
                       </p>
                     )}
                   </div>
@@ -822,7 +866,8 @@ const VerificationBanner = () => {
                 {/* ACTION BUTTONS BASED ON STATUS */}
                 {/* 1. APPROVED - Need to Pay */}
                 {rental.status === "approved" &&
-                  (!rental.payment?.status || rental.payment?.status === "pending") && (
+                  (!rental.payment?.status ||
+                    rental.payment?.status === "pending") && (
                     <button
                       onClick={() => {
                         setPaymentRental(rental);
@@ -844,7 +889,8 @@ const VerificationBanner = () => {
                           ⏳ Service in Progress
                         </p>
                         <p className="text-xs text-gray-600 mt-1">
-                          Once the owner completes the service, confirm it below to release payment
+                          Once the owner completes the service, confirm it below
+                          to release payment
                         </p>
                       </div>
                       {rental.status === "completed" && (
@@ -880,8 +926,8 @@ const VerificationBanner = () => {
                         ✅ You Confirmed Completion
                       </p>
                       <p className="text-xs text-gray-600 mt-1">
-                        AgriRent is verifying the transaction. Payment will be released to the
-                        owner within 24-48 hours.
+                        AgriRent is verifying the transaction. Payment will be
+                        released to the owner within 24-48 hours.
                       </p>
                     </div>
                   )}
@@ -893,56 +939,58 @@ const VerificationBanner = () => {
                       ⚠️ Dispute in Progress
                     </p>
                     <p className="text-xs text-gray-600 mt-1">
-                      Our team is reviewing this case. We'll contact you shortly.
+                      Our team is reviewing this case. We'll contact you
+                      shortly.
                     </p>
                   </div>
                 )}
 
                 {/* Review UI - Only after payment released */}
-                {rental.status === "completed" && rental.payment?.status === "completed" && (
-                  <>
-                    {rental.isReviewed ? (
-                      <div className="mt-4 bg-amber-50 border-l-4 border-amber-500 p-3 rounded">
-                        <div className="flex justify-between items-start">
-                          <div>
-                            <p className="text-sm font-semibold text-amber-800">
-                              ⭐ You rated this: {rental.review?.rating} stars
-                            </p>
-                            {rental.review?.comment && (
-                              <p className="text-sm text-gray-700 mt-1 italic">
-                                "{rental.review.comment}"
+                {rental.status === "completed" &&
+                  rental.payment?.status === "completed" && (
+                    <>
+                      {rental.isReviewed ? (
+                        <div className="mt-4 bg-amber-50 border-l-4 border-amber-500 p-3 rounded">
+                          <div className="flex justify-between items-start">
+                            <div>
+                              <p className="text-sm font-semibold text-amber-800">
+                                ⭐ You rated this: {rental.review?.rating} stars
                               </p>
-                            )}
+                              {rental.review?.comment && (
+                                <p className="text-sm text-gray-700 mt-1 italic">
+                                  "{rental.review.comment}"
+                                </p>
+                              )}
+                            </div>
+                            <button
+                              onClick={() => {
+                                setReviewingRental(rental);
+                                setReviewData({
+                                  rating: rental.review?.rating || 5,
+                                  comment: rental.review?.comment || "",
+                                });
+                                setShowReviewModal(true);
+                              }}
+                              className="text-xs text-blue-600 font-semibold hover:underline"
+                            >
+                              Edit
+                            </button>
                           </div>
-                          <button
-                            onClick={() => {
-                              setReviewingRental(rental);
-                              setReviewData({
-                                rating: rental.review?.rating || 5,
-                                comment: rental.review?.comment || "",
-                              });
-                              setShowReviewModal(true);
-                            }}
-                            className="text-xs text-blue-600 font-semibold hover:underline"
-                          >
-                            Edit
-                          </button>
                         </div>
-                      </div>
-                    ) : (
-                      <button
-                        onClick={() => {
-                          setReviewingRental(rental);
-                          setReviewData({ rating: 5, comment: "" });
-                          setShowReviewModal(true);
-                        }}
-                        className="w-full mt-4 bg-gradient-to-r from-amber-500 to-orange-500 text-white py-2 rounded-xl font-semibold hover:shadow-lg transition"
-                      >
-                        ⭐ Leave a Review
-                      </button>
-                    )}
-                  </>
-                )}
+                      ) : (
+                        <button
+                          onClick={() => {
+                            setReviewingRental(rental);
+                            setReviewData({ rating: 5, comment: "" });
+                            setShowReviewModal(true);
+                          }}
+                          className="w-full mt-4 bg-gradient-to-r from-amber-500 to-orange-500 text-white py-2 rounded-xl font-semibold hover:shadow-lg transition"
+                        >
+                          ⭐ Leave a Review
+                        </button>
+                      )}
+                    </>
+                  )}
               </div>
             ))}
           </div>
@@ -975,7 +1023,8 @@ const VerificationBanner = () => {
     };
 
     const handleDeleteMachine = async (machineId) => {
-      if (!window.confirm("Are you sure you want to delete this machine?")) return;
+      if (!window.confirm("Are you sure you want to delete this machine?"))
+        return;
       try {
         await machineAPI.delete(machineId);
         alert("Machine deleted successfully");
@@ -1013,7 +1062,9 @@ const VerificationBanner = () => {
         {myMachines.length === 0 ? (
           <div className="bg-white rounded-2xl p-8 shadow-lg text-center">
             <Tractor size={48} className="mx-auto text-gray-400 mb-3" />
-            <p className="text-gray-600 mb-4">You haven't listed any machines yet</p>
+            <p className="text-gray-600 mb-4">
+              You haven't listed any machines yet
+            </p>
             <button
               onClick={() => setShowAddMachineForm(true)}
               className="px-6 py-2 bg-gradient-to-r from-blue-600 to-cyan-600 text-white rounded-xl font-semibold"
@@ -1024,7 +1075,10 @@ const VerificationBanner = () => {
         ) : (
           <div className="space-y-4">
             {myMachines.map((machine) => (
-              <div key={machine._id} className="bg-white rounded-2xl shadow-lg p-4">
+              <div
+                key={machine._id}
+                className="bg-white rounded-2xl shadow-lg p-4"
+              >
                 <div className="flex gap-4">
                   <img
                     src={
@@ -1115,7 +1169,8 @@ const VerificationBanner = () => {
         if (response.data.success) {
           const myRequests = response.data.data.filter(
             (rental) =>
-              rental.ownerId?._id === currentUser?.id || rental.ownerId === currentUser?.id
+              rental.ownerId?._id === currentUser?.id ||
+              rental.ownerId === currentUser?.id
           );
           setRequests(myRequests);
         }
@@ -1127,7 +1182,8 @@ const VerificationBanner = () => {
     };
 
     const handleApprove = async (rentalId) => {
-      if (!window.confirm("Are you sure you want to approve this rental?")) return;
+      if (!window.confirm("Are you sure you want to approve this rental?"))
+        return;
       try {
         await rentalAPI.updateStatus(rentalId, { status: "approved" });
         alert("✅ Rental approved successfully! Notification sent to renter.");
@@ -1202,14 +1258,20 @@ const VerificationBanner = () => {
         ) : (
           <div className="space-y-4">
             {requests.map((rental) => (
-              <div key={rental._id} className="bg-white rounded-2xl p-5 shadow-lg">
+              <div
+                key={rental._id}
+                className="bg-white rounded-2xl p-5 shadow-lg"
+              >
                 <div className="flex justify-between items-start mb-3">
                   <div>
                     <h3 className="font-bold">{rental.machineId?.name}</h3>
                     <p className="text-sm text-gray-600">
-                      Renter: {rental.renterId?.firstName} {rental.renterId?.lastName}
+                      Renter: {rental.renterId?.firstName}{" "}
+                      {rental.renterId?.lastName}
                     </p>
-                    <p className="text-sm text-gray-600">Email: {rental.renterId?.email}</p>
+                    <p className="text-sm text-gray-600">
+                      Email: {rental.renterId?.email}
+                    </p>
                   </div>
                   <span
                     className={`px-4 py-2 rounded-xl text-xs font-bold capitalize ${
@@ -1241,12 +1303,15 @@ const VerificationBanner = () => {
                 ) : (
                   <>
                     <p className="text-sm text-gray-600">
-                      Work Date: {new Date(rental.workDate).toLocaleDateString()}
+                      Work Date:{" "}
+                      {new Date(rental.workDate).toLocaleDateString()}
                     </p>
                     <p className="text-sm text-gray-600">
                       Hectares: {rental.pricing?.numberOfHectares} Ha
                     </p>
-                    <p className="text-sm text-gray-600">Location: {rental.fieldLocation}</p>
+                    <p className="text-sm text-gray-600">
+                      Location: {rental.fieldLocation}
+                    </p>
                   </>
                 )}
                 <p className="text-lg font-bold mt-2 text-blue-600">
@@ -1259,7 +1324,9 @@ const VerificationBanner = () => {
                     <h4 className="font-semibold text-rose-800 text-sm mb-1">
                       📝 Reason for Decline:
                     </h4>
-                    <p className="text-gray-700 text-sm">{rental.rejectionReason}</p>
+                    <p className="text-gray-700 text-sm">
+                      {rental.rejectionReason}
+                    </p>
                   </div>
                 )}
 
@@ -1285,13 +1352,17 @@ const VerificationBanner = () => {
                 {["approved", "active"].includes(rental.status) && (
                   <button
                     onClick={async () => {
-                      if (!window.confirm("Mark this rental as completed?")) return;
+                      if (!window.confirm("Mark this rental as completed?"))
+                        return;
                       try {
                         await rentalAPI.complete(rental._id);
                         alert("✅ Rental completed!");
                         fetchRequests();
                       } catch (err) {
-                        alert(err.response?.data?.message || "Failed to complete rental");
+                        alert(
+                          err.response?.data?.message ||
+                            "Failed to complete rental"
+                        );
                       }
                     }}
                     className="mt-3 w-full py-2 bg-gradient-to-r from-blue-500 to-cyan-500 text-white rounded-xl font-semibold text-sm"
@@ -1312,11 +1383,13 @@ const VerificationBanner = () => {
                 Reject Rental Request
               </h2>
               <p className="text-gray-600 mb-4 text-sm">
-                Please provide a reason for rejecting this rental request. The renter will receive
-                your message via email and SMS.
+                Please provide a reason for rejecting this rental request. The
+                renter will receive your message via email and SMS.
               </p>
               <div className="mb-4">
-                <label className="block font-semibold mb-2 text-sm">Rejection Reason *</label>
+                <label className="block font-semibold mb-2 text-sm">
+                  Rejection Reason *
+                </label>
                 <textarea
                   value={rejectionReason}
                   onChange={(e) => setRejectionReason(e.target.value)}
@@ -1390,342 +1463,381 @@ const VerificationBanner = () => {
   );
 
   // ============== ADD MACHINE FORM ==============
-const AddMachineForm = () => {
-  const [formData, setFormData] = useState({
-    name: "",
-    category: "",
-    brand: "",
-    year: "",
-    pricingType: "daily",
-    pricePerDay: "",
-    pricePerHectare: "",
-    minimumHectares: "1",
-    horsepower: "",
-    description: "",
-  });
-  const [imageFiles, setImageFiles] = useState([]);
-  const [localUploadedImages, setLocalUploadedImages] = useState([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
+  const AddMachineForm = () => {
+    const [formData, setFormData] = useState({
+      name: "",
+      category: "",
+      brand: "",
+      year: "",
+      pricingType: "daily",
+      pricePerDay: "",
+      pricePerHectare: "",
+      minimumHectares: "1",
+      horsepower: "",
+      description: "",
+    });
+    const [imageFiles, setImageFiles] = useState([]);
+    const [localUploadedImages, setLocalUploadedImages] = useState([]);
+    const [loading, setLoading] = useState(false);
+    const [error, setError] = useState("");
 
-  const handleChange = (e) => {
-    setFormData({ ...formData, [e.target.name]: e.target.value });
-  };
+    const handleChange = (e) => {
+      setFormData({ ...formData, [e.target.name]: e.target.value });
+    };
 
-  // ✅ ADD THIS: Prevent form submission on Enter key
-  const handleKeyDown = (e) => {
-    if (e.key === 'Enter') {
+    // ✅ ADD THIS: Prevent form submission on Enter key
+    const handleKeyDown = (e) => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+      }
+    };
+
+    const handleImageUpload = (e) => {
+      const files = Array.from(e.target.files);
+      setImageFiles([...imageFiles, ...files]);
+      const previewUrls = files.map((file) => URL.createObjectURL(file));
+      setLocalUploadedImages([...localUploadedImages, ...previewUrls]);
+    };
+
+    const removeImage = (index) => {
+      setImageFiles(imageFiles.filter((_, i) => i !== index));
+      setLocalUploadedImages(localUploadedImages.filter((_, i) => i !== index));
+    };
+
+    const handleSubmit = async (e) => {
       e.preventDefault();
-    }
-  };
+      setLoading(true);
+      setError("");
 
-  const handleImageUpload = (e) => {
-    const files = Array.from(e.target.files);
-    setImageFiles([...imageFiles, ...files]);
-    const previewUrls = files.map((file) => URL.createObjectURL(file));
-    setLocalUploadedImages([...localUploadedImages, ...previewUrls]);
-  };
+      try {
+        let imageUrls = [];
+        if (imageFiles.length > 0) {
+          const uploadResponse = await uploadAPI.uploadImages(imageFiles);
+          imageUrls = uploadResponse.data.images.map((img) => img.url);
+        }
 
-  const removeImage = (index) => {
-    setImageFiles(imageFiles.filter((_, i) => i !== index));
-    setLocalUploadedImages(localUploadedImages.filter((_, i) => i !== index));
-  };
+        const machineData = {
+          name: formData.name,
+          category: formData.category.toLowerCase(),
+          brand: formData.brand,
+          year: parseInt(formData.year),
+          pricingType: formData.pricingType,
+          specifications: {
+            horsepower: parseInt(formData.horsepower || 0),
+          },
+          description: formData.description,
+          location: {
+            type: "Point",
+            coordinates: [-79.5, 43.8],
+          },
+          address: {
+            city: "Vaughan",
+            state: "ON",
+          },
+          images:
+            imageUrls.length > 0
+              ? imageUrls
+              : [
+                  "https://images.unsplash.com/photo-1625246333195-78d9c38ad449?w=400",
+                ],
+        };
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    setLoading(true);
-    setError("");
+        if (
+          formData.pricingType === "daily" ||
+          formData.pricingType === "both"
+        ) {
+          machineData.pricePerDay = parseFloat(formData.pricePerDay);
+        }
+        if (
+          formData.pricingType === "per_hectare" ||
+          formData.pricingType === "both"
+        ) {
+          machineData.pricePerHectare = parseFloat(formData.pricePerHectare);
+          machineData.minimumHectares = parseFloat(formData.minimumHectares);
+        }
 
-    try {
-      let imageUrls = [];
-      if (imageFiles.length > 0) {
-        const uploadResponse = await uploadAPI.uploadImages(imageFiles);
-        imageUrls = uploadResponse.data.images.map((img) => img.url);
+        const response = await machineAPI.create(machineData);
+        if (response.data.success) {
+          setShowAddMachineForm(false);
+          setLocalUploadedImages([]);
+          setImageFiles([]);
+          await fetchMachines();
+          setCurrentView("machines");
+          alert("Machine added successfully!");
+        }
+      } catch (err) {
+        console.error("Error adding machine:", err);
+
+        // ✅ IMPROVED ERROR HANDLING FOR VERIFICATION
+        if (
+          err.response?.status === 403 &&
+          err.response?.data?.requiresVerification
+        ) {
+          setError(
+            "⚠️ Email verification required! Please verify your email before listing machines."
+          );
+
+          // Update local user state to reflect unverified status
+          const updatedUser = { ...localUser, isEmailVerified: false };
+          setLocalUser(updatedUser);
+          localStorage.setItem("user", JSON.stringify(updatedUser));
+        } else {
+          setError(err.response?.data?.message || "Failed to add machine");
+        }
+      } finally {
+        setLoading(false);
       }
+    };
 
-      const machineData = {
-        name: formData.name,
-        category: formData.category.toLowerCase(),
-        brand: formData.brand,
-        year: parseInt(formData.year),
-        pricingType: formData.pricingType,
-        specifications: {
-          horsepower: parseInt(formData.horsepower || 0),
-        },
-        description: formData.description,
-        location: {
-          type: "Point",
-          coordinates: [-79.5, 43.8],
-        },
-        address: {
-          city: "Vaughan",
-          state: "ON",
-        },
-        images:
-          imageUrls.length > 0
-            ? imageUrls
-            : ["https://images.unsplash.com/photo-1625246333195-78d9c38ad449?w=400"],
-      };
-
-      if (formData.pricingType === "daily" || formData.pricingType === "both") {
-        machineData.pricePerDay = parseFloat(formData.pricePerDay);
-      }
-      if (formData.pricingType === "per_hectare" || formData.pricingType === "both") {
-        machineData.pricePerHectare = parseFloat(formData.pricePerHectare);
-        machineData.minimumHectares = parseFloat(formData.minimumHectares);
-      }
-
-      const response = await machineAPI.create(machineData);
-      if (response.data.success) {
-        setShowAddMachineForm(false);
-        setLocalUploadedImages([]);
-        setImageFiles([]);
-        await fetchMachines();
-        setCurrentView("machines");
-        alert("Machine added successfully!");
-      }
-    } catch (err) {
-      console.error("Error adding machine:", err);
-      
-      // ✅ IMPROVED ERROR HANDLING FOR VERIFICATION
-      if (err.response?.status === 403 && err.response?.data?.requiresVerification) {
-        setError("⚠️ Email verification required! Please verify your email before listing machines.");
-        
-        // Update local user state to reflect unverified status
-        const updatedUser = { ...localUser, isEmailVerified: false };
-        setLocalUser(updatedUser);
-        localStorage.setItem('user', JSON.stringify(updatedUser));
-      } else {
-        setError(err.response?.data?.message || "Failed to add machine");
-      }
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50 overflow-y-auto">
-      <div className="bg-white rounded-2xl p-6 max-w-md w-full my-8 shadow-2xl max-h-[90vh] overflow-y-auto">
-        <h2 className="text-2xl font-bold mb-4 bg-gradient-to-r from-blue-600 to-cyan-600 bg-clip-text text-transparent">
-          Add New Machine
-        </h2>
-        {error && (
-          <div className="bg-rose-100 border border-rose-300 text-rose-700 px-4 py-3 rounded-xl mb-4 text-sm">
-            {error}
-          </div>
-        )}
-        {/* ✅ ADD onKeyDown={handleKeyDown} TO THE FORM */}
-        <form onSubmit={handleSubmit} onKeyDown={handleKeyDown} className="space-y-4">
-          <div>
-            <label className="block text-sm font-semibold mb-2">Machine Name *</label>
-            <input
-              type="text"
-              name="name"
-              value={formData.name}
-              onChange={handleChange}
-              required
-              placeholder="e.g., John Deere 8R 370"
-              className="w-full border-2 border-gray-200 rounded-xl px-4 py-3 focus:border-blue-500 focus:outline-none"
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-semibold mb-2">Category *</label>
-            <select
-              name="category"
-              value={formData.category}
-              onChange={handleChange}
-              required
-              className="w-full border-2 border-gray-200 rounded-xl px-4 py-3 focus:border-blue-500 focus:outline-none"
-            >
-              <option value="">Select Category</option>
-              <option value="tractor">Tractor</option>
-              <option value="harvester">Harvester</option>
-              <option value="planter">Planter</option>
-              <option value="sprayer">Sprayer</option>
-              <option value="desherbeuse">Desherbeuse</option>
-              <option value="excavator">Excavator</option>
-              <option value="cultivator">Cultivator</option>
-            </select>
-          </div>
-
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-sm font-semibold mb-2">Brand *</label>
-              <input
-                type="text"
-                name="brand"
-                value={formData.brand}
-                onChange={handleChange}
-                required
-                placeholder="John Deere"
-                className="w-full border-2 border-gray-200 rounded-xl px-4 py-3 focus:border-blue-500 focus:outline-none"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-semibold mb-2">Year *</label>
-              <input
-                type="number"
-                name="year"
-                value={formData.year}
-                onChange={handleChange}
-                required
-                placeholder="2024"
-                // ✅ ADD onKeyDown HERE TOO FOR EXTRA SAFETY
-                onKeyDown={handleKeyDown}
-                className="w-full border-2 border-gray-200 rounded-xl px-4 py-3 focus:border-blue-500 focus:outline-none"
-              />
-            </div>
-          </div>
-
-          <div>
-            <label className="block text-sm font-semibold mb-2">Pricing Type *</label>
-            <select
-              name="pricingType"
-              value={formData.pricingType}
-              onChange={handleChange}
-              required
-              className="w-full border-2 border-gray-200 rounded-xl px-4 py-3 focus:border-blue-500 focus:outline-none"
-            >
-              <option value="daily">Daily Rental</option>
-              <option value="per_hectare">Per Hectare</option>
-              <option value="both">Both (Daily & Per Hectare)</option>
-            </select>
-          </div>
-
-          {(formData.pricingType === "daily" || formData.pricingType === "both") && (
-            <div>
-              <label className="block text-sm font-semibold mb-2">Price per Day ($) *</label>
-              <input
-                type="number"
-                name="pricePerDay"
-                value={formData.pricePerDay}
-                onChange={handleChange}
-                required
-                placeholder="450"
-                className="w-full border-2 border-gray-200 rounded-xl px-4 py-3 focus:border-blue-500 focus:outline-none"
-              />
+    return (
+      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50 overflow-y-auto">
+        <div className="bg-white rounded-2xl p-6 max-w-md w-full my-8 shadow-2xl max-h-[90vh] overflow-y-auto">
+          <h2 className="text-2xl font-bold mb-4 bg-gradient-to-r from-blue-600 to-cyan-600 bg-clip-text text-transparent">
+            Add New Machine
+          </h2>
+          {error && (
+            <div className="bg-rose-100 border border-rose-300 text-rose-700 px-4 py-3 rounded-xl mb-4 text-sm">
+              {error}
             </div>
           )}
+          {/* ✅ ADD onKeyDown={handleKeyDown} TO THE FORM */}
+          <form
+            onSubmit={handleSubmit}
+            onKeyDown={handleKeyDown}
+            className="space-y-4"
+          >
+            <div>
+              <label className="block text-sm font-semibold mb-2">
+                Machine Name *
+              </label>
+              <input
+                type="text"
+                name="name"
+                value={formData.name}
+                onChange={handleChange}
+                required
+                placeholder="e.g., John Deere 8R 370"
+                className="w-full border-2 border-gray-200 rounded-xl px-4 py-3 focus:border-blue-500 focus:outline-none"
+              />
+            </div>
 
-          {(formData.pricingType === "per_hectare" || formData.pricingType === "both") && (
-            <>
+            <div>
+              <label className="block text-sm font-semibold mb-2">
+                Category *
+              </label>
+              <select
+                name="category"
+                value={formData.category}
+                onChange={handleChange}
+                required
+                className="w-full border-2 border-gray-200 rounded-xl px-4 py-3 focus:border-blue-500 focus:outline-none"
+              >
+                <option value="">Select Category</option>
+                <option value="tractor">Tractor</option>
+                <option value="harvester">Harvester</option>
+                <option value="planter">Planter</option>
+                <option value="sprayer">Sprayer</option>
+                <option value="desherbeuse">Desherbeuse</option>
+                <option value="excavator">Excavator</option>
+                <option value="cultivator">Cultivator</option>
+              </select>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="block text-sm font-semibold mb-2">
-                  Price per Hectare ($) *
+                  Brand *
+                </label>
+                <input
+                  type="text"
+                  name="brand"
+                  value={formData.brand}
+                  onChange={handleChange}
+                  required
+                  placeholder="John Deere"
+                  className="w-full border-2 border-gray-200 rounded-xl px-4 py-3 focus:border-blue-500 focus:outline-none"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-semibold mb-2">
+                  Year *
                 </label>
                 <input
                   type="number"
-                  name="pricePerHectare"
-                  value={formData.pricePerHectare}
+                  name="year"
+                  value={formData.year}
                   onChange={handleChange}
                   required
-                  placeholder="75"
+                  placeholder="2024"
+                  // ✅ ADD onKeyDown HERE TOO FOR EXTRA SAFETY
+                  onKeyDown={handleKeyDown}
                   className="w-full border-2 border-gray-200 rounded-xl px-4 py-3 focus:border-blue-500 focus:outline-none"
                 />
               </div>
+            </div>
+
+            <div>
+              <label className="block text-sm font-semibold mb-2">
+                Pricing Type *
+              </label>
+              <select
+                name="pricingType"
+                value={formData.pricingType}
+                onChange={handleChange}
+                required
+                className="w-full border-2 border-gray-200 rounded-xl px-4 py-3 focus:border-blue-500 focus:outline-none"
+              >
+                <option value="daily">Daily Rental</option>
+                <option value="per_hectare">Per Hectare</option>
+                <option value="both">Both (Daily & Per Hectare)</option>
+              </select>
+            </div>
+
+            {(formData.pricingType === "daily" ||
+              formData.pricingType === "both") && (
               <div>
-                <label className="block text-sm font-semibold mb-2">Minimum Hectares</label>
+                <label className="block text-sm font-semibold mb-2">
+                  Price per Day ($) *
+                </label>
                 <input
                   type="number"
-                  name="minimumHectares"
-                  value={formData.minimumHectares}
+                  name="pricePerDay"
+                  value={formData.pricePerDay}
                   onChange={handleChange}
-                  placeholder="1"
+                  required
+                  placeholder="450"
                   className="w-full border-2 border-gray-200 rounded-xl px-4 py-3 focus:border-blue-500 focus:outline-none"
                 />
               </div>
-            </>
-          )}
-
-          <div>
-            <label className="block text-sm font-semibold mb-2">Horsepower</label>
-            <input
-              type="number"
-              name="horsepower"
-              value={formData.horsepower}
-              onChange={handleChange}
-              placeholder="370"
-              className="w-full border-2 border-gray-200 rounded-xl px-4 py-3 focus:border-blue-500 focus:outline-none"
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-semibold mb-2">Description</label>
-            <textarea
-              name="description"
-              value={formData.description}
-              onChange={handleChange}
-              placeholder="Describe your machine..."
-              rows="3"
-              className="w-full border-2 border-gray-200 rounded-xl px-4 py-3 focus:border-blue-500 focus:outline-none"
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-semibold mb-2">Upload Images</label>
-            <input
-              type="file"
-              accept="image/*"
-              multiple
-              onChange={handleImageUpload}
-              className="hidden"
-              id="imageUpload"
-            />
-            <label
-              htmlFor="imageUpload"
-              className="border-2 border-dashed border-blue-300 rounded-xl p-6 text-center cursor-pointer hover:border-blue-500 hover:bg-blue-50 transition block"
-            >
-              <Plus size={32} className="mx-auto text-blue-400 mb-2" />
-              <p className="text-sm text-gray-600">Click to upload images</p>
-            </label>
-            {localUploadedImages.length > 0 && (
-              <div className="grid grid-cols-3 gap-2 mt-3">
-                {localUploadedImages.map((img, idx) => (
-                  <div key={idx} className="relative">
-                    <img
-                      src={img}
-                      alt={`Preview ${idx}`}
-                      className="w-full h-20 object-cover rounded-lg"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => removeImage(idx)}
-                      className="absolute -top-2 -right-2 bg-rose-500 text-white rounded-full w-6 h-6 flex items-center justify-center text-xs"
-                    >
-                      ×
-                    </button>
-                  </div>
-                ))}
-              </div>
             )}
-          </div>
 
-          <div className="flex gap-3 mt-6">
-            <button
-              type="button"
-              onClick={() => {
-                setShowAddMachineForm(false);
-                setLocalUploadedImages([]);
-                setImageFiles([]);
-              }}
-              className="flex-1 bg-gray-200 text-gray-700 py-3 rounded-xl font-semibold"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={loading}
-              className="flex-1 bg-gradient-to-r from-blue-600 to-cyan-600 text-white py-3 rounded-xl font-semibold disabled:opacity-50"
-            >
-              {loading ? "Saving..." : "Add Machine"}
-            </button>
-          </div>
-        </form>
+            {(formData.pricingType === "per_hectare" ||
+              formData.pricingType === "both") && (
+              <>
+                <div>
+                  <label className="block text-sm font-semibold mb-2">
+                    Price per Hectare ($) *
+                  </label>
+                  <input
+                    type="number"
+                    name="pricePerHectare"
+                    value={formData.pricePerHectare}
+                    onChange={handleChange}
+                    required
+                    placeholder="75"
+                    className="w-full border-2 border-gray-200 rounded-xl px-4 py-3 focus:border-blue-500 focus:outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-semibold mb-2">
+                    Minimum Hectares
+                  </label>
+                  <input
+                    type="number"
+                    name="minimumHectares"
+                    value={formData.minimumHectares}
+                    onChange={handleChange}
+                    placeholder="1"
+                    className="w-full border-2 border-gray-200 rounded-xl px-4 py-3 focus:border-blue-500 focus:outline-none"
+                  />
+                </div>
+              </>
+            )}
+
+            <div>
+              <label className="block text-sm font-semibold mb-2">
+                Horsepower
+              </label>
+              <input
+                type="number"
+                name="horsepower"
+                value={formData.horsepower}
+                onChange={handleChange}
+                placeholder="370"
+                className="w-full border-2 border-gray-200 rounded-xl px-4 py-3 focus:border-blue-500 focus:outline-none"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-semibold mb-2">
+                Description
+              </label>
+              <textarea
+                name="description"
+                value={formData.description}
+                onChange={handleChange}
+                placeholder="Describe your machine..."
+                rows="3"
+                className="w-full border-2 border-gray-200 rounded-xl px-4 py-3 focus:border-blue-500 focus:outline-none"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-semibold mb-2">
+                Upload Images
+              </label>
+              <input
+                type="file"
+                accept="image/*"
+                multiple
+                onChange={handleImageUpload}
+                className="hidden"
+                id="imageUpload"
+              />
+              <label
+                htmlFor="imageUpload"
+                className="border-2 border-dashed border-blue-300 rounded-xl p-6 text-center cursor-pointer hover:border-blue-500 hover:bg-blue-50 transition block"
+              >
+                <Plus size={32} className="mx-auto text-blue-400 mb-2" />
+                <p className="text-sm text-gray-600">Click to upload images</p>
+              </label>
+              {localUploadedImages.length > 0 && (
+                <div className="grid grid-cols-3 gap-2 mt-3">
+                  {localUploadedImages.map((img, idx) => (
+                    <div key={idx} className="relative">
+                      <img
+                        src={img}
+                        alt={`Preview ${idx}`}
+                        className="w-full h-20 object-cover rounded-lg"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => removeImage(idx)}
+                        className="absolute -top-2 -right-2 bg-rose-500 text-white rounded-full w-6 h-6 flex items-center justify-center text-xs"
+                      >
+                        ×
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="flex gap-3 mt-6">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowAddMachineForm(false);
+                  setLocalUploadedImages([]);
+                  setImageFiles([]);
+                }}
+                className="flex-1 bg-gray-200 text-gray-700 py-3 rounded-xl font-semibold"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={loading}
+                className="flex-1 bg-gradient-to-r from-blue-600 to-cyan-600 text-white py-3 rounded-xl font-semibold disabled:opacity-50"
+              >
+                {loading ? "Saving..." : "Add Machine"}
+              </button>
+            </div>
+          </form>
+        </div>
       </div>
-    </div>
-  );
-};
+    );
+  };
 
   // ============== EDIT MACHINE FORM ==============
   const EditMachineForm = () => {
@@ -1742,7 +1854,9 @@ const AddMachineForm = () => {
       description: editingMachine?.description || "",
     });
     const [imageFiles, setImageFiles] = useState([]);
-    const [existingImages, setExistingImages] = useState(editingMachine?.images || []);
+    const [existingImages, setExistingImages] = useState(
+      editingMachine?.images || []
+    );
     const [newImagePreviews, setNewImagePreviews] = useState([]);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState("");
@@ -1794,18 +1908,29 @@ const AddMachineForm = () => {
           images:
             allImages.length > 0
               ? allImages
-              : ["https://images.unsplash.com/photo-1625246333195-78d9c38ad449?w=400"],
+              : [
+                  "https://images.unsplash.com/photo-1625246333195-78d9c38ad449?w=400",
+                ],
         };
 
-        if (formData.pricingType === "daily" || formData.pricingType === "both") {
+        if (
+          formData.pricingType === "daily" ||
+          formData.pricingType === "both"
+        ) {
           machineData.pricePerDay = parseFloat(formData.pricePerDay);
         }
-        if (formData.pricingType === "per_hectare" || formData.pricingType === "both") {
+        if (
+          formData.pricingType === "per_hectare" ||
+          formData.pricingType === "both"
+        ) {
           machineData.pricePerHectare = parseFloat(formData.pricePerHectare);
           machineData.minimumHectares = parseFloat(formData.minimumHectares);
         }
 
-        const response = await machineAPI.update(editingMachine._id, machineData);
+        const response = await machineAPI.update(
+          editingMachine._id,
+          machineData
+        );
         if (response.data.success) {
           setShowEditMachineForm(false);
           setEditingMachine(null);
@@ -1836,7 +1961,9 @@ const AddMachineForm = () => {
           <form onSubmit={handleSubmit} className="space-y-4">
             {/* Same fields as Add Machine Form */}
             <div>
-              <label className="block text-sm font-semibold mb-2">Machine Name *</label>
+              <label className="block text-sm font-semibold mb-2">
+                Machine Name *
+              </label>
               <input
                 type="text"
                 name="name"
@@ -1852,7 +1979,9 @@ const AddMachineForm = () => {
 
             {existingImages.length > 0 && (
               <div>
-                <label className="block text-sm font-semibold mb-2">Current Images</label>
+                <label className="block text-sm font-semibold mb-2">
+                  Current Images
+                </label>
                 <div className="grid grid-cols-3 gap-2">
                   {existingImages.map((img, idx) => (
                     <div key={idx} className="relative">
@@ -1875,7 +2004,9 @@ const AddMachineForm = () => {
             )}
 
             <div>
-              <label className="block text-sm font-semibold mb-2">Add New Images</label>
+              <label className="block text-sm font-semibold mb-2">
+                Add New Images
+              </label>
               <input
                 type="file"
                 accept="image/*"
@@ -1889,7 +2020,9 @@ const AddMachineForm = () => {
                 className="border-2 border-dashed border-blue-300 rounded-xl p-4 text-center cursor-pointer hover:border-blue-500 hover:bg-blue-50 transition block"
               >
                 <Plus size={24} className="mx-auto text-blue-400 mb-1" />
-                <p className="text-sm text-gray-600">Click to upload new images</p>
+                <p className="text-sm text-gray-600">
+                  Click to upload new images
+                </p>
               </label>
               {newImagePreviews.length > 0 && (
                 <div className="grid grid-cols-3 gap-2 mt-3">
@@ -1996,7 +2129,9 @@ const AddMachineForm = () => {
 
           {/* Star Rating */}
           <div className="mb-6">
-            <label className="block font-semibold mb-3 text-center">Your Rating</label>
+            <label className="block font-semibold mb-3 text-center">
+              Your Rating
+            </label>
             <div className="flex justify-center gap-2">
               {[1, 2, 3, 4, 5].map((star) => (
                 <button
@@ -2030,7 +2165,9 @@ const AddMachineForm = () => {
 
           {/* Comment */}
           <div className="mb-4">
-            <label className="block font-semibold mb-2">Your Review (Optional)</label>
+            <label className="block font-semibold mb-2">
+              Your Review (Optional)
+            </label>
             <textarea
               value={localComment}
               onChange={(e) => setLocalComment(e.target.value)}
@@ -2040,7 +2177,9 @@ const AddMachineForm = () => {
               className="w-full p-3 border-2 border-gray-200 rounded-xl focus:border-amber-500 focus:outline-none text-sm resize-none"
               autoComplete="off"
             />
-            <small className="text-gray-500 text-xs">{localComment.length}/500 characters</small>
+            <small className="text-gray-500 text-xs">
+              {localComment.length}/500 characters
+            </small>
           </div>
 
           {error && (
@@ -2080,14 +2219,19 @@ const AddMachineForm = () => {
 
     const handleConfirm = async () => {
       if (!localNote.trim() || localNote.length < 10) {
-        alert("Please provide details about the service (minimum 10 characters)");
+        alert(
+          "Please provide details about the service (minimum 10 characters)"
+        );
         return;
       }
 
       try {
-        const response = await paymentAPI.confirmCompletion(confirmingRental._id, {
-          confirmationNote: localNote,
-        });
+        const response = await paymentAPI.confirmCompletion(
+          confirmingRental._id,
+          {
+            confirmationNote: localNote,
+          }
+        );
 
         if (response.data.success) {
           alert(
@@ -2110,7 +2254,8 @@ const AddMachineForm = () => {
             Confirm Service Completion
           </h2>
           <p className="text-gray-700 mb-4">
-            Please confirm that <strong>{confirmingRental?.machineId?.name}</strong> service was
+            Please confirm that{" "}
+            <strong>{confirmingRental?.machineId?.name}</strong> service was
             completed satisfactorily.
           </p>
           <div className="mb-4">
@@ -2133,7 +2278,8 @@ const AddMachineForm = () => {
           <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 mb-4">
             <p className="text-xs text-gray-700">
               ✅ Once confirmed, AgriRent will verify and release $
-              {confirmingRental?.pricing?.totalPrice?.toFixed(2)} to the owner within 24-48 hours.
+              {confirmingRental?.pricing?.totalPrice?.toFixed(2)} to the owner
+              within 24-48 hours.
             </p>
           </div>
           <div className="flex gap-3">
@@ -2168,11 +2314,13 @@ const AddMachineForm = () => {
           Open Dispute
         </h2>
         <p className="text-gray-700 mb-4">
-          If there was an issue with the service, please provide details below. Our team will
-          review and resolve fairly.
+          If there was an issue with the service, please provide details below.
+          Our team will review and resolve fairly.
         </p>
         <div className="mb-4">
-          <label className="block font-semibold mb-2 text-sm">What went wrong? *</label>
+          <label className="block font-semibold mb-2 text-sm">
+            What went wrong? *
+          </label>
           <textarea
             value={disputeReason}
             onChange={(e) => setDisputeReason(e.target.value)}
@@ -2187,7 +2335,8 @@ const AddMachineForm = () => {
         </div>
         <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 mb-4">
           <p className="text-xs text-gray-700">
-            ⚠️ Your payment of ${disputingRental?.pricing?.totalPrice?.toFixed(2)} is secure. Our
+            ⚠️ Your payment of $
+            {disputingRental?.pricing?.totalPrice?.toFixed(2)} is secure. Our
             team will investigate and resolve within 24-48 hours.
           </p>
         </div>
@@ -2217,16 +2366,18 @@ const AddMachineForm = () => {
   // ============== MAIN RENDER ==============
   return (
     <div className="bg-gradient-to-br from-gray-50 to-blue-50 min-h-screen pb-20 max-w-md mx-auto">
-          {/* Debug Info - Remove in production */}
-    {process.env.NODE_ENV === 'development' && (
-      <div className="bg-gray-800 text-white text-xs p-2">
-        User: {localUser?.email || currentUser?.email || 'Not logged in'} | 
-        Role: {localUser?.role || currentUser?.role} | 
-        Verified: {(localUser?.isEmailVerified || currentUser?.isEmailVerified) ? '✅' : '❌'} |
-        View: {currentView}
-      </div>
-    )}
-    {/* Header */}
+      {/* Debug Info - Remove in production */}
+      {process.env.NODE_ENV === "development" && (
+        <div className="bg-gray-800 text-white text-xs p-2">
+          User: {localUser?.email || currentUser?.email || "Not logged in"} |
+          Role: {localUser?.role || currentUser?.role} | Verified:{" "}
+          {localUser?.isEmailVerified || currentUser?.isEmailVerified
+            ? "✅"
+            : "❌"}{" "}
+          | View: {currentView}
+        </div>
+      )}
+      {/* Header */}
       <div className="bg-gradient-to-r from-blue-600 via-cyan-600 to-teal-600 text-white p-5 shadow-xl">
         <h1 className="text-2xl font-bold">AgriRent</h1>
         <p className="text-sm text-blue-100">Location d'equipement Agricole</p>
@@ -2257,7 +2408,9 @@ const AddMachineForm = () => {
           onBook={handleBookMachine}
         />
       )}
-      {showReviewModal && reviewingRental && <ReviewModal key={reviewingRental._id} />}
+      {showReviewModal && reviewingRental && (
+        <ReviewModal key={reviewingRental._id} />
+      )}
       {showPaymentModal && paymentRental && (
         <PaymentModal
           rental={paymentRental}
@@ -2268,7 +2421,9 @@ const AddMachineForm = () => {
           onPaymentSuccess={handlePaymentSuccess}
         />
       )}
-      {showConfirmCompletionModal && confirmingRental && <ConfirmCompletionModal />}
+      {showConfirmCompletionModal && confirmingRental && (
+        <ConfirmCompletionModal />
+      )}
       {showDisputeModal && disputingRental && <DisputeModal />}
 
       {/* Bottom Navigation */}

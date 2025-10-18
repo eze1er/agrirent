@@ -5,9 +5,17 @@ const Machine = require('../models/Machine');
 const User = require('../models/User');
 const Rental = require('../models/Rental');
 
-// ✅ ADD THIS: Middleware to check email verification for owners
+// ✅ UPDATED: Middleware to check verification with bypass mode support
 const requireVerifiedEmail = async (req, res, next) => {
   try {
+    // ✅ CHECK BYPASS MODE FIRST
+    const bypassMode = process.env.BYPASS_PHONE_VERIFICATION === 'true';
+    
+    if (bypassMode) {
+      console.log('🔓 Bypass mode enabled - skipping verification check for machine creation');
+      return next();
+    }
+
     const user = await User.findById(req.user.id);
     
     if (!user) {
@@ -17,17 +25,18 @@ const requireVerifiedEmail = async (req, res, next) => {
       });
     }
 
-    // Only require verification for owners trying to list machines
-    if ((user.role === 'owner' || user.role === 'both') && !user.isEmailVerified) {
+    // ✅ Check PHONE verification (not email)
+    if ((user.role === 'owner' || user.role === 'both') && !user.isPhoneVerified) {
       return res.status(403).json({
         success: false,
-        message: 'Please verify your email before listing machines',
-        needsVerification: true
+        message: 'Please verify your phone number before listing machines',
+        requiresVerification: true
       });
     }
 
     next();
   } catch (error) {
+    console.error('Verification middleware error:', error);
     res.status(500).json({
       success: false,
       message: 'Error checking verification status'
@@ -48,6 +57,7 @@ router.get('/', async (req, res) => {
     res.status(500).json({ success: false, message: error.message });
   }
 });
+
 // Get owner's machines - MUST BE BEFORE /:id
 router.get('/my-machines', protect, async (req, res) => {
   try {
@@ -58,8 +68,6 @@ router.get('/my-machines', protect, async (req, res) => {
     res.status(500).json({ success: false, message: error.message });
   }
 });
-
-
 
 // ✅ DYNAMIC ROUTES LAST (/:id must be after specific routes)
 
@@ -79,8 +87,7 @@ router.get('/:id', async (req, res) => {
   }
 });
 
-// Create machine
-// ✅ UPDATED: Create machine (requires verification)
+// Create machine (with bypass mode support)
 router.post('/', protect, requireVerifiedEmail, async (req, res) => {
   try {
     const machineData = {
@@ -105,7 +112,7 @@ router.post('/', protect, requireVerifiedEmail, async (req, res) => {
   }
 });
 
-// Update machine
+// Update machine (with bypass mode support)
 router.put('/:id', protect, requireVerifiedEmail, async (req, res) => {
   try {
     const machine = await Machine.findOne({

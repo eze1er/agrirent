@@ -1,7 +1,12 @@
+window.addEventListener('beforeunload', (e) => {
+  console.trace('🔴 PAGE RELOAD DETECTED - Stack trace:');
+  debugger; // This will pause execution
+});
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { useState, useEffect } from 'react';
 import Dashboard from './pages/Dashboard';
 import Auth from './components/Auth';
+import TestForm from './components/TestForm';
 import ForgotPassword from './pages/ForgotPassword';
 import ResetPassword from './pages/ResetPassword';
 import AdminEscrowDashboard from './components/AdminEscrowDashboard';
@@ -172,16 +177,18 @@ function App() {
       {/* Admin Escrow Dashboard - Protected */}
       <Route 
         path="/admin/escrow" 
-        element={
-          isAuthenticated && currentUser?.role === 'admin' ? (
-            <AdminEscrowDashboard user={currentUser} onLogout={handleLogout} />
-          ) : (
-            <Navigate to="/" replace />
-          )
-        } 
+        // element={
+        //   isAuthenticated && currentUser?.role === 'admin' ? (
+        //     <AdminEscrowDashboard user={currentUser} onLogout={handleLogout} />
+        //   ) : (
+        //     <Navigate to="/" replace />
+        //   )
+        // }
+        element={<TestForm />} 
       />
       
       <Route path="*" element={<Navigate to="/" replace />} />
+      
     </Routes>
   );
 }
