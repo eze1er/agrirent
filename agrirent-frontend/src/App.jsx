@@ -177,14 +177,13 @@ function App() {
       {/* Admin Escrow Dashboard - Protected */}
       <Route 
         path="/admin/escrow" 
-        // element={
-        //   isAuthenticated && currentUser?.role === 'admin' ? (
-        //     <AdminEscrowDashboard user={currentUser} onLogout={handleLogout} />
-        //   ) : (
-        //     <Navigate to="/" replace />
-        //   )
-        // }
-        element={<TestForm />} 
+        element={
+          isAuthenticated && currentUser?.role === 'admin' ? (
+            <AdminEscrowDashboard user={currentUser} onLogout={handleLogout} />
+          ) : (
+            <Navigate to="/" replace />
+          )
+        }
       />
       
       <Route path="*" element={<Navigate to="/" replace />} />
