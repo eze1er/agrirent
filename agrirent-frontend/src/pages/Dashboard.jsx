@@ -368,23 +368,197 @@ export default function Dashboard({ user: currentUser, onLogout }) {
   };
 
   // ============== HOME SCREEN ==============
-  const HomeScreen = () => {
-    const activeMachines = machines.filter((m) => m.isActive).length;
-    const activeRentals = rentals.filter((r) => r.status === "active").length;
+// ============== HOME SCREEN ==============
+const HomeScreen = () => {
+  const activeMachines = machines.filter((m) => m.isActive).length;
+  const activeRentals = rentals.filter((r) => r.status === "active").length;
+  const totalMachines = machines.length;
+  const myMachines = machines.filter((m) => m.ownerId?._id === currentUser?.id || m.ownerId === currentUser?.id).length;
 
-    return (
-      <div className="p-6">
-        <h2 className="text-3xl font-bold bg-gradient-to-r from-blue-600 via-cyan-600 to-teal-600 bg-clip-text text-transparent mb-2">
-          Welcome, {localUser?.firstName}!
-        </h2>
-        <p className="text-gray-600 mb-8">
-          Find and rent agricultural equipment
-        </p>
+  return (
+    <div className="p-6">
+      <h2 className="text-3xl font-bold bg-gradient-to-r from-blue-600 via-cyan-600 to-teal-600 bg-clip-text text-transparent mb-2">
+        Welcome, {localUser?.firstName || currentUser?.firstName}!
+      </h2>
+      <p className="text-gray-600 mb-8">Find and rent agricultural equipment</p>
 
-        {/* ... rest of HomeScreen ... */}
+      {/* Stats Cards */}
+      <div className="grid grid-cols-2 gap-4 mb-8">
+        <div className="bg-gradient-to-br from-blue-500 to-cyan-500 rounded-2xl p-5 text-white shadow-lg">
+          <Tractor size={32} className="mb-3 opacity-80" />
+          <p className="text-3xl font-bold">{activeMachines}</p>
+          <p className="text-sm text-blue-100">Available Machines</p>
+        </div>
+        
+        <div className="bg-gradient-to-br from-emerald-500 to-teal-500 rounded-2xl p-5 text-white shadow-lg">
+          <Calendar size={32} className="mb-3 opacity-80" />
+          <p className="text-3xl font-bold">{rentals.length}</p>
+          <p className="text-sm text-emerald-100">Your Rentals</p>
+        </div>
+
+        {isOwner && (
+          <>
+            <div className="bg-gradient-to-br from-purple-500 to-pink-500 rounded-2xl p-5 text-white shadow-lg">
+              <Tractor size={32} className="mb-3 opacity-80" />
+              <p className="text-3xl font-bold">{myMachines}</p>
+              <p className="text-sm text-purple-100">Your Machines</p>
+            </div>
+
+            <div className="bg-gradient-to-br from-amber-500 to-orange-500 rounded-2xl p-5 text-white shadow-lg">
+              <Calendar size={32} className="mb-3 opacity-80" />
+              <p className="text-3xl font-bold">
+                {rentals.filter(r => 
+                  (r.ownerId?._id === currentUser?.id || r.ownerId === currentUser?.id) && 
+                  r.status === 'pending'
+                ).length}
+              </p>
+              <p className="text-sm text-amber-100">Pending Requests</p>
+            </div>
+          </>
+        )}
       </div>
-    );
-  };
+
+      {/* Quick Actions */}
+      <div className="mb-8">
+        <h3 className="text-xl font-bold mb-4 text-gray-800">Quick Actions</h3>
+        <div className="space-y-3">
+          <button
+            onClick={() => setCurrentView("machines")}
+            className="w-full bg-white rounded-2xl p-5 shadow-lg hover:shadow-xl transition flex items-center gap-4 group"
+          >
+            <div className="bg-gradient-to-br from-blue-500 to-cyan-500 p-3 rounded-xl group-hover:scale-110 transition">
+              <Search size={24} className="text-white" />
+            </div>
+            <div className="flex-1 text-left">
+              <h4 className="font-bold text-gray-800">Browse Machines</h4>
+              <p className="text-sm text-gray-500">Find equipment for your needs</p>
+            </div>
+            <span className="text-gray-400">→</span>
+          </button>
+
+          {isOwner && (
+            <>
+              <button
+                onClick={() => setShowAddMachineForm(true)}
+                className="w-full bg-white rounded-2xl p-5 shadow-lg hover:shadow-xl transition flex items-center gap-4 group"
+              >
+                <div className="bg-gradient-to-br from-emerald-500 to-teal-500 p-3 rounded-xl group-hover:scale-110 transition">
+                  <Plus size={24} className="text-white" />
+                </div>
+                <div className="flex-1 text-left">
+                  <h4 className="font-bold text-gray-800">List Your Machine</h4>
+                  <p className="text-sm text-gray-500">Add equipment to rent out</p>
+                </div>
+                <span className="text-gray-400">→</span>
+              </button>
+
+              <button
+                onClick={() => setCurrentView("myMachines")}
+                className="w-full bg-white rounded-2xl p-5 shadow-lg hover:shadow-xl transition flex items-center gap-4 group"
+              >
+                <div className="bg-gradient-to-br from-purple-500 to-pink-500 p-3 rounded-xl group-hover:scale-110 transition">
+                  <Tractor size={24} className="text-white" />
+                </div>
+                <div className="flex-1 text-left">
+                  <h4 className="font-bold text-gray-800">My Machines</h4>
+                  <p className="text-sm text-gray-500">Manage your equipment</p>
+                </div>
+                <span className="text-gray-400">→</span>
+              </button>
+
+              <button
+                onClick={() => setCurrentView("requests")}
+                className="w-full bg-white rounded-2xl p-5 shadow-lg hover:shadow-xl transition flex items-center gap-4 group"
+              >
+                <div className="bg-gradient-to-br from-amber-500 to-orange-500 p-3 rounded-xl group-hover:scale-110 transition">
+                  <Calendar size={24} className="text-white" />
+                </div>
+                <div className="flex-1 text-left">
+                  <h4 className="font-bold text-gray-800">Rental Requests</h4>
+                  <p className="text-sm text-gray-500">Approve or decline rentals</p>
+                </div>
+                {rentals.filter(r => 
+                  (r.ownerId?._id === currentUser?.id || r.ownerId === currentUser?.id) && 
+                  r.status === 'pending'
+                ).length > 0 && (
+                  <span className="bg-red-500 text-white text-xs font-bold px-2 py-1 rounded-full">
+                    {rentals.filter(r => 
+                      (r.ownerId?._id === currentUser?.id || r.ownerId === currentUser?.id) && 
+                      r.status === 'pending'
+                    ).length}
+                  </span>
+                )}
+                <span className="text-gray-400">→</span>
+              </button>
+            </>
+          )}
+
+          <button
+            onClick={() => setCurrentView("rentals")}
+            className="w-full bg-white rounded-2xl p-5 shadow-lg hover:shadow-xl transition flex items-center gap-4 group"
+          >
+            <div className="bg-gradient-to-br from-indigo-500 to-purple-500 p-3 rounded-xl group-hover:scale-110 transition">
+              <Calendar size={24} className="text-white" />
+            </div>
+            <div className="flex-1 text-left">
+              <h4 className="font-bold text-gray-800">My Rentals</h4>
+              <p className="text-sm text-gray-500">View your active rentals</p>
+            </div>
+            <span className="text-gray-400">→</span>
+          </button>
+        </div>
+      </div>
+
+      {/* Featured Machines */}
+      {machines.length > 0 && (
+        <div>
+          <div className="flex justify-between items-center mb-4">
+            <h3 className="text-xl font-bold text-gray-800">Featured Machines</h3>
+            <button
+              onClick={() => setCurrentView("machines")}
+              className="text-blue-600 font-semibold text-sm hover:text-blue-700"
+            >
+              View All →
+            </button>
+          </div>
+          <div className="space-y-4">
+            {machines.slice(0, 3).map((machine) => (
+              <div
+                key={machine._id}
+                onClick={() => {
+                  setSelectedMachine(machine);
+                  setCurrentView("machineDetail");
+                }}
+                className="bg-white rounded-2xl shadow-lg overflow-hidden cursor-pointer hover:shadow-xl transition"
+              >
+                <div className="flex gap-4">
+                  <img
+                    src={machine.images?.[0] || "https://images.unsplash.com/photo-1625246333195-78d9c38ad449?w=400"}
+                    alt={machine.name}
+                    className="w-24 h-24 object-cover"
+                  />
+                  <div className="flex-1 py-3 pr-3">
+                    <h4 className="font-bold text-gray-800">{machine.name}</h4>
+                    <p className="text-sm text-gray-500 capitalize">{machine.category}</p>
+                    <div className="flex items-center gap-1 mt-1">
+                      <Star size={14} className="text-amber-400 fill-amber-400" />
+                      <span className="text-sm font-semibold">{(machine.rating?.average || 0).toFixed(1)}</span>
+                    </div>
+                    <p className="text-blue-600 font-bold mt-1">
+                      {machine.pricingType === 'daily' && `$${machine.pricePerDay}/day`}
+                      {machine.pricingType === 'per_hectare' && `$${machine.pricePerHectare}/Ha`}
+                      {machine.pricingType === 'both' && `$${machine.pricePerDay}/day`}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
 
   // ============== MACHINES SCREEN ==============
   const MachinesScreen = () => {
