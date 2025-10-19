@@ -1,7 +1,7 @@
-window.addEventListener('beforeunload', (e) => {
-  console.trace('🔴 PAGE RELOAD DETECTED - Stack trace:');
-  debugger; // This will pause execution
-});
+// window.addEventListener('beforeunload', (e) => {
+//   console.trace('🔴 PAGE RELOAD DETECTED - Stack trace:');
+//   debugger; // This will pause execution
+// });
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { useState, useEffect } from 'react';
 import Dashboard from './pages/Dashboard';

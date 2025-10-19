@@ -81,13 +81,26 @@ export const rentalAPI = {
 };
 
 // Payment API (your existing paymentAPI object remains the same)
+// Payment API
 export const paymentAPI = {
-  // ... all your existing paymentAPI methods (they look good)
+  // ✅ Add this method
+  createPayment: (data) => api.post('/payments/create-payment', data),
+  
   createCheckoutSession: (data) =>
-    api.post("/payments/stripe/create-checkout-session", data),
+    api.post('/payments/stripe/create-checkout-session', data),
   verifySession: (sessionId) =>
     api.get(`/payments/stripe/verify-session/${sessionId}`),
-  // ... rest of your paymentAPI methods
+  createIntent: (data) => api.post('/payments/stripe/create-intent', data),
+  confirmPayment: (data) => api.post('/payments/stripe/confirm', data),
+  confirmCompletion: (rentalId, data) =>
+    api.post(`/payments/confirm-completion/${rentalId}`, data),
+  openDispute: (rentalId, data) =>
+    api.post(`/payments/${rentalId}/dispute`, data),
+  releasePayment: (rentalId, data) =>
+    api.post(`/payments/admin/verify-and-release/${rentalId}`, data),
+  rejectRelease: (rentalId, data) =>
+    api.post(`/payments/${rentalId}/reject-release`, data),
+  debugPayment: (data) => api.post('/payments/debug-payment', data),
 };
 
 // Upload API

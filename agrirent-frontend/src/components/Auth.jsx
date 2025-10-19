@@ -255,6 +255,7 @@ export default function Auth({ onLoginSuccess }) {
               <input
                 ref={emailRef}
                 type="email"
+                autoComplete="off" 
                 required
                 className="w-full border-2 border-gray-200 rounded-xl pl-12 pr-4 py-3 focus:border-indigo-500 focus:outline-none transition"
                 placeholder="your@email.com"

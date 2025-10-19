@@ -220,6 +220,176 @@ router.post('/stripe/create-intent', protect, requireStripe, async (req, res) =>
   }
 });
 
+// ============== CREATE PAYMENT (Simplified for testing) ==============
+router.post('/create-payment', protect, requireStripe, async (req, res) => {
+  try {
+    const { rentalId, paymentMethod } = req.body;
+
+    console.log('💳 Payment request received:', { rentalId, paymentMethod });
+
+    const rental = await Rental.findById(rentalId)
+      .populate('machineId')
+      .populate('renterId')
+      .populate('ownerId');
+
+    if (!rental) {
+      return res.status(404).json({
+        success: false,
+        message: 'Rental not found'
+      });
+    }
+
+    if (rental.renterId._id.toString() !== req.user.id) {
+      return res.status(403).json({
+        success: false,
+        message: 'Not authorized to pay for this rental'
+      });
+    }
+
+    if (rental.status !== 'approved') {
+      return res.status(400).json({
+        success: false,
+        message: 'Rental must be approved before payment'
+      });
+    }
+
+    const amount = rental.pricing?.totalPrice || 0;
+    if (!amount || amount <= 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid rental amount'
+      });
+    }
+
+    console.log('💰 Creating payment intent for amount:', amount);
+
+    // Create Stripe payment intent
+    const paymentIntent = await stripe.paymentIntents.create({
+      amount: Math.round(amount * 100), // Convert to cents
+      currency: 'usd',
+      payment_method: paymentMethod,
+      confirm: true,
+      automatic_payment_methods: {
+        enabled: true,
+        allow_redirects: 'never'
+      },
+      metadata: {
+        rentalId: rental._id.toString(),
+        machineId: rental.machineId._id.toString(),
+        renterId: rental.renterId._id.toString(),
+        ownerId: rental.ownerId._id.toString()
+      }
+    });
+
+    console.log('✅ Payment intent created:', paymentIntent.id, 'Status:', paymentIntent.status);
+
+    // Create payment record
+    const payment = await Payment.create({
+      userId: req.user.id,
+      rentalId: rental._id,
+      ownerId: rental.ownerId._id,
+      amount: amount,
+      currency: 'usd',
+      method: 'stripe',
+      status: 'completed',
+      escrowStatus: 'held',
+      transactionId: paymentIntent.id,
+      escrowTimeline: {
+        paidAt: new Date(),
+        heldAt: new Date()
+      },
+      metadata: {
+        paymentIntentId: paymentIntent.id
+      }
+    });
+
+    console.log('💾 Payment record created:', payment._id);
+
+    // ✅ UPDATE RENTAL STATUS TO 'ACTIVE'
+    rental.status = 'active';
+    rental.payment = {
+      status: 'held_in_escrow',
+      transactionId: paymentIntent.id,
+      method: 'stripe',
+      amount: amount,
+      paidAt: new Date()
+    };
+    await rental.save();
+
+    console.log('✅ Rental status updated to: active');
+
+    // ✅ UPDATE MACHINE STATUS TO 'RENTED'
+    const Machine = require('../models/Machine');
+    const machine = await Machine.findById(rental.machineId._id);
+    if (machine) {
+      machine.availability = 'rented';
+      await machine.save();
+      console.log(`✅ Machine ${machine.name} status updated to: rented`);
+    }
+
+    // Send confirmation emails
+    try {
+      // Email to renter
+      await sendEmail({
+        to: rental.renterId.email,
+        subject: '✅ Payment Successful - Rental Confirmed',
+        html: `
+          <h2>Payment Successful!</h2>
+          <p>Hi ${rental.renterId.firstName},</p>
+          <p>Your payment of <strong>$${amount.toFixed(2)}</strong> has been received and is held securely in escrow.</p>
+          <p><strong>Machine:</strong> ${rental.machineId.name}</p>
+          <p><strong>Transaction ID:</strong> ${paymentIntent.id}</p>
+          <p>Your funds will be released to the owner once you confirm the service is complete.</p>
+          <p>Thank you for using AgriRent!</p>
+        `
+      });
+
+      // Email to owner
+      await sendEmail({
+        to: rental.ownerId.email,
+        subject: '💰 Payment Received - Rental Active',
+        html: `
+          <h2>Payment Received!</h2>
+          <p>Hi ${rental.ownerId.firstName},</p>
+          <p>Great news! Payment for your machine rental has been received.</p>
+          <p><strong>Machine:</strong> ${rental.machineId.name}</p>
+          <p><strong>Amount:</strong> $${amount.toFixed(2)}</p>
+          <p><strong>Renter:</strong> ${rental.renterId.firstName} ${rental.renterId.lastName}</p>
+          <p>The payment is held securely in escrow and will be released to you once the service is completed and confirmed.</p>
+          <p>Thank you for using AgriRent!</p>
+        `
+      });
+
+      console.log('✅ Confirmation emails sent');
+    } catch (emailError) {
+      console.error('❌ Email sending failed:', emailError);
+    }
+
+    res.json({
+      success: true,
+      message: 'Payment successful',
+      data: {
+        transactionId: paymentIntent.id,
+        rental: {
+          id: rental._id,
+          status: rental.status,
+          machine: rental.machineId.name
+        },
+        payment: {
+          id: payment._id,
+          amount: payment.amount,
+          escrowStatus: payment.escrowStatus
+        }
+      }
+    });
+  } catch (error) {
+    console.error('❌ Payment error:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Payment processing failed'
+    });
+  }
+});
 router.post('/stripe/confirm', protect, requireStripe, async (req, res) => {
   try {
     const { paymentIntentId } = req.body;

@@ -208,10 +208,14 @@ export default function Dashboard({ user: currentUser, onLogout }) {
         ...bookingData,
       });
       if (response.data.success) {
-        alert("Booking request sent successfully!");
+        alert(
+          "✅ Booking request sent successfully! The owner will review your request."
+        );
         await fetchRentals();
+        await fetchMachines(); // ✅ Refresh machines to update availability
         setShowBookingModal(false);
         setBookingMachine(null);
+        setCurrentView("machines"); // ✅ Return to machines view
       }
     } catch (error) {
       throw error;
@@ -758,14 +762,21 @@ export default function Dashboard({ user: currentUser, onLogout }) {
                     className="w-full h-48 object-cover"
                   />
                   <span
-                    className={`absolute top-3 right-3 px-4 py-2 rounded-xl text-xs font-bold shadow-lg ${
-                      machine.availability === "available"
-                        ? "bg-emerald-500 text-white"
-                        : "bg-rose-500 text-white"
-                    }`}
-                  >
-                    {machine.availability}
-                  </span>
+  className={`absolute top-3 right-3 px-4 py-2 rounded-xl text-xs font-bold shadow-lg ${
+    machine.availability === "available"
+      ? "bg-emerald-500 text-white"
+      : machine.availability === "pending"
+      ? "bg-amber-500 text-white"
+      : machine.availability === "rented"
+      ? "bg-blue-500 text-white"
+      : "bg-rose-500 text-white"
+  }`}
+>
+  {machine.availability === "available" && "✅ Available"}
+  {machine.availability === "pending" && "⏳ Pending"}
+  {machine.availability === "rented" && "🔒 Rented"}
+  {machine.availability === "unavailable" && "❌ Unavailable"}
+</span>
                 </div>
                 <div className="p-4">
                   <h3 className="text-lg font-bold text-gray-800">

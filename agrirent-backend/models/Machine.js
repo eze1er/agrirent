@@ -64,11 +64,11 @@ const machineSchema = new mongoose.Schema({
     country: { type: String, default: 'Canada' }
   },
   
-  availability: {
-    type: String,
-    enum: ['available', 'rented', 'maintenance'],
-    default: 'available'
-  },
+availability: {
+  type: String,
+  enum: ['available', 'pending', 'rented', 'maintenance', 'unavailable'],
+  default: 'available'
+},
   
   isActive: { type: Boolean, default: true },
   

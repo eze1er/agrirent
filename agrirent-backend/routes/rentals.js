@@ -228,6 +228,11 @@ router.post("/", protect, async (req, res) => {
     rentalData.pricing = pricing;
     const rental = await Rental.create(rentalData);
 
+    // ✅ UPDATE MACHINE STATUS to 'pending' when rental is created
+    machine.availability = 'pending';
+    await machine.save();
+    console.log(`✅ Machine ${machine.name} status updated to: pending`);
+
     const populatedRental = await Rental.findById(rental._id)
       .populate(
         "machineId",
@@ -283,13 +288,11 @@ router.patch("/:id/status", protect, async (req, res) => {
       });
     }
 
-    // Only pending rentals can be approved/rejected
     // Define valid status transitions
     const validTransitions = {
       pending: ["approved", "rejected"],
       approved: ["completed"],
       active: ["completed"],
-      // Add more if needed
     };
 
     const allowedNextStatuses = validTransitions[rental.status] || [];
@@ -303,10 +306,11 @@ router.patch("/:id/status", protect, async (req, res) => {
     if (status === "approved") {
       rental.status = "approved";
 
-      // Update machine availability
+      // ✅ UPDATE MACHINE STATUS to 'rented' when approved
       const machine = await Machine.findById(rental.machineId._id);
       machine.availability = "rented";
       await machine.save();
+      console.log(`✅ Machine ${machine.name} status updated to: rented (approved)`);
 
       // Create notification
       await createNotification(
@@ -405,6 +409,8 @@ router.patch("/:id/status", protect, async (req, res) => {
                 </div>
               </div>
 
+              <p><strong>Next Step:</strong> Please proceed with payment to secure your booking.</p>
+
               <p>If you have any questions, please contact the owner:</p>
               <p><strong>${rental.ownerId.firstName} ${
         rental.ownerId.lastName
@@ -443,14 +449,14 @@ router.patch("/:id/status", protect, async (req, res) => {
                   rental.endDate
                 ).toLocaleDateString()}. Total: $${rental.pricing.totalPrice.toFixed(
                   2
-                )}.`
+                )}. Please proceed with payment.`
               : `🎉 AgriRent: Your rental request for ${
                   rental.machineId.name
                 } has been APPROVED! Work date: ${new Date(
                   rental.workDate
                 ).toLocaleDateString()}, ${
                   rental.pricing.numberOfHectares
-                } Ha. Total: $${rental.pricing.totalPrice.toFixed(2)}.`;
+                } Ha. Total: $${rental.pricing.totalPrice.toFixed(2)}. Please proceed with payment.`;
 
           await twilioClient.messages.create({
             body: smsMessage,
@@ -466,6 +472,12 @@ router.patch("/:id/status", protect, async (req, res) => {
     } else if (status === "rejected") {
       rental.status = "rejected";
       rental.rejectionReason = rejectionReason;
+
+      // ✅ UPDATE MACHINE STATUS back to 'available' when rejected
+      const machine = await Machine.findById(rental.machineId._id);
+      machine.availability = "available";
+      await machine.save();
+      console.log(`✅ Machine ${machine.name} status updated to: available (rejected)`);
 
       // Create notification
       await createNotification(
@@ -538,18 +550,6 @@ router.patch("/:id/status", protect, async (req, res) => {
       }
 
       // Send SMS if phone exists
-      console.log("\n🔍 SMS Check:");
-      console.log("   Renter email:", rental.renterId.email);
-      console.log("   Renter phone:", rental.renterId.phone || "NO PHONE");
-      console.log(
-        "   Twilio configured:",
-        !!(
-          process.env.TWILIO_ACCOUNT_SID &&
-          process.env.TWILIO_AUTH_TOKEN &&
-          process.env.TWILIO_PHONE_NUMBER
-        )
-      );
-
       if (
         rental.renterId.phone &&
         process.env.TWILIO_ACCOUNT_SID &&
@@ -563,41 +563,15 @@ router.patch("/:id/status", protect, async (req, res) => {
             rejectionReason.length > 100 ? "..." : ""
           }`;
 
-          console.log("\n📱 Sending SMS...");
-          console.log("   To:", rental.renterId.phone);
-          console.log("   From:", process.env.TWILIO_PHONE_NUMBER);
-          console.log("   Message:", smsBody);
-
-          const message = await twilioClient.messages.create({
+          await twilioClient.messages.create({
             body: smsBody,
             from: process.env.TWILIO_PHONE_NUMBER,
             to: rental.renterId.phone,
           });
 
           console.log("✅ SMS sent successfully!");
-          console.log("   Message SID:", message.sid);
-          console.log("   Status:", message.status);
         } catch (smsError) {
-          console.error("\n❌ SMS sending failed!");
-          console.error("   Error:", smsError.message);
-          console.error("   Code:", smsError.code);
-          if (smsError.moreInfo) {
-            console.error("   More info:", smsError.moreInfo);
-          }
-        }
-      } else {
-        console.log("\n⚠️  SMS not sent. Reason:");
-        if (!rental.renterId.phone) {
-          console.log("   ❌ Renter has no phone number");
-        }
-        if (!process.env.TWILIO_ACCOUNT_SID) {
-          console.log("   ❌ TWILIO_ACCOUNT_SID missing");
-        }
-        if (!process.env.TWILIO_AUTH_TOKEN) {
-          console.log("   ❌ TWILIO_AUTH_TOKEN missing");
-        }
-        if (!process.env.TWILIO_PHONE_NUMBER) {
-          console.log("   ❌ TWILIO_PHONE_NUMBER missing");
+          console.error("❌ SMS sending failed:", smsError.message);
         }
       }
     }
@@ -652,11 +626,11 @@ router.patch("/:id/cancel", protect, async (req, res) => {
     rental.status = "cancelled";
     await rental.save();
 
-    if (rental.status === "approved") {
-      const machine = await Machine.findById(rental.machineId);
-      machine.availability = "available";
-      await machine.save();
-    }
+    // ✅ UPDATE MACHINE STATUS back to 'available' when cancelled
+    const machine = await Machine.findById(rental.machineId);
+    machine.availability = "available";
+    await machine.save();
+    console.log(`✅ Machine status updated to: available (cancelled)`);
 
     res.json({ success: true, data: rental });
   } catch (error) {
@@ -683,29 +657,29 @@ router.patch("/:id/complete", protect, async (req, res) => {
       });
     }
 
-// Only allow completion if payment is secured in escrow
-if (rental.status !== "active") {
-  return res.status(400).json({
-    success: false,
-    message: "Rental must be active (paid) before it can be completed",
-  });
-}
+    // Only allow completion if payment is secured in escrow
+    if (rental.status !== "active") {
+      return res.status(400).json({
+        success: false,
+        message: "Rental must be active (paid) before it can be completed",
+      });
+    }
 
-// Optional: Also verify payment exists
-const payment = await Payment.findOne({ rentalId: rental._id });
-if (!payment || payment.escrowStatus !== 'held') {
-  return res.status(400).json({
-    success: false,
-    message: "Payment must be secured in escrow before completing rental",
-  });
-}
+    // Optional: Also verify payment exists
+    const payment = await Payment.findOne({ rentalId: rental._id });
+    if (!payment || payment.escrowStatus !== 'held') {
+      return res.status(400).json({
+        success: false,
+        message: "Payment must be secured in escrow before completing rental",
+      });
+    }
 
-rental.status = "completed";
-await rental.save();
+    rental.status = "completed";
+    await rental.save();
 
-    const machine = await Machine.findById(rental.machineId);
-    machine.availability = "available";
-    await machine.save();
+    // ✅ Machine stays 'rented' until payment is released and rental is fully confirmed
+    // It will be set to 'available' when admin releases payment
+    console.log(`✅ Rental completed, machine stays rented until payment released`);
 
     res.json({ success: true, data: rental });
   } catch (error) {
@@ -871,7 +845,6 @@ router.post("/:id/review", protect, async (req, res) => {
       </body>
       </html>
     `;
-
     try {
       await sendEmail(rental.ownerId.email, emailSubject, emailHtml);
       console.log("✅ Review notification email sent to owner");
