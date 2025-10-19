@@ -222,14 +222,26 @@ export default function Dashboard({ user: currentUser, onLogout }) {
     }
   };
 
-  const handlePaymentSuccess = async (paymentData) => {
-    await fetchRentals();
-    setShowPaymentModal(false);
-    setPaymentRental(null);
-    alert(
-      `✅ Payment successful! Your funds are secured in escrow.\n\nTransaction ID: ${paymentData.transactionId}\n\nThe owner will be notified and can now provide the service. Once completed, you'll confirm to release the payment.`
-    );
-  };
+const handlePaymentSuccess = async (paymentData) => {
+  console.log('💰 Payment success callback:', paymentData);
+  
+  // Refresh rentals to get updated status
+  await fetchRentals();
+  await fetchMachines(); // Also refresh machines
+  
+  setShowPaymentModal(false);
+  setPaymentRental(null);
+  
+  alert(
+    `✅ Payment successful! Your funds are secured in escrow.\n\n` +
+    `Transaction ID: ${paymentData.transactionId}\n\n` +
+    `The rental is now ACTIVE. The owner can proceed with the service.\n\n` +
+    `Once completed, you'll confirm to release the payment.`
+  );
+  
+  // Navigate to rentals view to see the updated status
+  setCurrentView('rentals');
+};
 
   const handleConfirmCompletion = async () => {
     if (!completionNote.trim() || completionNote.length < 10) {

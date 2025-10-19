@@ -393,6 +393,9 @@ router.post('/create-payment', protect, requireStripe, async (req, res) => {
 router.post('/stripe/confirm', protect, requireStripe, async (req, res) => {
   try {
     const { paymentIntentId } = req.body;
+    
+    console.log('💳 Payment confirmation request:', paymentIntentId);
+    
     if (!paymentIntentId) {
       return res.status(400).json({ 
         success: false, 
@@ -400,35 +403,86 @@ router.post('/stripe/confirm', protect, requireStripe, async (req, res) => {
       });
     }
 
+    // Retrieve payment intent from Stripe
     const paymentIntent = await stripe.paymentIntents.retrieve(paymentIntentId);
+    console.log('📋 Payment intent status:', paymentIntent.status);
+    
     if (paymentIntent.status === 'succeeded') {
+      // Find payment record
       const payment = await Payment.findOne({ transactionId: paymentIntentId });
+      
       if (!payment) {
-        return res.status(404).json({ success: false, message: 'Payment record not found' });
+        console.error('❌ Payment record not found for:', paymentIntentId);
+        return res.status(404).json({ 
+          success: false, 
+          message: 'Payment record not found' 
+        });
       }
 
-      // Update payment
+      console.log('📦 Found payment record:', payment._id);
+      console.log('📦 Rental ID:', payment.rentalId);
+
+      // Update payment status
       payment.status = 'completed';
       payment.escrowStatus = 'held';
       payment.escrowTimeline = payment.escrowTimeline || {};
       payment.escrowTimeline.paidAt = new Date();
-      payment.escrowTimeline.heldAt = new Date();  // ← Add this
+      payment.escrowTimeline.heldAt = new Date();
       await payment.save();
+      
+      console.log('✅ Payment updated to held in escrow');
 
-      // ✅ FIX: Update rental to 'active'
-      await Rental.findByIdAndUpdate(payment.rentalId, {
-        status: 'active',  // ← This is critical!
-        'payment.status': 'held_in_escrow',
-        'payment.transactionId': paymentIntentId,
-        'payment.method': 'stripe',
-        'payment.amount': payment.amount,
-        'payment.paidAt': new Date(),
-      });
+      // ✅ CRITICAL: Update rental status to 'active'
+      const Rental = require('../models/Rental');
+      const rental = await Rental.findById(payment.rentalId);
+      
+      if (!rental) {
+        console.error('❌ Rental not found:', payment.rentalId);
+        return res.status(404).json({ 
+          success: false, 
+          message: 'Rental not found' 
+        });
+      }
+
+      console.log('📦 Current rental status:', rental.status);
+
+      // Update rental with payment info
+      rental.status = 'active';
+      rental.payment = {
+        status: 'held_in_escrow',
+        transactionId: paymentIntentId,
+        method: 'stripe',
+        amount: payment.amount,
+        paidAt: new Date()
+      };
+      await rental.save();
+
+      console.log('✅ Rental updated to ACTIVE with payment info');
+
+      // ✅ Update machine to 'rented'
+      const Machine = require('../models/Machine');
+      if (rental.machineId) {
+        await Machine.findByIdAndUpdate(rental.machineId, {
+          availability: 'rented'
+        });
+        console.log('✅ Machine updated to rented');
+      }
 
       res.json({ 
         success: true, 
         message: 'Payment held in escrow, rental is now active',
-        data: payment 
+        data: {
+          payment: {
+            id: payment._id,
+            status: payment.status,
+            escrowStatus: payment.escrowStatus
+          },
+          rental: {
+            id: rental._id,
+            status: rental.status,
+            paymentStatus: rental.payment?.status
+          }
+        }
       });
     } else {
       res.status(400).json({ 
@@ -437,7 +491,7 @@ router.post('/stripe/confirm', protect, requireStripe, async (req, res) => {
       });
     }
   } catch (error) {
-    console.error('Stripe confirm error:', error);
+    console.error('❌ Stripe confirm error:', error);
     res.status(500).json({ 
       success: false, 
       message: error.message 

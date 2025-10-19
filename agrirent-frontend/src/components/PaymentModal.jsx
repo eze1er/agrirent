@@ -1,5 +1,5 @@
 // src/components/PaymentModal.jsx
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   X,
   CreditCard,
@@ -10,8 +10,12 @@ import {
   Lock,
 } from "lucide-react";
 import { paymentAPI } from "../services/api";
+import { useStripe, useElements, CardElement } from "@stripe/react-stripe-js";
 
 export default function PaymentModal({ rental, onClose, onPaymentSuccess }) {
+  const stripe = useStripe();
+  const elements = useElements();
+
   const [selectedMethod, setSelectedMethod] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -70,37 +74,88 @@ export default function PaymentModal({ rental, onClose, onPaymentSuccess }) {
     setStep(2);
   };
 
-  // ✅ NEW: Stripe Checkout Session (Redirect Method)
-  const handleStripePayment = async () => {
+  // ✅ EMBEDDED STRIPE PAYMENT (your handleSubmit logic)
+  const handleStripePayment = async (e) => {
+    e.preventDefault();
+
+    if (!stripe || !elements) {
+      setError("Stripe is not ready. Please try again.");
+      return;
+    }
+
     setLoading(true);
     setError("");
-    setStep(3);
 
     try {
-      console.log('Creating checkout session for rental:', rental._id);
+      const cardElement = elements.getElement(CardElement);
 
-      // Create Stripe Checkout Session
-      const response = await paymentAPI.createCheckoutSession({
-        rentalId: rental._id
+      // 1. Create Payment Method
+      const { error: pmError, paymentMethod } = await stripe.createPaymentMethod({
+        type: "card",
+        card: cardElement,
       });
 
-      console.log('Checkout session response:', response.data);
+      if (pmError) {
+        setError(pmError.message);
+        setLoading(false);
+        return;
+      }
 
-      if (response.data.success && response.data.data.url) {
-        // Redirect to Stripe Checkout page
-        console.log('Redirecting to Stripe Checkout...');
-        window.location.href = response.data.data.url;
-      } else {
-        throw new Error('Failed to create checkout session');
+      console.log("💳 Payment method created:", paymentMethod.id);
+
+      // 2. Create Payment Intent on backend
+      const intentResponse = await paymentAPI.createIntent({
+        rentalId: rental._id,
+        amount: rental.pricing?.totalPrice || 0,
+        currency: "usd",
+      });
+
+      console.log("🔐 Payment intent created:", intentResponse.data.data.paymentIntentId);
+
+      // 3. Confirm payment with Stripe
+      const { error: confirmError } = await stripe.confirmCardPayment(
+        intentResponse.data.data.clientSecret,
+        {
+          payment_method: paymentMethod.id,
+        }
+      );
+
+      if (confirmError) {
+        setError(confirmError.message);
+        setLoading(false);
+        return;
+      }
+
+      // 4. Confirm on your backend (update rental status, escrow, etc.)
+      const confirmResponse = await paymentAPI.confirmPayment({
+        paymentIntentId: intentResponse.data.data.paymentIntentId,
+        rentalId: rental._id,
+      });
+
+      console.log("✅ Payment confirmed:", confirmResponse.data);
+
+      if (confirmResponse.data.success) {
+        setSuccess(true);
+        setTimeout(() => {
+          onPaymentSuccess({
+            method: "stripe",
+            transactionId: intentResponse.data.data.paymentIntentId,
+            amount: rental.pricing?.totalPrice,
+          });
+          onClose();
+        }, 1500);
       }
     } catch (err) {
-      console.error('Payment error:', err);
-      setError(err.response?.data?.message || 'Failed to initiate payment. Please try again.');
-      setStep(2);
+      console.error("❌ Payment error:", err);
+      setError(
+        err.response?.data?.message || "Payment failed. Please try again."
+      );
+    } finally {
       setLoading(false);
     }
   };
 
+  // PayPal (redirect)
   const handlePayPalPayment = async () => {
     setLoading(true);
     setError("");
@@ -112,9 +167,10 @@ export default function PaymentModal({ rental, onClose, onPaymentSuccess }) {
         rentalId: rental._id,
       });
 
-      // Redirect to PayPal approval URL
-      if (response.data.approvalUrl) {
+      if (response.data?.approvalUrl) {
         window.location.href = response.data.approvalUrl;
+      } else {
+        throw new Error("PayPal URL missing");
       }
     } catch (err) {
       setError(err.response?.data?.message || "PayPal payment failed");
@@ -123,8 +179,10 @@ export default function PaymentModal({ rental, onClose, onPaymentSuccess }) {
     }
   };
 
+  // Mobile Money
   const handleMobileMoneyPayment = async () => {
-    if (!mobileMoneyDetails.phoneNumber || !mobileMoneyDetails.provider) {
+    const { provider, phoneNumber } = mobileMoneyDetails;
+    if (!provider || !phoneNumber) {
       setError("Please fill in all mobile money details");
       return;
     }
@@ -135,8 +193,8 @@ export default function PaymentModal({ rental, onClose, onPaymentSuccess }) {
 
     try {
       const response = await paymentAPI.initiateMobileMoney({
-        provider: mobileMoneyDetails.provider,
-        phoneNumber: mobileMoneyDetails.phoneNumber,
+        provider,
+        phoneNumber,
         amount: rental.pricing.totalPrice,
         rentalId: rental._id,
       });
@@ -144,10 +202,11 @@ export default function PaymentModal({ rental, onClose, onPaymentSuccess }) {
       setSuccess(true);
       setTimeout(() => {
         onPaymentSuccess({
-          method: mobileMoneyDetails.provider,
-          transactionId: response.data.transactionId,
+          method: provider,
+          transactionId: response.data?.transactionId,
           amount: rental.pricing.totalPrice,
         });
+        onClose();
       }, 1500);
     } catch (err) {
       setError(err.response?.data?.message || "Mobile money payment failed");
@@ -157,15 +216,42 @@ export default function PaymentModal({ rental, onClose, onPaymentSuccess }) {
     }
   };
 
-  const handlePayment = () => {
+  const handlePayment = (e) => {
     if (selectedMethod === "stripe") {
-      handleStripePayment();
+      handleStripePayment(e);
     } else if (selectedMethod === "paypal") {
       handlePayPalPayment();
     } else if (["orange", "mtn", "moov"].includes(selectedMethod)) {
       handleMobileMoneyPayment();
     }
   };
+
+  useEffect(() => {
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = "unset";
+    };
+  }, []);
+
+  if (success) {
+    return (
+      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+        <div className="bg-white rounded-2xl max-w-md w-full shadow-2xl text-center p-8">
+          <CheckCircle size={64} className="mx-auto text-emerald-600 mb-4" />
+          <h3 className="text-xl font-bold text-gray-800 mb-2">Payment Successful!</h3>
+          <p className="text-gray-600 mb-6">
+            Your rental is confirmed. You’ll receive a confirmation email shortly.
+          </p>
+          <button
+            onClick={onClose}
+            className="w-full bg-emerald-600 text-white py-3 rounded-xl font-bold hover:bg-emerald-700 transition"
+          >
+            Close
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
@@ -178,14 +264,15 @@ export default function PaymentModal({ rental, onClose, onPaymentSuccess }) {
           </div>
           <button
             onClick={onClose}
-            className="text-white hover:bg-white/20 rounded-full p-1 transition"
+            disabled={loading}
+            className="text-white hover:bg-white/20 rounded-full p-1 transition disabled:opacity-50"
           >
             <X size={24} />
           </button>
         </div>
 
         <div className="p-6">
-          {/* Rental Summary */}
+          {/* ... (Rental Summary & Escrow Banner - keep as-is) ... */}
           <div className="bg-gradient-to-br from-blue-50 to-cyan-50 rounded-xl p-4 mb-6 border border-blue-100">
             <h3 className="font-bold text-gray-800 mb-2">Rental Summary</h3>
             <p className="text-sm text-gray-600 mb-1 font-semibold">
@@ -202,30 +289,25 @@ export default function PaymentModal({ rental, onClose, onPaymentSuccess }) {
                   📅 {new Date(rental.workDate).toLocaleDateString()}
                 </p>
                 <p className="text-sm text-gray-600">
-                  📏 {rental.pricing?.numberOfHectares} hectares
+                  📏 {rental.pricing?.numberOfHectares || 0} hectares
                 </p>
               </>
             )}
             <div className="mt-3 pt-3 border-t border-blue-200">
               <div className="flex justify-between items-center">
-                <span className="font-semibold text-gray-700">
-                  Total Amount:
-                </span>
+                <span className="font-semibold text-gray-700">Total Amount:</span>
                 <span className="text-2xl font-bold bg-gradient-to-r from-emerald-600 to-teal-600 bg-clip-text text-transparent">
-                  ${rental.pricing?.totalPrice?.toFixed(2)}
+                  ${rental.pricing?.totalPrice?.toFixed(2) || "0.00"}
                 </span>
               </div>
             </div>
           </div>
 
-          {/* Escrow Protection Banner */}
           <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 mb-6">
             <div className="flex items-start gap-2">
               <Shield size={20} className="text-blue-600 flex-shrink-0 mt-0.5" />
               <div>
-                <p className="text-xs font-semibold text-gray-800 mb-1">
-                  🔒 Your Payment is Protected
-                </p>
+                <p className="text-xs font-semibold text-gray-800 mb-1">🔒 Your Payment is Protected</p>
                 <ul className="text-xs text-gray-600 space-y-1">
                   <li>✓ Funds held securely in escrow</li>
                   <li>✓ Released only after service completion</li>
@@ -235,19 +317,17 @@ export default function PaymentModal({ rental, onClose, onPaymentSuccess }) {
             </div>
           </div>
 
-          {/* Step 1: Select Payment Method */}
+          {/* Step 1: Select Method */}
           {step === 1 && (
             <div>
-              <h3 className="font-bold text-gray-800 mb-4">
-                Choose Payment Method
-              </h3>
+              <h3 className="font-bold text-gray-800 mb-4">Choose Payment Method</h3>
               <div className="space-y-3">
                 {paymentMethods.map((method) => (
                   <button
                     key={method.id}
                     onClick={() => handleMethodSelect(method.id)}
                     className={`w-full border-2 rounded-xl p-4 flex items-center gap-4 hover:border-emerald-500 hover:bg-emerald-50 transition relative ${
-                      method.recommended ? 'border-emerald-200 bg-emerald-50/50' : 'border-gray-200'
+                      method.recommended ? "border-emerald-200 bg-emerald-50/50" : "border-gray-200"
                     }`}
                   >
                     {method.recommended && (
@@ -257,12 +337,8 @@ export default function PaymentModal({ rental, onClose, onPaymentSuccess }) {
                     )}
                     <div className={`text-${method.color}-600`}>{method.icon}</div>
                     <div className="text-left flex-1">
-                      <p className="font-semibold text-gray-800">
-                        {method.name}
-                      </p>
-                      <p className="text-xs text-gray-500">
-                        {method.description}
-                      </p>
+                      <p className="font-semibold text-gray-800">{method.name}</p>
+                      <p className="text-xs text-gray-500">{method.description}</p>
                     </div>
                   </button>
                 ))}
@@ -270,7 +346,7 @@ export default function PaymentModal({ rental, onClose, onPaymentSuccess }) {
             </div>
           )}
 
-          {/* Step 2: Stripe - No card form needed, just confirm */}
+          {/* Step 2: Stripe Embedded Form */}
           {step === 2 && selectedMethod === "stripe" && (
             <div>
               <button
@@ -279,67 +355,60 @@ export default function PaymentModal({ rental, onClose, onPaymentSuccess }) {
               >
                 ← Change payment method
               </button>
-              
-              <div className="bg-gradient-to-br from-blue-50 to-cyan-50 rounded-xl p-6 mb-4 border border-blue-100">
-                <div className="flex items-center gap-3 mb-4">
-                  <div className="bg-blue-600 text-white rounded-full p-3">
-                    <CreditCard size={24} />
+
+              <form onSubmit={handleStripePayment}>
+                <div className="bg-gradient-to-br from-blue-50 to-cyan-50 rounded-xl p-4 mb-4 border border-blue-100">
+                  <label className="block text-sm font-semibold text-gray-700 mb-2">
+                    Card Details
+                  </label>
+                  <div className="border border-gray-300 rounded-xl p-3 bg-white">
+                    <CardElement
+                      options={{
+                        style: {
+                          base: {
+                            fontSize: "16px",
+                            color: "#424770",
+                            "::placeholder": {
+                              color: "#aab7c4",
+                            },
+                          },
+                          invalid: {
+                            color: "#9e2146",
+                          },
+                        },
+                      }}
+                    />
                   </div>
-                  <div>
-                    <h3 className="font-bold text-gray-800">Card Payment</h3>
-                    <p className="text-xs text-gray-600">Via Stripe</p>
+                </div>
+
+                {error && (
+                  <div className="mb-4 p-3 bg-rose-50 border border-rose-200 text-rose-700 rounded-xl text-sm flex items-center gap-2">
+                    <AlertCircle size={16} /> {error}
                   </div>
-                </div>
-                
-                <div className="space-y-2 text-sm text-gray-700">
-                  <p className="flex items-center gap-2">
-                    <span className="text-emerald-600">✓</span>
-                    Secure payment processing
-                  </p>
-                  <p className="flex items-center gap-2">
-                    <span className="text-emerald-600">✓</span>
-                    All major cards accepted
-                  </p>
-                  <p className="flex items-center gap-2">
-                    <span className="text-emerald-600">✓</span>
-                    3D Secure authentication
-                  </p>
-                </div>
-              </div>
-
-              <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 mb-4">
-                <p className="text-xs text-gray-700">
-                  You'll be redirected to Stripe's secure payment page to complete your transaction.
-                </p>
-              </div>
-
-              {error && (
-                <div className="mb-4 p-3 bg-rose-50 border border-rose-200 text-rose-700 rounded-xl text-sm flex items-center gap-2">
-                  <AlertCircle size={16} />
-                  {error}
-                </div>
-              )}
-
-              <button
-                onClick={handlePayment}
-                disabled={loading}
-                className="w-full bg-gradient-to-r from-emerald-600 to-teal-600 text-white py-4 rounded-xl font-bold hover:shadow-xl transition disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {loading ? (
-                  <span className="flex items-center justify-center gap-2">
-                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                    Processing...
-                  </span>
-                ) : (
-                  `Continue to Payment - $${rental.pricing?.totalPrice?.toFixed(2)}`
                 )}
-              </button>
 
-              <div className="mt-4 text-center">
-                <p className="text-xs text-gray-500">
-                  Powered by <span className="font-semibold text-blue-600">Stripe</span>
-                </p>
-              </div>
+                <button
+                  type="submit"
+                  disabled={!stripe || loading}
+                  className="w-full bg-gradient-to-r from-emerald-600 to-teal-600 text-white py-4 rounded-xl font-bold hover:shadow-xl transition disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {loading ? (
+                    <span className="flex items-center justify-center gap-2">
+                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                      Processing...
+                    </span>
+                  ) : (
+                    `Pay $${rental.pricing?.totalPrice?.toFixed(2)}`
+                  )}
+                </button>
+
+                <div className="mt-4 text-center">
+                  <p className="text-xs text-gray-500">
+                    Secured by{" "}
+                    <span className="font-semibold text-blue-600">Stripe</span>
+                  </p>
+                </div>
+              </form>
             </div>
           )}
 
@@ -348,25 +417,23 @@ export default function PaymentModal({ rental, onClose, onPaymentSuccess }) {
             <div>
               <button
                 onClick={() => setStep(1)}
-                className="text-blue-600 text-sm font-semibold mb-4"
+                className="text-indigo-600 text-sm font-semibold mb-4"
               >
                 ← Change payment method
               </button>
               <h3 className="font-bold text-gray-800 mb-4">PayPal Payment</h3>
               <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 mb-4">
                 <p className="text-sm text-gray-700">
-                  You will be redirected to PayPal to complete your payment
-                  securely.
+                  You will be redirected to PayPal to complete your payment securely.
                 </p>
               </div>
               {error && (
                 <div className="mb-4 p-3 bg-rose-50 border border-rose-200 text-rose-700 rounded-xl text-sm flex items-center gap-2">
-                  <AlertCircle size={16} />
-                  {error}
+                  <AlertCircle size={16} /> {error}
                 </div>
               )}
               <button
-                onClick={handlePayment}
+                onClick={handlePayPalPayment}
                 disabled={loading}
                 className="w-full bg-gradient-to-r from-indigo-600 to-blue-600 text-white py-4 rounded-xl font-bold hover:shadow-xl transition disabled:opacity-50"
               >
@@ -384,21 +451,14 @@ export default function PaymentModal({ rental, onClose, onPaymentSuccess }) {
               >
                 ← Change payment method
               </button>
-              <h3 className="font-bold text-gray-800 mb-4">
-                Mobile Money Payment
-              </h3>
+              <h3 className="font-bold text-gray-800 mb-4">Mobile Money Payment</h3>
               <div className="space-y-4">
                 <div>
-                  <label className="block text-sm font-semibold mb-2">
-                    Provider
-                  </label>
+                  <label className="block text-sm font-semibold mb-2">Provider</label>
                   <select
                     value={mobileMoneyDetails.provider}
                     onChange={(e) =>
-                      setMobileMoneyDetails({
-                        ...mobileMoneyDetails,
-                        provider: e.target.value,
-                      })
+                      setMobileMoneyDetails({ ...mobileMoneyDetails, provider: e.target.value })
                     }
                     className="w-full border-2 border-gray-200 rounded-xl px-4 py-3 focus:border-orange-500 focus:outline-none capitalize"
                   >
@@ -409,9 +469,7 @@ export default function PaymentModal({ rental, onClose, onPaymentSuccess }) {
                   </select>
                 </div>
                 <div>
-                  <label className="block text-sm font-semibold mb-2">
-                    Phone Number
-                  </label>
+                  <label className="block text-sm font-semibold mb-2">Phone Number</label>
                   <input
                     type="tel"
                     value={mobileMoneyDetails.phoneNumber}
@@ -421,22 +479,17 @@ export default function PaymentModal({ rental, onClose, onPaymentSuccess }) {
                         phoneNumber: e.target.value.replace(/\D/g, ""),
                       })
                     }
-                    placeholder="+1234567890"
+                    placeholder="e.g. 0712345678"
                     className="w-full border-2 border-gray-200 rounded-xl px-4 py-3 focus:border-orange-500 focus:outline-none"
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-semibold mb-2">
-                    Account Name
-                  </label>
+                  <label className="block text-sm font-semibold mb-2">Account Name</label>
                   <input
                     type="text"
                     value={mobileMoneyDetails.name}
                     onChange={(e) =>
-                      setMobileMoneyDetails({
-                        ...mobileMoneyDetails,
-                        name: e.target.value,
-                      })
+                      setMobileMoneyDetails({ ...mobileMoneyDetails, name: e.target.value })
                     }
                     placeholder="John Doe"
                     className="w-full border-2 border-gray-200 rounded-xl px-4 py-3 focus:border-orange-500 focus:outline-none"
@@ -445,18 +498,16 @@ export default function PaymentModal({ rental, onClose, onPaymentSuccess }) {
               </div>
               <div className="mt-4 bg-amber-50 border border-amber-200 rounded-xl p-4">
                 <p className="text-sm text-gray-700">
-                  You will receive a prompt on your phone to authorize this
-                  payment.
+                  You will receive a prompt on your phone to authorize this payment.
                 </p>
               </div>
               {error && (
                 <div className="mt-4 p-3 bg-rose-50 border border-rose-200 text-rose-700 rounded-xl text-sm flex items-center gap-2">
-                  <AlertCircle size={16} />
-                  {error}
+                  <AlertCircle size={16} /> {error}
                 </div>
               )}
               <button
-                onClick={handlePayment}
+                onClick={handleMobileMoneyPayment}
                 disabled={loading}
                 className="w-full mt-6 bg-gradient-to-r from-orange-600 to-amber-600 text-white py-4 rounded-xl font-bold hover:shadow-xl transition disabled:opacity-50"
               >
@@ -465,33 +516,12 @@ export default function PaymentModal({ rental, onClose, onPaymentSuccess }) {
             </div>
           )}
 
-          {/* Step 3: Processing */}
+          {/* Step 3: Processing (for PayPal/Mobile redirect simulation) */}
           {step === 3 && loading && (
             <div className="text-center py-8">
               <div className="w-16 h-16 border-4 border-emerald-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-              <h3 className="text-xl font-bold text-gray-800 mb-2">
-                Redirecting to Payment...
-              </h3>
-              <p className="text-gray-600 text-sm">
-                Please wait, you'll be redirected to complete your payment securely
-              </p>
-            </div>
-          )}
-
-          {/* Success state (mobile money) */}
-          {success && (
-            <div className="text-center py-8">
-              <CheckCircle
-                size={64}
-                className="mx-auto text-emerald-600 mb-4"
-              />
-              <h3 className="text-xl font-bold text-gray-800 mb-2">
-                Payment Successful!
-              </h3>
-              <p className="text-gray-600">
-                Your rental has been confirmed. You'll receive a
-                confirmation email shortly.
-              </p>
+              <h3 className="text-xl font-bold text-gray-800 mb-2">Processing...</h3>
+              <p className="text-gray-600 text-sm">Please wait</p>
             </div>
           )}
         </div>

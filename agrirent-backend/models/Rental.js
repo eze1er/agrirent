@@ -24,7 +24,7 @@ const rentalSchema = new mongoose.Schema({
     required: true
   },
   
-  // For daily rentals
+  // Daily rental fields
   startDate: {
     type: Date,
     required: function() { return this.rentalType === 'daily'; }
@@ -34,7 +34,7 @@ const rentalSchema = new mongoose.Schema({
     required: function() { return this.rentalType === 'daily'; }
   },
   
-  // For per-hectare rentals
+  // Per-hectare rental fields
   hectares: {
     type: Number,
     required: function() { return this.rentalType === 'per_hectare'; }
@@ -47,7 +47,8 @@ const rentalSchema = new mongoose.Schema({
     type: String,
     required: function() { return this.rentalType === 'per_hectare'; }
   },
-  
+
+  // Rental status (business workflow)
   status: {
     type: String,
     enum: [
@@ -55,26 +56,27 @@ const rentalSchema = new mongoose.Schema({
       'approved',     // Approved, waiting for payment
       'rejected',     // Owner rejected
       'active',       // Payment received, service in progress
-      'completed',    // Service completed by owner
+      'completed',    // Service completed
       'disputed',     // Under dispute
       'cancelled'     // Cancelled
     ],
-    default: 'pending'
+    default: 'pending',
+    required: true
   },
-  
+
   rejectionReason: {
     type: String,
     validate: {
       validator: function(value) {
         if (this.status === 'rejected') {
-          return value && value.length >= 10;
+          return value && value.trim().length >= 10;
         }
         return true;
       },
       message: 'Rejection reason must be at least 10 characters'
     }
   },
-  
+
   pricing: {
     pricePerDay: Number,
     pricePerHectare: Number,
@@ -85,82 +87,63 @@ const rentalSchema = new mongoose.Schema({
     totalPrice: { type: Number, required: true }
   },
 
-  // ============== PAYMENT & ESCROW FIELDS ==============
- // ESCROW STATUS FLOW
-  escrowStatus: {
-    type: String,
-    required: true,
-    enum: [
-      'pending',           // Payment initiated but not completed
-      'held', 
-      'approved',             // Payment received and held in AgriRent account
-      'released',          // Released to owner after renter confirmation
-      'disputed',          // Under dispute resolution
-      'refunded',          // Refunded to renter
-      'cancelled'          // Cancelled before payment
-    ],
-    default: 'pending',
-  },
-  
-  status: {
-    type: String,
-    required: true,
-    enum: ['pending', 'processing', 'completed', 'failed', 'refunded', 'approved', 'cancelled'],
-    default: 'pending',
-  },
-  
-  transactionId: {
-    type: String,
-    required: false,
-    unique: true,
-  },
-  
-  // ESCROW TIMELINE
-  escrowTimeline: {
-    paidAt: Date,              // When renter paid
-    heldAt: Date,              // When funds moved to escrow
-    renterConfirmedAt: Date,   // When renter confirmed job done
-    adminVerifiedAt: Date,     // When admin verified (optional)
-    releasedAt: Date,          // When released to owner
-    disputedAt: Date,          // If disputed
-    resolvedAt: Date,          // When dispute resolved
+  // 💳 Unified Payment & Escrow Handling
+  payment: {
+    status: {
+      type: String,
+      enum: ['pending', 'held_in_escrow', 'completed', 'refunded', 'cancelled'],
+      default: 'pending',
+      required: true
+    },
+    transactionId: {
+      type: String,
+      unique: true,
+      sparse: true // allows multiple nulls
+    },
+    method: String, // e.g., 'gcash', 'bank_transfer', 'credit_card'
+    amount: Number,
+    paidAt: Date,
   },
 
-  // ============== COMPLETION CONFIRMATION ==============
+  // 🕒 Escrow & Workflow Timeline
+  escrowTimeline: {
+    paidAt: Date,              // When renter paid
+    heldAt: Date,              // Funds in escrow
+    renterConfirmedAt: Date,   // Renter confirms job done
+    adminVerifiedAt: Date,     // Optional admin verification
+    releasedAt: Date,          // Funds released to owner
+    disputedAt: Date,          // Dispute initiated
+    resolvedAt: Date,          // Dispute resolved
+  },
+
+  // ✅ Completion Confirmations
   confirmations: {
-    renterConfirmed: {
-      type: Boolean,
-      default: false,
-    },
+    renterConfirmed: { type: Boolean, default: false },
     renterConfirmedAt: Date,
     renterConfirmationNote: String,
     
-    adminVerified: {
-      type: Boolean,
-      default: false,
-    },
+    adminVerified: { type: Boolean, default: false },
     adminVerifiedAt: Date,
     adminVerifiedBy: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: 'User',
+      ref: 'User'
     },
     adminNote: String,
   },
 
-  // ============== REVIEW SYSTEM ==============
+  // ⭐ Review System
   review: {
     rating: {
       type: Number,
       min: 1,
       max: 5,
       validate: {
-        validator: function(value) {
-          if (this.review?.comment || this.review?.rating) {
-            return value >= 1 && value <= 5;
-          }
-          return true;
+        validator: function(v) {
+          // Only enforce if either rating or comment exists
+          const hasReview = this.review?.comment || typeof v === 'number';
+          return !hasReview || (v >= 1 && v <= 5);
         },
-        message: 'Rating must be between 1 and 5'
+        message: 'Rating must be between 1 and 5 if provided'
       }
     },
     comment: {
@@ -177,11 +160,13 @@ const rentalSchema = new mongoose.Schema({
     default: false
   },
 
-  // ============== TIMESTAMPS ==============
-  completedAt: Date,  // When owner marked as completed
+  // 📅 Final timestamps
+  completedAt: Date,
   cancelledAt: Date,
-  
-}, { timestamps: true });
+
+}, {
+  timestamps: true // adds createdAt and updatedAt
+});
 
 // ============== INDEXES ==============
 rentalSchema.index({ renterId: 1, createdAt: -1 });
