@@ -145,6 +145,7 @@ router.post(
 // ============================================
 // VERIFY SESSION AND UPDATE RENTAL STATUS
 // ============================================
+// Replace the verify-session route in paymentRoutes.js (around line 145-225)
 router.get(
   "/stripe/verify-session/:sessionId",
   protect,
@@ -157,13 +158,29 @@ router.get(
       if (session.payment_status === "paid") {
         const rentalId = session.metadata?.rentalId;
         
+        // Get the rental with populated fields
+        const rental = await Rental.findById(rentalId)
+          .populate("renterId")
+          .populate("ownerId");
+
+        if (!rental) {
+          return res.status(404).json({
+            success: false,
+            message: "Rental not found"
+          });
+        }
+        
         // Find or create payment record
         let payment = await Payment.findOne({ rentalId });
 
         if (!payment) {
           payment = await Payment.create({
             rentalId,
+            userId: rental.renterId._id,        // ✅ ADD THIS
+            ownerId: rental.ownerId._id,        // ✅ ADD THIS
             amount: session.amount_total / 100,
+            currency: session.currency || "usd", // ✅ ADD THIS
+            method: "stripe",                    // ✅ ADD THIS
             transactionId: session.payment_intent,
             status: "completed",
             escrowStatus: "held",
@@ -177,17 +194,19 @@ router.get(
           payment.status = "completed";
           payment.escrowStatus = "held";
           payment.transactionId = session.payment_intent;
+          payment.method = "stripe";           // ✅ ADD THIS
           payment.escrowTimeline = payment.escrowTimeline || {};
           payment.escrowTimeline.paidAt = new Date();
           payment.escrowTimeline.heldAt = new Date();
           await payment.save();
+          console.log("Payment record updated:", payment._id);
         }
 
-        // FIX: Update rental status to 'active' when payment succeeds
-        const rental = await Rental.findByIdAndUpdate(
+        // Update rental status to 'active' when payment succeeds
+        const updatedRental = await Rental.findByIdAndUpdate(
           rentalId,
           {
-            status: "active", // CRITICAL: Change from 'approved' to 'active'
+            status: "active",
             "payment.status": "held_in_escrow",
             "payment.transactionId": session.payment_intent,
             "payment.method": "stripe",
@@ -199,14 +218,14 @@ router.get(
           { new: true }
         ).populate("renterId").populate("ownerId").populate("machineId");
 
-        console.log("Rental status updated to:", rental.status);
+        console.log("Rental status updated to:", updatedRental.status);
 
         res.json({
           success: true,
           paid: true,
           rental: {
-            id: rental._id,
-            status: rental.status,
+            id: updatedRental._id,
+            status: updatedRental.status,
             paymentStatus: "held_in_escrow"
           },
           payment: {

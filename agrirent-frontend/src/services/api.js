@@ -22,7 +22,7 @@ api.interceptors.request.use(
   (error) => Promise.reject(error)
 );
 
-// ✅ FIXED: Response interceptor - use 'api' not 'instance'
+// Response interceptor
 api.interceptors.response.use(
   (response) => response,
   (error) => {
@@ -30,7 +30,6 @@ api.interceptors.response.use(
       error.response?.status === 403 &&
       error.response?.data?.requiresVerification
     ) {
-      // This will be caught by components and handled appropriately
       return Promise.reject(error);
     }
     return Promise.reject(error);
@@ -42,7 +41,7 @@ export const authAPI = {
   register: (data) => api.post("/auth/register", data),
   login: (data) => api.post("/auth/login", data),
   resendVerification: (data) => api.post("/auth/resend-verification", data),
-    sendSMSVerification: (data) => api.post("/auth/send-sms-verification", data),
+  sendSMSVerification: (data) => api.post("/auth/send-sms-verification", data),
   verifySMSCode: (data) => api.post("/auth/verify-sms-code", data),
   forgotPassword: (data) => api.post("/auth/forgot-password", data),
   resetPassword: (token, data) =>
@@ -77,30 +76,52 @@ export const rentalAPI = {
   getReviewsByMachine: (machineId) =>
     api.get(`/rentals/machine/${machineId}/reviews`),
   getMyRentals: () => api.get("/rentals/my-rentals"),
-  getRentalRequests: () => api.get("/rentals/requests"), // For owners
+  getRentalRequests: () => api.get("/rentals/requests"),
 };
 
-// Payment API (your existing paymentAPI object remains the same)
-// Payment API
+// Payment API - CORRECTED TO MATCH BACKEND ROUTES
 export const paymentAPI = {
-  // ✅ Add this method
-  createPayment: (data) => api.post('/payments/create-payment', data),
-  
+  // Stripe Checkout Session (for payment processing)
   createCheckoutSession: (data) =>
-    api.post('/payments/stripe/create-checkout-session', data),
+    api.post("/payments/stripe/create-checkout-session", data),
   verifySession: (sessionId) =>
     api.get(`/payments/stripe/verify-session/${sessionId}`),
-  createIntent: (data) => api.post('/payments/stripe/create-intent', data),
-  confirmPayment: (data) => api.post('/payments/stripe/confirm', data),
+
+  // Rental Payment Completion (renter confirms)
   confirmCompletion: (rentalId, data) =>
     api.post(`/payments/confirm-completion/${rentalId}`, data),
+
+  // Owner marks rental as complete
+  markComplete: (rentalId, data) =>
+    api.post(`/payments/owner/mark-complete/${rentalId}`, data),
+
+  // Dispute Operations
   openDispute: (rentalId, data) =>
-    api.post(`/payments/${rentalId}/dispute`, data),
-  releasePayment: (rentalId, data) =>
-    api.post(`/payments/admin/verify-and-release/${rentalId}`, data),
-  rejectRelease: (rentalId, data) =>
-    api.post(`/payments/${rentalId}/reject-release`, data),
-  debugPayment: (data) => api.post('/payments/debug-payment', data),
+    api.post(`/payments/open-dispute/${rentalId}`, data),
+
+  // Admin Operations
+  getAdminPendingPayments: () =>
+    api.get("/payments/admin/pending-payments"),
+  getAdminPendingReleases: () =>
+    api.get("/payments/admin/pending-releases"),
+  releasePayment: (paymentId, data) =>
+    api.post(`/payments/admin/release-payment/${paymentId}`, data),
+  resolveDispute: (paymentId, data) =>
+    api.post(`/payments/admin/resolve-dispute/${paymentId}`, data),
+  getDashboardStats: () =>
+    api.get("/payments/admin/dashboard-stats"),
+  getDisputes: () =>
+    api.get("/payments/admin/disputes"),
+
+  // Payment Status & Info
+  getRentalPaymentStatus: (rentalId) =>
+    api.get(`/payments/rental/${rentalId}/payment-status`),
+  checkRentalStatus: (rentalId) =>
+    api.get(`/payments/debug/check-rental/${rentalId}`),
+
+  // Test endpoint
+  testPayments: () =>
+    api.get("/payments/test"),
 };
 
 // Upload API
@@ -117,17 +138,13 @@ export const uploadAPI = {
       },
     });
   },
-  // ... rest of your uploadAPI methods
 };
 
 // User API
 export const userAPI = {
   getProfile: () => api.get("/users/profile"),
   updateProfile: (data) => api.put("/users/profile", data),
-
-  // ✅ ADDED: Verification status endpoint
   getVerificationStatus: () => api.get("/users/verification-status"),
-
   updatePaymentPreferences: (data) =>
     api.put("/users/payment-preferences", data),
   getPaymentMethods: () => api.get("/users/payment-methods"),
@@ -162,7 +179,7 @@ export const supportAPI = {
   getFaqs: () => api.get("/support/faqs"),
 };
 
-// Analytics API (for owners/admins)
+// Analytics API
 export const analyticsAPI = {
   getDashboardStats: () => api.get("/analytics/dashboard"),
   getEarningsReport: (period) =>

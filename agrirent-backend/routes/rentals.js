@@ -251,6 +251,34 @@ router.post("/", protect, async (req, res) => {
   }
 });
 
+// Add this to routes/rentals.js if it doesn't exist
+router.get("/:id", protect, async (req, res) => {
+  try {
+    const rental = await Rental.findById(req.params.id)
+      .populate("machineId")
+      .populate("renterId", "firstName lastName email")
+      .populate("ownerId", "firstName lastName email");
+
+    if (!rental) {
+      return res.status(404).json({
+        success: false,
+        message: "Rental not found"
+      });
+    }
+
+    res.json({
+      success: true,
+      data: rental
+    });
+  } catch (error) {
+    console.error("Error fetching rental:", error);
+    res.status(500).json({
+      success: false,
+      message: error.message
+    });
+  }
+});
+
 // Update rental status (approve/reject) with rejection reason
 router.patch("/:id/status", protect, async (req, res) => {
   try {
