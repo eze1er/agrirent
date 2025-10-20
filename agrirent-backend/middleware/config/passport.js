@@ -12,6 +12,7 @@ passport.use(new GoogleStrategy({
   callbackURL: process.env.GOOGLE_CALLBACK_URL
 }, async (accessToken, refreshToken, profile, done) => {
   try {
+     console.log('🔍 Google OAuth callback triggered');
     let user = await User.findOne({ email: profile.emails[0].value });
     
     if (user) {

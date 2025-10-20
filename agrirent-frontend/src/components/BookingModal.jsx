@@ -8,7 +8,7 @@ export default function BookingModal({ machine, onClose, onBook }) {
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
   const [hectares, setHectares] = useState(machine.minimumHectares || 1);
-  const [fieldLocation, setFieldLocation] = useState(''); // NEW
+  const [fieldLocation, setFieldLocation] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
@@ -28,7 +28,6 @@ export default function BookingModal({ machine, onClose, onBook }) {
 
       return { days, subtotal, serviceFee, total, type: 'daily' };
     } else {
-      // Per hectare pricing
       if (!hectares || hectares < (machine.minimumHectares || 1)) return null;
 
       const subtotal = hectares * machine.pricePerHectare;
@@ -41,48 +40,56 @@ export default function BookingModal({ machine, onClose, onBook }) {
 
   const pricing = calculatePricing();
 
-const handleSubmit = async (e) => {
-  e.preventDefault();
-  setError('');
+  // ✅ FIXED: Complete rewrite of handleSubmit
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setError('');
+    setLoading(true);
 
-  if (!pricing) {
-    setError(rentalType === 'daily' ? 'Please select valid dates' : 'Please enter valid hectares');
-    return;
-  }
+    console.log('🎯 Form submitted');
+    console.log('📦 Rental type:', rentalType);
 
-  // Validation for per hectare bookings
-  if (rentalType === 'per_hectare' && !fieldLocation.trim()) {
-    setError('Field location is required for per-hectare rentals');
-    return;
-  }
+    try {
+      // Validation
+      if (!pricing) {
+        throw new Error(rentalType === 'daily' ? 'Please select valid dates' : 'Please enter valid hectares');
+      }
 
-  setLoading(true);
+      if (rentalType === 'per_hectare' && !fieldLocation.trim()) {
+        throw new Error('Field location is required for per-hectare rentals');
+      }
 
-  try {
-    const bookingData = {
-      rentalType: rentalType, // FIXED: Send 'daily' or 'per_hectare' directly
-      startDate,
-    };
+      // ✅ BUILD BOOKING DATA CORRECTLY
+      let bookingData = {
+        rentalType: rentalType, // Send exactly as is: 'daily' or 'per_hectare'
+      };
 
-    if (rentalType === 'daily') {
-      bookingData.endDate = endDate;
-    } else if (rentalType === 'per_hectare') {
-      bookingData.hectares = parseFloat(hectares);
-      bookingData.workDate = startDate; // Backend expects 'workDate' not 'startDate' for per_hectare
-      bookingData.fieldLocation = fieldLocation.trim();
+      if (rentalType === 'daily') {
+        bookingData.startDate = startDate;
+        bookingData.endDate = endDate;
+        console.log('📅 Daily rental:', startDate, 'to', endDate);
+      } else if (rentalType === 'per_hectare') {
+        bookingData.hectares = parseFloat(hectares);
+        bookingData.workDate = startDate; // Backend expects 'workDate'
+        bookingData.fieldLocation = fieldLocation.trim();
+        console.log('🌾 Per hectare:', hectares, 'Ha on', startDate, 'at', fieldLocation);
+      }
+
+      console.log('📤 Sending booking data:', bookingData);
+      
+      // ✅ CALL THE PARENT HANDLER
+      await onBook(bookingData);
+      
+      console.log('✅ Booking successful!');
+      
+      // Close modal on success
+      onClose();
+    } catch (err) {
+      console.error('❌ Booking error:', err);
+      setError(err.response?.data?.message || err.message || 'Failed to create booking');
+      setLoading(false);
     }
-
-    console.log('Sending booking data:', bookingData); // Keep for debugging
-    
-    await onBook(bookingData);
-    onClose();
-  } catch (err) {
-    console.error('Booking error:', err.response?.data); // Keep for debugging
-    setError(err.response?.data?.message || 'Failed to create booking');
-  } finally {
-    setLoading(false);
-  }
-};
+  };
 
   const today = new Date().toISOString().split('T')[0];
 
@@ -100,12 +107,12 @@ const handleSubmit = async (e) => {
 
         {error && (
           <div className="bg-red-100 border border-red-300 text-red-700 px-4 py-3 rounded-xl mb-4 text-sm">
-            {error}
+            ❌ {error}
           </div>
         )}
 
         <form onSubmit={handleSubmit} className="space-y-4">
-          {/* Rental Type Selector (only if both options available) */}
+          {/* Rental Type Selector */}
           {machine.pricingType === 'both' && (
             <div className="bg-gradient-to-br from-blue-50 to-cyan-50 rounded-xl p-4 space-y-3">
               <label className="block text-sm font-semibold mb-2">Rental Type</label>
@@ -142,7 +149,7 @@ const handleSubmit = async (e) => {
             </div>
           )}
 
-          {/* Date inputs for daily rental */}
+          {/* Daily Rental Dates */}
           {(rentalType === 'daily' || rentalType === 'per_day') && (
             <>
               <div>
@@ -177,7 +184,7 @@ const handleSubmit = async (e) => {
             </>
           )}
 
-          {/* Hectare input for per hectare rental */}
+          {/* Per Hectare Inputs */}
           {rentalType === 'per_hectare' && (
             <>
               <div>
@@ -212,7 +219,6 @@ const handleSubmit = async (e) => {
                 />
               </div>
 
-              {/* NEW: Field Location Input */}
               <div>
                 <label className="block text-sm font-semibold mb-2">
                   Field Location *
@@ -224,7 +230,7 @@ const handleSubmit = async (e) => {
                     onChange={(e) => setFieldLocation(e.target.value)}
                     required
                     rows="3"
-                    className="w-full border-2 border-gray-200 rounded-xl pl-11 pr-4 py-3 focus:border-emerald-500 focus:outline-none"
+                    className="w-full border-2 border-gray-200 rounded-xl pl-11 pr-4 py-3 focus:border-emerald-500 focus:outline-none resize-none"
                     placeholder="Enter the address or description of the field location"
                   />
                 </div>
@@ -264,11 +270,13 @@ const handleSubmit = async (e) => {
             </div>
           )}
 
+          {/* Action Buttons */}
           <div className="flex gap-3 mt-6">
             <button
               type="button"
               onClick={onClose}
-              className="flex-1 bg-gray-200 text-gray-700 py-3 rounded-xl font-semibold hover:bg-gray-300 transition"
+              disabled={loading}
+              className="flex-1 bg-gray-200 text-gray-700 py-3 rounded-xl font-semibold hover:bg-gray-300 transition disabled:opacity-50"
             >
               Cancel
             </button>
@@ -281,7 +289,14 @@ const handleSubmit = async (e) => {
                   : 'bg-gradient-to-r from-blue-600 to-cyan-600'
               }`}
             >
-              {loading ? 'Booking...' : 'Confirm Booking'}
+              {loading ? (
+                <span className="flex items-center justify-center gap-2">
+                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                  Booking...
+                </span>
+              ) : (
+                'Confirm Booking'
+              )}
             </button>
           </div>
         </form>

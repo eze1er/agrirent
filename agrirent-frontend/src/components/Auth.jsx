@@ -1,4 +1,4 @@
-import React, { useState, useRef } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import { Mail, Lock, Phone, AlertCircle } from "lucide-react";
 import { authAPI } from "../services/api";
 import { Link } from "react-router-dom";
@@ -9,13 +9,55 @@ export default function Auth({ onLoginSuccess }) {
   const [error, setError] = useState("");
   const [phoneError, setPhoneError] = useState("");
 
-  // Use refs instead of state - NO RE-RENDERS!
   const firstNameRef = useRef(null);
   const lastNameRef = useRef(null);
   const emailRef = useRef(null);
   const passwordRef = useRef(null);
   const phoneRef = useRef(null);
   const roleRef = useRef(null);
+
+  // ✅ NEW: Check for Google Auth errors/success on component mount
+  useEffect(() => {
+    const urlParams = new URLSearchParams(window.location.search);
+    const token = urlParams.get('token');
+    const userParam = urlParams.get('user');
+    const error = urlParams.get('error');
+    const email = urlParams.get('email');
+
+    if (error) {
+      console.log('❌ Auth error:', error);
+      
+      // Handle specific errors
+      if (error === 'user_not_found') {
+        setError(`Email "${email}" is not registered. Please create an account first.`);
+      } else if (error === 'auth_failed') {
+        setError('Google authentication failed. Please try again.');
+      } else {
+        setError('Authentication failed. Please try again.');
+      }
+
+      // Clear URL parameters
+      window.history.replaceState({}, document.title, window.location.pathname);
+      setLoading(false);
+      return;
+    }
+
+    if (token && userParam) {
+      console.log('✅ Google login successful');
+      try {
+        const user = JSON.parse(decodeURIComponent(userParam));
+        localStorage.setItem('token', token);
+        localStorage.setItem('user', JSON.stringify(user));
+        onLoginSuccess(user);
+        // Clear URL
+        window.history.replaceState({}, document.title, window.location.pathname);
+      } catch (err) {
+        console.error('Error parsing user data:', err);
+        setError('Error processing login. Please try again.');
+      }
+      return;
+    }
+  }, []);
 
   const handlePhoneInput = (e) => {
     let value = e.target.value.replace(/[^\d+]/g, "");
@@ -99,6 +141,7 @@ export default function Auth({ onLoginSuccess }) {
   };
 
   const handleGoogleLogin = () => {
+    setLoading(true);
     window.location.href = "http://localhost:3001/api/auth/google";
   };
 
@@ -318,7 +361,8 @@ export default function Auth({ onLoginSuccess }) {
         <button
           type="button"
           onClick={handleGoogleLogin}
-          className="w-full border-2 border-gray-200 py-3 rounded-xl font-semibold hover:bg-gray-50 transition flex items-center justify-center gap-3"
+          disabled={loading}
+          className="w-full border-2 border-gray-200 py-3 rounded-xl font-semibold hover:bg-gray-50 transition flex items-center justify-center gap-3 disabled:opacity-50"
         >
           <svg className="w-5 h-5" viewBox="0 0 24 24">
             <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>

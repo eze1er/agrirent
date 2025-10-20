@@ -1,529 +1,333 @@
-// src/components/PaymentModal.jsx
-import { useState, useEffect } from "react";
-import {
-  X,
-  CreditCard,
-  Smartphone,
-  CheckCircle,
-  AlertCircle,
-  Shield,
-  Lock,
-} from "lucide-react";
-import { paymentAPI } from "../services/api";
-import { useStripe, useElements, CardElement } from "@stripe/react-stripe-js";
+// src/components/PaymentModal.jsx - CORRECTED ENDPOINTS
+import { useState } from 'react';
+import { CardElement, useStripe, useElements } from '@stripe/react-stripe-js';
+import { X } from 'lucide-react';
+
+const CARD_ELEMENT_OPTIONS = {
+  style: {
+    base: {
+      fontSize: '16px',
+      color: '#1f2937',
+      letterSpacing: '0.025em',
+      fontFamily: 'system-ui, -apple-system, BlinkMacSystemFont, sans-serif',
+      '::placeholder': {
+        color: '#9ca3af',
+      },
+    },
+    invalid: {
+      color: '#ef4444',
+    },
+  },
+  hidePostalCode: false,
+};
 
 export default function PaymentModal({ rental, onClose, onPaymentSuccess }) {
   const stripe = useStripe();
   const elements = useElements();
-
-  const [selectedMethod, setSelectedMethod] = useState("");
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
-  const [success, setSuccess] = useState(false);
-  const [step, setStep] = useState(1);
+  const [error, setError] = useState('');
+  const [cardComplete, setCardComplete] = useState(false);
 
-  // Mobile Money state
-  const [mobileMoneyDetails, setMobileMoneyDetails] = useState({
-    provider: "",
-    phoneNumber: "",
-    name: "",
-  });
+  // ✅ METHOD 1: Stripe Checkout (CORRECTED - Uses create-checkout-session)
+  const handleCheckout = async () => {
+    setLoading(true);
+    setError('');
 
-  const paymentMethods = [
-    {
-      id: "stripe",
-      name: "Credit/Debit Card",
-      icon: <CreditCard size={24} />,
-      description: "Visa, Mastercard, Amex",
-      color: "blue",
-      recommended: true,
-    },
-    {
-      id: "paypal",
-      name: "PayPal",
-      icon: <div className="text-2xl font-bold text-blue-600">P</div>,
-      description: "Pay with PayPal account",
-      color: "indigo",
-    },
-    {
-      id: "orange",
-      name: "Orange Money",
-      icon: <Smartphone size={24} />,
-      description: "Orange mobile payment",
-      color: "orange",
-    },
-    {
-      id: "mtn",
-      name: "MTN Mobile Money",
-      icon: <Smartphone size={24} />,
-      description: "MTN mobile payment",
-      color: "amber",
-    },
-    {
-      id: "moov",
-      name: "Moov Money",
-      icon: <Smartphone size={24} />,
-      description: "Moov mobile payment",
-      color: "sky",
-    },
-  ];
+    try {
+      const token = localStorage.getItem('token');
+      
+      console.log('🔄 Creating checkout session for rental:', rental._id);
+      
+      // ✅ CORRECT ENDPOINT
+      const response = await fetch('http://localhost:3001/api/payments/stripe/create-checkout-session', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ rentalId: rental._id })
+      });
 
-  const handleMethodSelect = (methodId) => {
-    setSelectedMethod(methodId);
-    setError("");
-    setStep(2);
+      console.log('📦 Response status:', response.status);
+      const data = await response.json();
+      console.log('📦 Response data:', data);
+
+      if (!response.ok) {
+        throw new Error(data.message || `Server error: ${response.status}`);
+      }
+
+      if (data.success && data.data.url) {
+        console.log('✅ Redirecting to Stripe checkout...');
+        window.location.href = data.data.url;
+      } else {
+        throw new Error('No checkout URL received from server');
+      }
+    } catch (err) {
+      console.error('❌ Checkout error:', err);
+      setError(err.message || 'Failed to create checkout session');
+      setLoading(false);
+    }
   };
 
-  // ✅ EMBEDDED STRIPE PAYMENT (your handleSubmit logic)
-  const handleStripePayment = async (e) => {
-    e.preventDefault();
-
+  // ✅ METHOD 2: Inline Payment (CORRECTED - Uses create-payment)
+  const handleInlinePayment = async () => {
     if (!stripe || !elements) {
-      setError("Stripe is not ready. Please try again.");
+      setError('Payment system is still loading...');
+      return;
+    }
+
+    if (!cardComplete) {
+      setError('Please complete your card information');
       return;
     }
 
     setLoading(true);
-    setError("");
+    setError('');
 
     try {
+      const token = localStorage.getItem('token');
       const cardElement = elements.getElement(CardElement);
 
-      // 1. Create Payment Method
+      console.log('🔄 Creating payment method...');
+
+      // Create payment method with Stripe
       const { error: pmError, paymentMethod } = await stripe.createPaymentMethod({
-        type: "card",
+        type: 'card',
         card: cardElement,
       });
 
       if (pmError) {
-        setError(pmError.message);
-        setLoading(false);
-        return;
+        throw new Error(pmError.message);
       }
 
-      console.log("💳 Payment method created:", paymentMethod.id);
+      console.log('✅ Payment method created:', paymentMethod.id);
+      console.log('🔄 Processing payment...');
 
-      // 2. Create Payment Intent on backend
-      const intentResponse = await paymentAPI.createIntent({
-        rentalId: rental._id,
-        amount: rental.pricing?.totalPrice || 0,
-        currency: "usd",
+      // ✅ CORRECT ENDPOINT - create-payment
+      const response = await fetch('http://localhost:3001/api/payments/create-payment', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          rentalId: rental._id,
+          paymentMethod: paymentMethod.id
+        })
       });
 
-      console.log("🔐 Payment intent created:", intentResponse.data.data.paymentIntentId);
+      console.log('📦 Payment response status:', response.status);
+      const data = await response.json();
+      console.log('📦 Payment response data:', data);
 
-      // 3. Confirm payment with Stripe
-      const { error: confirmError } = await stripe.confirmCardPayment(
-        intentResponse.data.data.clientSecret,
-        {
-          payment_method: paymentMethod.id,
-        }
-      );
-
-      if (confirmError) {
-        setError(confirmError.message);
-        setLoading(false);
-        return;
+      if (!response.ok) {
+        throw new Error(data.message || `Payment failed: ${response.status}`);
       }
 
-      // 4. Confirm on your backend (update rental status, escrow, etc.)
-      const confirmResponse = await paymentAPI.confirmPayment({
-        paymentIntentId: intentResponse.data.data.paymentIntentId,
-        rentalId: rental._id,
-      });
-
-      console.log("✅ Payment confirmed:", confirmResponse.data);
-
-      if (confirmResponse.data.success) {
-        setSuccess(true);
-        setTimeout(() => {
+      if (data.success) {
+        console.log('✅ Payment successful!');
+        
+        if (onPaymentSuccess) {
           onPaymentSuccess({
-            method: "stripe",
-            transactionId: intentResponse.data.data.paymentIntentId,
-            amount: rental.pricing?.totalPrice,
+            transactionId: data.data.transactionId,
+            rental: data.data.rental,
+            payment: data.data.payment
           });
-          onClose();
-        }, 1500);
-      }
-    } catch (err) {
-      console.error("❌ Payment error:", err);
-      setError(
-        err.response?.data?.message || "Payment failed. Please try again."
-      );
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // PayPal (redirect)
-  const handlePayPalPayment = async () => {
-    setLoading(true);
-    setError("");
-    setStep(3);
-
-    try {
-      const response = await paymentAPI.createPayPalOrder({
-        amount: rental.pricing.totalPrice,
-        rentalId: rental._id,
-      });
-
-      if (response.data?.approvalUrl) {
-        window.location.href = response.data.approvalUrl;
+        }
       } else {
-        throw new Error("PayPal URL missing");
+        throw new Error(data.message || 'Payment was not successful');
       }
     } catch (err) {
-      setError(err.response?.data?.message || "PayPal payment failed");
-      setStep(2);
+      console.error('❌ Payment error:', err);
+      setError(err.message || 'Payment failed. Please try again.');
       setLoading(false);
     }
   };
-
-  // Mobile Money
-  const handleMobileMoneyPayment = async () => {
-    const { provider, phoneNumber } = mobileMoneyDetails;
-    if (!provider || !phoneNumber) {
-      setError("Please fill in all mobile money details");
-      return;
-    }
-
-    setLoading(true);
-    setError("");
-    setStep(3);
-
-    try {
-      const response = await paymentAPI.initiateMobileMoney({
-        provider,
-        phoneNumber,
-        amount: rental.pricing.totalPrice,
-        rentalId: rental._id,
-      });
-
-      setSuccess(true);
-      setTimeout(() => {
-        onPaymentSuccess({
-          method: provider,
-          transactionId: response.data?.transactionId,
-          amount: rental.pricing.totalPrice,
-        });
-        onClose();
-      }, 1500);
-    } catch (err) {
-      setError(err.response?.data?.message || "Mobile money payment failed");
-      setStep(2);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handlePayment = (e) => {
-    if (selectedMethod === "stripe") {
-      handleStripePayment(e);
-    } else if (selectedMethod === "paypal") {
-      handlePayPalPayment();
-    } else if (["orange", "mtn", "moov"].includes(selectedMethod)) {
-      handleMobileMoneyPayment();
-    }
-  };
-
-  useEffect(() => {
-    document.body.style.overflow = "hidden";
-    return () => {
-      document.body.style.overflow = "unset";
-    };
-  }, []);
-
-  if (success) {
-    return (
-      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-        <div className="bg-white rounded-2xl max-w-md w-full shadow-2xl text-center p-8">
-          <CheckCircle size={64} className="mx-auto text-emerald-600 mb-4" />
-          <h3 className="text-xl font-bold text-gray-800 mb-2">Payment Successful!</h3>
-          <p className="text-gray-600 mb-6">
-            Your rental is confirmed. You’ll receive a confirmation email shortly.
-          </p>
-          <button
-            onClick={onClose}
-            className="w-full bg-emerald-600 text-white py-3 rounded-xl font-bold hover:bg-emerald-700 transition"
-          >
-            Close
-          </button>
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
       <div className="bg-white rounded-2xl max-w-md w-full shadow-2xl max-h-[90vh] overflow-y-auto">
         {/* Header */}
-        <div className="sticky top-0 bg-gradient-to-r from-emerald-600 to-teal-600 text-white p-4 rounded-t-2xl flex justify-between items-center">
-          <div className="flex items-center gap-2">
-            <Lock size={20} />
-            <h2 className="text-xl font-bold">Secure Payment</h2>
+        <div className="bg-gradient-to-r from-blue-600 to-cyan-600 text-white p-6 rounded-t-2xl sticky top-0 z-10">
+          <div className="flex justify-between items-center">
+            <h2 className="text-2xl font-bold">Complete Payment</h2>
+            <button
+              onClick={onClose}
+              className="text-white hover:bg-white/20 p-2 rounded-lg transition"
+            >
+              <X size={24} />
+            </button>
           </div>
-          <button
-            onClick={onClose}
-            disabled={loading}
-            className="text-white hover:bg-white/20 rounded-full p-1 transition disabled:opacity-50"
-          >
-            <X size={24} />
-          </button>
         </div>
 
+        {/* Content */}
         <div className="p-6">
-          {/* ... (Rental Summary & Escrow Banner - keep as-is) ... */}
-          <div className="bg-gradient-to-br from-blue-50 to-cyan-50 rounded-xl p-4 mb-6 border border-blue-100">
-            <h3 className="font-bold text-gray-800 mb-2">Rental Summary</h3>
-            <p className="text-sm text-gray-600 mb-1 font-semibold">
-              {rental.machineId?.name || "Machine"}
-            </p>
-            {rental.rentalType === "daily" ? (
-              <p className="text-sm text-gray-600">
-                📅 {new Date(rental.startDate).toLocaleDateString()} -{" "}
-                {new Date(rental.endDate).toLocaleDateString()}
-              </p>
+          {/* Rental Summary */}
+          <div className="bg-gradient-to-br from-blue-50 to-cyan-50 rounded-xl p-4 mb-6">
+            <h3 className="font-bold text-gray-900 mb-3">
+              {rental.machineId?.name || 'Machine Rental'}
+            </h3>
+            
+            {rental.rentalType === 'daily' ? (
+              <div className="text-sm text-gray-700 space-y-2">
+                <div className="flex justify-between">
+                  <span>📅 Start:</span>
+                  <span className="font-semibold">{new Date(rental.startDate).toLocaleDateString()}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>📅 End:</span>
+                  <span className="font-semibold">{new Date(rental.endDate).toLocaleDateString()}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>⏱️ Duration:</span>
+                  <span className="font-semibold">{rental.pricing?.numberOfDays} days</span>
+                </div>
+              </div>
             ) : (
-              <>
-                <p className="text-sm text-gray-600">
-                  📅 {new Date(rental.workDate).toLocaleDateString()}
-                </p>
-                <p className="text-sm text-gray-600">
-                  📏 {rental.pricing?.numberOfHectares || 0} hectares
-                </p>
-              </>
+              <div className="text-sm text-gray-700 space-y-2">
+                <div className="flex justify-between">
+                  <span>📅 Date:</span>
+                  <span className="font-semibold">{new Date(rental.workDate).toLocaleDateString()}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>📏 Area:</span>
+                  <span className="font-semibold">{rental.pricing?.numberOfHectares} Ha</span>
+                </div>
+              </div>
             )}
-            <div className="mt-3 pt-3 border-t border-blue-200">
-              <div className="flex justify-between items-center">
-                <span className="font-semibold text-gray-700">Total Amount:</span>
-                <span className="text-2xl font-bold bg-gradient-to-r from-emerald-600 to-teal-600 bg-clip-text text-transparent">
-                  ${rental.pricing?.totalPrice?.toFixed(2) || "0.00"}
+
+            <div className="mt-4 pt-4 border-t border-blue-200 space-y-2">
+              <div className="flex justify-between text-sm">
+                <span className="text-gray-600">Subtotal:</span>
+                <span className="font-semibold">${rental.pricing?.subtotal?.toFixed(2)}</span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span className="text-gray-600">Service Fee (10%):</span>
+                <span className="font-semibold">${rental.pricing?.serviceFee?.toFixed(2)}</span>
+              </div>
+              <div className="flex justify-between text-xl font-bold pt-2 border-t border-blue-200">
+                <span className="text-gray-900">Total:</span>
+                <span className="text-blue-600">${rental.pricing?.totalPrice?.toFixed(2)}</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Error Message */}
+          {error && (
+            <div className="bg-red-50 border-l-4 border-red-500 p-4 rounded-lg mb-4">
+              <p className="text-sm font-semibold text-red-800">❌ {error}</p>
+            </div>
+          )}
+
+          {/* OPTION 1: Stripe Checkout - RECOMMENDED */}
+          <div className="mb-4">
+            <button
+              onClick={handleCheckout}
+              disabled={loading}
+              className={`w-full py-4 rounded-xl font-bold text-lg transition shadow-lg ${
+                loading
+                  ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                  : 'bg-gradient-to-r from-blue-600 to-cyan-600 text-white hover:shadow-xl hover:scale-[1.02]'
+              }`}
+            >
+              {loading ? (
+                <span className="flex items-center justify-center gap-2">
+                  <div className="w-5 h-5 border-3 border-white border-t-transparent rounded-full animate-spin"></div>
+                  Opening Checkout...
                 </span>
-              </div>
+              ) : (
+                `💳 Pay $${rental.pricing?.totalPrice?.toFixed(2)} with Stripe`
+              )}
+            </button>
+            <p className="text-xs text-gray-500 text-center mt-2">
+              ✅ Recommended • Secure checkout page
+            </p>
+          </div>
+
+          {/* Divider */}
+          <div className="relative my-6">
+            <div className="absolute inset-0 flex items-center">
+              <div className="w-full border-t border-gray-300"></div>
+            </div>
+            <div className="relative flex justify-center text-sm">
+              <span className="px-4 bg-white text-gray-500">Or pay with card</span>
             </div>
           </div>
 
-          <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 mb-6">
-            <div className="flex items-start gap-2">
-              <Shield size={20} className="text-blue-600 flex-shrink-0 mt-0.5" />
-              <div>
-                <p className="text-xs font-semibold text-gray-800 mb-1">🔒 Your Payment is Protected</p>
-                <ul className="text-xs text-gray-600 space-y-1">
-                  <li>✓ Funds held securely in escrow</li>
-                  <li>✓ Released only after service completion</li>
-                  <li>✓ Full refund if service not delivered</li>
-                </ul>
+          {/* OPTION 2: Inline Card Form */}
+          <div>
+            <div className="mb-4">
+              <label className="block text-sm font-bold text-gray-700 mb-3">
+                💳 Card Information
+              </label>
+              <div className="border-2 border-gray-300 rounded-xl p-4 bg-white focus-within:border-blue-500 transition">
+                <CardElement
+                  options={CARD_ELEMENT_OPTIONS}
+                  onChange={(e) => {
+                    setCardComplete(e.complete);
+                    if (e.error) {
+                      setError(e.error.message);
+                    } else {
+                      setError('');
+                    }
+                  }}
+                />
+              </div>
+              <p className="text-xs text-gray-500 mt-2">
+                🔒 Secured by Stripe • Never stored on our servers
+              </p>
+            </div>
+
+            {/* Test Card Info */}
+            <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 mb-4">
+              <p className="text-xs font-bold text-amber-900 mb-1">🧪 Test Card</p>
+              <div className="grid grid-cols-2 gap-2 text-xs text-amber-800">
+                <div>
+                  <span className="font-semibold">Number:</span>
+                  <p className="font-mono">4242 4242 4242 4242</p>
+                </div>
+                <div>
+                  <span className="font-semibold">Expiry:</span>
+                  <p>Any future date</p>
+                </div>
+                <div>
+                  <span className="font-semibold">CVC:</span>
+                  <p>Any 3 digits</p>
+                </div>
+                <div>
+                  <span className="font-semibold">ZIP:</span>
+                  <p>Any 5 digits</p>
+                </div>
               </div>
             </div>
+
+            <button
+              onClick={handleInlinePayment}
+              disabled={loading || !stripe || !cardComplete}
+              className={`w-full py-4 rounded-xl font-bold text-lg transition ${
+                loading || !stripe || !cardComplete
+                  ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                  : 'bg-gradient-to-r from-emerald-500 to-teal-600 text-white hover:shadow-lg'
+              }`}
+            >
+              {loading ? (
+                <span className="flex items-center justify-center gap-2">
+                  <div className="w-5 h-5 border-3 border-white border-t-transparent rounded-full animate-spin"></div>
+                  Processing...
+                </span>
+              ) : (
+                `Pay $${rental.pricing?.totalPrice?.toFixed(2)}`
+              )}
+            </button>
           </div>
 
-          {/* Step 1: Select Method */}
-          {step === 1 && (
-            <div>
-              <h3 className="font-bold text-gray-800 mb-4">Choose Payment Method</h3>
-              <div className="space-y-3">
-                {paymentMethods.map((method) => (
-                  <button
-                    key={method.id}
-                    onClick={() => handleMethodSelect(method.id)}
-                    className={`w-full border-2 rounded-xl p-4 flex items-center gap-4 hover:border-emerald-500 hover:bg-emerald-50 transition relative ${
-                      method.recommended ? "border-emerald-200 bg-emerald-50/50" : "border-gray-200"
-                    }`}
-                  >
-                    {method.recommended && (
-                      <span className="absolute top-2 right-2 bg-emerald-500 text-white text-xs px-2 py-1 rounded-full font-semibold">
-                        Recommended
-                      </span>
-                    )}
-                    <div className={`text-${method.color}-600`}>{method.icon}</div>
-                    <div className="text-left flex-1">
-                      <p className="font-semibold text-gray-800">{method.name}</p>
-                      <p className="text-xs text-gray-500">{method.description}</p>
-                    </div>
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Step 2: Stripe Embedded Form */}
-          {step === 2 && selectedMethod === "stripe" && (
-            <div>
-              <button
-                onClick={() => setStep(1)}
-                className="text-emerald-600 text-sm font-semibold mb-4 hover:underline"
-              >
-                ← Change payment method
-              </button>
-
-              <form onSubmit={handleStripePayment}>
-                <div className="bg-gradient-to-br from-blue-50 to-cyan-50 rounded-xl p-4 mb-4 border border-blue-100">
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">
-                    Card Details
-                  </label>
-                  <div className="border border-gray-300 rounded-xl p-3 bg-white">
-                    <CardElement
-                      options={{
-                        style: {
-                          base: {
-                            fontSize: "16px",
-                            color: "#424770",
-                            "::placeholder": {
-                              color: "#aab7c4",
-                            },
-                          },
-                          invalid: {
-                            color: "#9e2146",
-                          },
-                        },
-                      }}
-                    />
-                  </div>
-                </div>
-
-                {error && (
-                  <div className="mb-4 p-3 bg-rose-50 border border-rose-200 text-rose-700 rounded-xl text-sm flex items-center gap-2">
-                    <AlertCircle size={16} /> {error}
-                  </div>
-                )}
-
-                <button
-                  type="submit"
-                  disabled={!stripe || loading}
-                  className="w-full bg-gradient-to-r from-emerald-600 to-teal-600 text-white py-4 rounded-xl font-bold hover:shadow-xl transition disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  {loading ? (
-                    <span className="flex items-center justify-center gap-2">
-                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                      Processing...
-                    </span>
-                  ) : (
-                    `Pay $${rental.pricing?.totalPrice?.toFixed(2)}`
-                  )}
-                </button>
-
-                <div className="mt-4 text-center">
-                  <p className="text-xs text-gray-500">
-                    Secured by{" "}
-                    <span className="font-semibold text-blue-600">Stripe</span>
-                  </p>
-                </div>
-              </form>
-            </div>
-          )}
-
-          {/* Step 2: PayPal */}
-          {step === 2 && selectedMethod === "paypal" && (
-            <div>
-              <button
-                onClick={() => setStep(1)}
-                className="text-indigo-600 text-sm font-semibold mb-4"
-              >
-                ← Change payment method
-              </button>
-              <h3 className="font-bold text-gray-800 mb-4">PayPal Payment</h3>
-              <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 mb-4">
-                <p className="text-sm text-gray-700">
-                  You will be redirected to PayPal to complete your payment securely.
-                </p>
-              </div>
-              {error && (
-                <div className="mb-4 p-3 bg-rose-50 border border-rose-200 text-rose-700 rounded-xl text-sm flex items-center gap-2">
-                  <AlertCircle size={16} /> {error}
-                </div>
-              )}
-              <button
-                onClick={handlePayPalPayment}
-                disabled={loading}
-                className="w-full bg-gradient-to-r from-indigo-600 to-blue-600 text-white py-4 rounded-xl font-bold hover:shadow-xl transition disabled:opacity-50"
-              >
-                Continue to PayPal
-              </button>
-            </div>
-          )}
-
-          {/* Step 2: Mobile Money */}
-          {step === 2 && ["orange", "mtn", "moov"].includes(selectedMethod) && (
-            <div>
-              <button
-                onClick={() => setStep(1)}
-                className="text-blue-600 text-sm font-semibold mb-4"
-              >
-                ← Change payment method
-              </button>
-              <h3 className="font-bold text-gray-800 mb-4">Mobile Money Payment</h3>
-              <div className="space-y-4">
-                <div>
-                  <label className="block text-sm font-semibold mb-2">Provider</label>
-                  <select
-                    value={mobileMoneyDetails.provider}
-                    onChange={(e) =>
-                      setMobileMoneyDetails({ ...mobileMoneyDetails, provider: e.target.value })
-                    }
-                    className="w-full border-2 border-gray-200 rounded-xl px-4 py-3 focus:border-orange-500 focus:outline-none capitalize"
-                  >
-                    <option value="">Select Provider</option>
-                    <option value="orange">Orange Money</option>
-                    <option value="mtn">MTN Mobile Money</option>
-                    <option value="moov">Moov Money</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-sm font-semibold mb-2">Phone Number</label>
-                  <input
-                    type="tel"
-                    value={mobileMoneyDetails.phoneNumber}
-                    onChange={(e) =>
-                      setMobileMoneyDetails({
-                        ...mobileMoneyDetails,
-                        phoneNumber: e.target.value.replace(/\D/g, ""),
-                      })
-                    }
-                    placeholder="e.g. 0712345678"
-                    className="w-full border-2 border-gray-200 rounded-xl px-4 py-3 focus:border-orange-500 focus:outline-none"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-semibold mb-2">Account Name</label>
-                  <input
-                    type="text"
-                    value={mobileMoneyDetails.name}
-                    onChange={(e) =>
-                      setMobileMoneyDetails({ ...mobileMoneyDetails, name: e.target.value })
-                    }
-                    placeholder="John Doe"
-                    className="w-full border-2 border-gray-200 rounded-xl px-4 py-3 focus:border-orange-500 focus:outline-none"
-                  />
-                </div>
-              </div>
-              <div className="mt-4 bg-amber-50 border border-amber-200 rounded-xl p-4">
-                <p className="text-sm text-gray-700">
-                  You will receive a prompt on your phone to authorize this payment.
-                </p>
-              </div>
-              {error && (
-                <div className="mt-4 p-3 bg-rose-50 border border-rose-200 text-rose-700 rounded-xl text-sm flex items-center gap-2">
-                  <AlertCircle size={16} /> {error}
-                </div>
-              )}
-              <button
-                onClick={handleMobileMoneyPayment}
-                disabled={loading}
-                className="w-full mt-6 bg-gradient-to-r from-orange-600 to-amber-600 text-white py-4 rounded-xl font-bold hover:shadow-xl transition disabled:opacity-50"
-              >
-                Send Payment Request
-              </button>
-            </div>
-          )}
-
-          {/* Step 3: Processing (for PayPal/Mobile redirect simulation) */}
-          {step === 3 && loading && (
-            <div className="text-center py-8">
-              <div className="w-16 h-16 border-4 border-emerald-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-              <h3 className="text-xl font-bold text-gray-800 mb-2">Processing...</h3>
-              <p className="text-gray-600 text-sm">Please wait</p>
-            </div>
-          )}
+          {/* Security Notice */}
+          <div className="mt-6 p-4 bg-blue-50 rounded-lg border border-blue-100">
+            <p className="text-xs text-blue-900 text-center leading-relaxed">
+              🔒 Your payment is held securely in escrow until service completion.<br/>
+              Funds are released only after you confirm the job is done.
+            </p>
+          </div>
         </div>
       </div>
     </div>

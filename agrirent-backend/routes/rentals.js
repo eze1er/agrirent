@@ -639,9 +639,15 @@ router.patch("/:id/cancel", protect, async (req, res) => {
 });
 
 // Complete rental
+// ADD THIS TO routes/rentals.js - Replace the /complete route
+
+// ✅ OWNER MARKS JOB AS COMPLETE
 router.patch("/:id/complete", protect, async (req, res) => {
   try {
-    const rental = await Rental.findById(req.params.id);
+    const rental = await Rental.findById(req.params.id)
+      .populate('machineId', 'name')
+      .populate('ownerId', 'firstName lastName email')
+      .populate('renterId', 'firstName lastName email');
 
     if (!rental) {
       return res.status(404).json({
@@ -650,39 +656,71 @@ router.patch("/:id/complete", protect, async (req, res) => {
       });
     }
 
-    if (rental.ownerId.toString() !== req.user.id) {
+    // Only owner can mark complete
+    if (rental.ownerId._id.toString() !== req.user.id) {
       return res.status(403).json({
         success: false,
-        message: "Not authorized",
+        message: "Only the owner can mark this as complete",
       });
     }
 
-    // Only allow completion if payment is secured in escrow
+    // Must be active (paid)
     if (rental.status !== "active") {
       return res.status(400).json({
         success: false,
-        message: "Rental must be active (paid) before it can be completed",
+        message: "Rental must be active (paid) before marking complete",
       });
     }
 
-    // Optional: Also verify payment exists
+    // Verify payment is in escrow
     const payment = await Payment.findOne({ rentalId: rental._id });
     if (!payment || payment.escrowStatus !== 'held') {
       return res.status(400).json({
         success: false,
-        message: "Payment must be secured in escrow before completing rental",
+        message: "Payment must be secured in escrow",
       });
     }
 
+    // ✅ UPDATE RENTAL STATUS TO COMPLETED
     rental.status = "completed";
+    rental.completedAt = new Date();
     await rental.save();
 
-    // ✅ Machine stays 'rented' until payment is released and rental is fully confirmed
-    // It will be set to 'available' when admin releases payment
-    console.log(`✅ Rental completed, machine stays rented until payment released`);
+    console.log(`✅ Rental ${rental._id} marked as completed by owner`);
 
-    res.json({ success: true, data: rental });
+    // ✅ NOTIFY RENTER TO CONFIRM
+    await sendEmail({
+      to: rental.renterId.email,
+      subject: '✅ Job Completed - Please Confirm',
+      html: `
+        <h2>Job Completed!</h2>
+        <p>Hi ${rental.renterId.firstName},</p>
+        <p>The owner has marked your rental of <strong>${rental.machineId.name}</strong> as completed.</p>
+        <p><strong>Please confirm that the job was completed satisfactorily.</strong></p>
+        <p>Once you confirm, your payment will be released to the owner.</p>
+        <p><a href="${process.env.FRONTEND_URL}/rentals/${rental._id}">Confirm Completion</a></p>
+      `,
+    });
+
+    // Notify owner
+    await sendEmail({
+      to: rental.ownerId.email,
+      subject: '👍 Rental Marked as Complete',
+      html: `
+        <h2>Rental Marked Complete</h2>
+        <p>You've successfully marked the rental as complete.</p>
+        <p><strong>Machine:</strong> ${rental.machineId.name}</p>
+        <p>The renter will now confirm completion, and your payment will be released.</p>
+      `,
+    });
+
+    res.json({ 
+      success: true, 
+      message: 'Rental marked as complete. Waiting for renter confirmation.',
+      data: rental 
+    });
   } catch (error) {
+    console.error('Complete rental error:', error);
     res.status(500).json({ success: false, message: error.message });
   }
 });

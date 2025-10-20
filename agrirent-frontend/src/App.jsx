@@ -4,14 +4,19 @@ import Dashboard from "./pages/Dashboard";
 import Auth from "./components/Auth";
 import ForgotPassword from "./pages/ForgotPassword";
 import ResetPassword from "./pages/ResetPassword";
-import AdminEscrowDashboard from "./components/AdminEscrowDashboard";
+import AdminEscrowDashboard from "./pages/AdminEscrowDashboard";
 import PhoneVerificationPage from "./pages/PhoneVerificationPage";
 import { userAPI } from "./services/api";
 import { Elements } from "@stripe/react-stripe-js";
 import { loadStripe } from "@stripe/stripe-js";
+import PaymentSuccess from './pages/PaymentSuccess';
 
-const stripePromise = loadStripe(import.meta.env.VITE_STRIPE_PUBLIC_KEY);
-// Clear invalid tokens
+// ✅ Stripe initialization with fallback
+const stripePromise = loadStripe(
+  import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY ||
+    "pk_test_51KboKABDLHxkeofTUamlwYkVGxInxOfSq11BWBCiMCK3ri4qxqqkgjBZaBilLfoc2BHXN1dShWpdb7pycHJsZ7Wt009atQICnp"
+);
+
 const clearInvalidTokens = () => {
   const token = localStorage.getItem("token");
   if (token) {
@@ -30,6 +35,35 @@ function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [currentUser, setCurrentUser] = useState(null);
   const [loading, setLoading] = useState(true);
+
+  // ✅ ADDED: ProtectedRoute Component
+  const ProtectedRoute = ({ children, adminOnly = false }) => {
+    // Still loading
+    if (loading) {
+      return (
+        <div className="flex items-center justify-center h-screen bg-gradient-to-br from-gray-50 to-blue-50">
+          <div className="text-center">
+            <div className="w-16 h-16 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+            <p className="text-gray-600 font-semibold">Loading...</p>
+          </div>
+        </div>
+      );
+    }
+
+    // Not authenticated
+    if (!isAuthenticated || !currentUser) {
+      return <Navigate to="/" replace />;
+    }
+
+    // Admin-only route check
+    if (adminOnly && currentUser.role !== "admin") {
+      alert("⚠️ Access denied. Admin privileges required.");
+      return <Navigate to="/" replace />;
+    }
+
+    // All checks passed
+    return children;
+  };
 
   // Handle OAuth callback only
   useEffect(() => {
@@ -160,6 +194,7 @@ function App() {
   return (
     <Elements stripe={stripePromise}>
       <Routes>
+        {/* Main Route - Auth or Dashboard */}
         <Route
           path="/"
           element={
@@ -170,28 +205,25 @@ function App() {
             )
           }
         />
+
+        {/* Public Routes */}
         <Route path="/forgot-password" element={<ForgotPassword />} />
         <Route path="/reset-password" element={<ResetPassword />} />
-
-        {/* ✅ Phone Verification Route - PUBLIC */}
         <Route path="/verify-phone" element={<PhoneVerificationPage />} />
 
-        {/* Admin Escrow Dashboard - Protected */}
+        {/* ✅ FIXED: Admin Escrow Dashboard - Protected & Admin Only */}
         <Route
           path="/admin/escrow"
           element={
-            isAuthenticated && currentUser?.role === "admin" ? (
-              <AdminEscrowDashboard
-                user={currentUser}
-                onLogout={handleLogout}
-              />
-            ) : (
-              <Navigate to="/" replace />
-            )
+            <ProtectedRoute adminOnly={true}>
+              <AdminEscrowDashboard />
+            </ProtectedRoute>
           }
         />
 
+        {/* Catch all */}
         <Route path="*" element={<Navigate to="/" replace />} />
+        <Route path="/rentals/:rentalId/success" element={<PaymentSuccess />}/>
       </Routes>
     </Elements>
   );

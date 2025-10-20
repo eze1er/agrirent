@@ -9,6 +9,21 @@ const stripe = require("stripe");
 const paymentRoutes = require("./routes/paymentRoutes");
 const userRoutes = require('./routes/users');
 
+const app = express();
+
+// --- 1. INITIALISATION DE STRIPE ---
+const stripeInstance = stripe(process.env.STRIPE_SECRET_KEY);
+const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
+
+// After dotenv.config()
+console.log('🔑 Google Client ID:', process.env.GOOGLE_CLIENT_ID ? '✅ Found' : '❌ Missing');
+console.log('🔑 Google Secret:', process.env.GOOGLE_CLIENT_SECRET ? '✅ Found' : '❌ Missing');
+
+// 🔍 DEBUG: Log all requests
+app.use((req, res, next) => {
+  console.log(`📥 ${req.method} ${req.path}`);
+  next();
+});
 // ✅ ADD THIS DEBUG LINE
 console.log(
   "🔑 Stripe Key Check:",
@@ -23,15 +38,6 @@ console.log(
   "📄 Looking for .env in:",
   require("path").resolve(process.cwd(), ".env")
 );
-
-// --- 1. INITIALISATION DE STRIPE ---
-const stripeInstance = stripe(process.env.STRIPE_SECRET_KEY);
-const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
-
-// Initialisation de la configuration Passport
-require("./middleware/config/passport");
-
-const app = express();
 
 // CORS configuration
 app.use(
@@ -237,6 +243,8 @@ app.use(
   })
 );
 
+// Initialisation de la configuration Passport
+require('./middleware/config/passport');
 // Initialize Passport
 app.use(passport.initialize());
 app.use(passport.session());
