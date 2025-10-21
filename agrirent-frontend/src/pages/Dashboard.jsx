@@ -17,6 +17,7 @@ import {
 } from "../services/api";
 import BookingModal from "../components/BookingModal";
 import PaymentModal from "../components/PaymentModal";
+import RentalActionsComponent from "../components/RentalActionsComponent";
 
 // ============== REUSABLE BACK BUTTON ==============
 const BackButton = ({ onClick, label = "Back" }) => (
@@ -222,26 +223,26 @@ export default function Dashboard({ user: currentUser, onLogout }) {
     }
   };
 
-const handlePaymentSuccess = async (paymentData) => {
-  console.log('💰 Payment success callback:', paymentData);
-  
-  // Refresh rentals to get updated status
-  await fetchRentals();
-  await fetchMachines(); // Also refresh machines
-  
-  setShowPaymentModal(false);
-  setPaymentRental(null);
-  
-  alert(
-    `✅ Payment successful! Your funds are secured in escrow.\n\n` +
-    `Transaction ID: ${paymentData.transactionId}\n\n` +
-    `The rental is now ACTIVE. The owner can proceed with the service.\n\n` +
-    `Once completed, you'll confirm to release the payment.`
-  );
-  
-  // Navigate to rentals view to see the updated status
-  setCurrentView('rentals');
-};
+  const handlePaymentSuccess = async (paymentData) => {
+    console.log("💰 Payment success callback:", paymentData);
+
+    // Refresh rentals to get updated status
+    await fetchRentals();
+    await fetchMachines(); // Also refresh machines
+
+    setShowPaymentModal(false);
+    setPaymentRental(null);
+
+    alert(
+      `✅ Payment successful! Your funds are secured in escrow.\n\n` +
+        `Transaction ID: ${paymentData.transactionId}\n\n` +
+        `The rental is now ACTIVE. The owner can proceed with the service.\n\n` +
+        `Once completed, you'll confirm to release the payment.`
+    );
+
+    // Navigate to rentals view to see the updated status
+    setCurrentView("rentals");
+  };
 
   const handleConfirmCompletion = async () => {
     if (!completionNote.trim() || completionNote.length < 10) {
@@ -774,21 +775,21 @@ const handlePaymentSuccess = async (paymentData) => {
                     className="w-full h-48 object-cover"
                   />
                   <span
-  className={`absolute top-3 right-3 px-4 py-2 rounded-xl text-xs font-bold shadow-lg ${
-    machine.availability === "available"
-      ? "bg-emerald-500 text-white"
-      : machine.availability === "pending"
-      ? "bg-amber-500 text-white"
-      : machine.availability === "rented"
-      ? "bg-blue-500 text-white"
-      : "bg-rose-500 text-white"
-  }`}
->
-  {machine.availability === "available" && "✅ Available"}
-  {machine.availability === "pending" && "⏳ Pending"}
-  {machine.availability === "rented" && "🔒 Rented"}
-  {machine.availability === "unavailable" && "❌ Unavailable"}
-</span>
+                    className={`absolute top-3 right-3 px-4 py-2 rounded-xl text-xs font-bold shadow-lg ${
+                      machine.availability === "available"
+                        ? "bg-emerald-500 text-white"
+                        : machine.availability === "pending"
+                        ? "bg-amber-500 text-white"
+                        : machine.availability === "rented"
+                        ? "bg-blue-500 text-white"
+                        : "bg-rose-500 text-white"
+                    }`}
+                  >
+                    {machine.availability === "available" && "✅ Available"}
+                    {machine.availability === "pending" && "⏳ Pending"}
+                    {machine.availability === "rented" && "🔒 Rented"}
+                    {machine.availability === "unavailable" && "❌ Unavailable"}
+                  </span>
                 </div>
                 <div className="p-4">
                   <h3 className="text-lg font-bold text-gray-800">
@@ -1080,231 +1081,179 @@ const handlePaymentSuccess = async (paymentData) => {
           </div>
         ) : (
           <div className="space-y-4">
-            {rentals.map((rental) => (
-              <div
-                key={rental._id}
-                className="bg-white rounded-2xl p-5 shadow-lg"
-              >
-                <div className="flex justify-between items-start mb-3">
-                  <div>
-                    <h3 className="font-bold">
-                      {rental.machineId?.name || "Machine"}
-                    </h3>
-                    <p className="text-sm text-gray-500">
-                      Status: {rental.status}
-                    </p>
-                  </div>
-                  <span
-                    className={`px-4 py-2 rounded-xl text-xs font-bold capitalize ${
-                      rental.status === "pending"
-                        ? "bg-amber-100 text-amber-800"
-                        : rental.status === "approved"
-                        ? "bg-blue-100 text-blue-800"
-                        : rental.status === "active"
-                        ? "bg-emerald-100 text-emerald-800"
-                        : rental.status === "completed"
-                        ? "bg-purple-100 text-purple-800"
-                        : rental.status === "rejected"
-                        ? "bg-rose-100 text-rose-800"
-                        : rental.status === "disputed"
-                        ? "bg-orange-100 text-orange-800"
-                        : "bg-gray-100 text-gray-800"
-                    }`}
-                  >
-                    {rental.status}
-                  </span>
-                </div>
+            {rentals.map((rental) => {
+              const isOwner =
+                rental.ownerId?._id === currentUser?.id ||
+                rental.ownerId === currentUser?.id;
+              const isRenter =
+                rental.renterId?._id === currentUser?.id ||
+                rental.renterId === currentUser?.id;
 
-                {/* Rental Details */}
-                {rental.rentalType === "daily" ? (
-                  <>
-                    <p className="text-sm text-gray-600">
-                      Start: {new Date(rental.startDate).toLocaleDateString()}
-                    </p>
-                    <p className="text-sm text-gray-600">
-                      End: {new Date(rental.endDate).toLocaleDateString()}
-                    </p>
-                  </>
-                ) : (
-                  <>
-                    <p className="text-sm text-gray-600">
-                      Work Date:{" "}
-                      {new Date(rental.workDate).toLocaleDateString()}
-                    </p>
-                    <p className="text-sm text-gray-600">
-                      Hectares: {rental.pricing?.numberOfHectares} Ha
-                    </p>
-                    <p className="text-sm text-gray-600">
-                      Location: {rental.fieldLocation}
-                    </p>
-                  </>
-                )}
-                <p className="text-lg font-bold mt-2 bg-gradient-to-r from-blue-600 to-cyan-600 bg-clip-text text-transparent">
-                  ${rental.pricing?.totalPrice?.toFixed(2) || 0}
-                </p>
-
-                {/* PAYMENT STATUS INDICATOR */}
-                {rental.payment?.status && (
-                  <div className="mt-3 p-3 bg-gradient-to-r from-blue-50 to-cyan-50 rounded-xl border border-blue-200">
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm font-semibold text-gray-700">
-                        Payment Status:
-                      </span>
-                      <span
-                        className={`text-sm font-bold ${
-                          rental.payment.status === "held_in_escrow"
-                            ? "text-blue-600"
-                            : rental.payment.status === "completed"
-                            ? "text-emerald-600"
-                            : "text-gray-600"
-                        }`}
-                      >
-                        {rental.payment.status === "held_in_escrow"
-                          ? "🔒 Secured in Escrow"
-                          : rental.payment.status === "completed"
-                          ? "✅ Released to Owner"
-                          : rental.payment.status}
-                      </span>
-                    </div>
-                    {rental.payment.status === "held_in_escrow" && (
-                      <p className="text-xs text-gray-600 mt-1">
-                        Your payment is safely held by AgriRent until service is
-                        complete
+              return (
+                <div
+                  key={rental._id}
+                  className="bg-white rounded-2xl p-5 shadow-lg"
+                >
+                  <div className="flex justify-between items-start mb-3">
+                    <div>
+                      <h3 className="font-bold">
+                        {rental.machineId?.name || "Machine"}
+                      </h3>
+                      <p className="text-sm text-gray-500">
+                        {isOwner
+                          ? `Renter: ${rental.renterId?.firstName} ${rental.renterId?.lastName}`
+                          : `Owner: ${rental.ownerId?.firstName} ${rental.ownerId?.lastName}`}
                       </p>
-                    )}
-                  </div>
-                )}
-
-                {/* ACTION BUTTONS BASED ON STATUS */}
-                {/* 1. APPROVED - Need to Pay */}
-                {rental.status === "approved" &&
-                  (!rental.payment?.status ||
-                    rental.payment?.status === "pending") && (
-                    <button
-                      onClick={() => {
-                        setPaymentRental(rental);
-                        setShowPaymentModal(true);
-                      }}
-                      className="w-full mt-4 bg-gradient-to-r from-emerald-500 to-teal-500 text-white py-3 rounded-xl font-bold hover:shadow-xl transition"
+                    </div>
+                    <span
+                      className={`px-4 py-2 rounded-xl text-xs font-bold capitalize ${
+                        rental.status === "pending"
+                          ? "bg-amber-100 text-amber-800"
+                          : rental.status === "approved"
+                          ? "bg-blue-100 text-blue-800"
+                          : rental.status === "active"
+                          ? "bg-emerald-100 text-emerald-800"
+                          : rental.status === "completed"
+                          ? "bg-purple-100 text-purple-800"
+                          : rental.status === "rejected"
+                          ? "bg-rose-100 text-rose-800"
+                          : rental.status === "disputed"
+                          ? "bg-orange-100 text-orange-800"
+                          : "bg-gray-100 text-gray-800"
+                      }`}
                     >
-                      💳 Pay Now - ${rental.pricing?.totalPrice?.toFixed(2)}
-                    </button>
-                  )}
-
-                {/* 2. ACTIVE/COMPLETED - Waiting for Confirmation */}
-                {["active", "completed"].includes(rental.status) &&
-                  rental.payment?.status === "held_in_escrow" &&
-                  !rental.renterConfirmedCompletion && (
-                    <div className="mt-4 space-y-2">
-                      <div className="bg-amber-50 border border-amber-200 rounded-xl p-3">
-                        <p className="text-sm text-amber-800 font-semibold">
-                          ⏳ Service in Progress
-                        </p>
-                        <p className="text-xs text-gray-600 mt-1">
-                          Once the owner completes the service, confirm it below
-                          to release payment
-                        </p>
-                      </div>
-                      {rental.status === "completed" && (
-                        <div className="flex gap-2">
-                          <button
-                            onClick={() => {
-                              setConfirmingRental(rental);
-                              setShowConfirmCompletionModal(true);
-                            }}
-                            className="flex-1 bg-gradient-to-r from-emerald-500 to-teal-500 text-white py-3 rounded-xl font-bold hover:shadow-xl transition"
-                          >
-                            ✅ Confirm Complete
-                          </button>
-                          <button
-                            onClick={() => {
-                              setDisputingRental(rental);
-                              setShowDisputeModal(true);
-                            }}
-                            className="flex-1 bg-gradient-to-r from-orange-500 to-red-500 text-white py-3 rounded-xl font-bold hover:shadow-xl transition"
-                          >
-                            ⚠️ Open Dispute
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-                {/* 3. CONFIRMED - Waiting for Admin */}
-                {rental.renterConfirmedCompletion &&
-                  rental.payment?.status === "held_in_escrow" && (
-                    <div className="mt-4 bg-blue-50 border border-blue-200 rounded-xl p-3">
-                      <p className="text-sm text-blue-800 font-semibold">
-                        ✅ You Confirmed Completion
-                      </p>
-                      <p className="text-xs text-gray-600 mt-1">
-                        AgriRent is verifying the transaction. Payment will be
-                        released to the owner within 24-48 hours.
-                      </p>
-                    </div>
-                  )}
-
-                {/* 4. DISPUTED */}
-                {rental.status === "disputed" && (
-                  <div className="mt-4 bg-orange-50 border border-orange-200 rounded-xl p-3">
-                    <p className="text-sm text-orange-800 font-semibold">
-                      ⚠️ Dispute in Progress
-                    </p>
-                    <p className="text-xs text-gray-600 mt-1">
-                      Our team is reviewing this case. We'll contact you
-                      shortly.
-                    </p>
+                      {rental.status}
+                    </span>
                   </div>
-                )}
 
-                {/* Review UI - Only after payment released */}
-                {rental.status === "completed" &&
-                  rental.payment?.status === "completed" && (
+                  {/* Rental Details */}
+                  {rental.rentalType === "daily" ? (
                     <>
-                      {rental.isReviewed ? (
-                        <div className="mt-4 bg-amber-50 border-l-4 border-amber-500 p-3 rounded">
-                          <div className="flex justify-between items-start">
-                            <div>
-                              <p className="text-sm font-semibold text-amber-800">
-                                ⭐ You rated this: {rental.review?.rating} stars
-                              </p>
-                              {rental.review?.comment && (
-                                <p className="text-sm text-gray-700 mt-1 italic">
-                                  "{rental.review.comment}"
-                                </p>
-                              )}
-                            </div>
-                            <button
-                              onClick={() => {
-                                setReviewingRental(rental);
-                                setReviewData({
-                                  rating: rental.review?.rating || 5,
-                                  comment: rental.review?.comment || "",
-                                });
-                                setShowReviewModal(true);
-                              }}
-                              className="text-xs text-blue-600 font-semibold hover:underline"
-                            >
-                              Edit
-                            </button>
-                          </div>
-                        </div>
-                      ) : (
-                        <button
-                          onClick={() => {
-                            setReviewingRental(rental);
-                            setReviewData({ rating: 5, comment: "" });
-                            setShowReviewModal(true);
-                          }}
-                          className="w-full mt-4 bg-gradient-to-r from-amber-500 to-orange-500 text-white py-2 rounded-xl font-semibold hover:shadow-lg transition"
-                        >
-                          ⭐ Leave a Review
-                        </button>
-                      )}
+                      <p className="text-sm text-gray-600">
+                        Start: {new Date(rental.startDate).toLocaleDateString()}
+                      </p>
+                      <p className="text-sm text-gray-600">
+                        End: {new Date(rental.endDate).toLocaleDateString()}
+                      </p>
+                    </>
+                  ) : (
+                    <>
+                      <p className="text-sm text-gray-600">
+                        Work Date:{" "}
+                        {new Date(rental.workDate).toLocaleDateString()}
+                      </p>
+                      <p className="text-sm text-gray-600">
+                        Hectares: {rental.pricing?.numberOfHectares} Ha
+                      </p>
+                      <p className="text-sm text-gray-600">
+                        Location: {rental.fieldLocation}
+                      </p>
                     </>
                   )}
-              </div>
-            ))}
+                  <p className="text-lg font-bold mt-2 bg-gradient-to-r from-blue-600 to-cyan-600 bg-clip-text text-transparent">
+                    ${rental.pricing?.totalPrice?.toFixed(2) || 0}
+                  </p>
+
+                  {/* PAYMENT STATUS INDICATOR */}
+                  {rental.payment?.status && (
+                    <div className="mt-3 p-3 bg-gradient-to-r from-blue-50 to-cyan-50 rounded-xl border border-blue-200">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-semibold text-gray-700">
+                          Payment Status:
+                        </span>
+                        <span
+                          className={`text-sm font-bold ${
+                            rental.payment.status === "held_in_escrow"
+                              ? "text-blue-600"
+                              : rental.payment.status === "completed"
+                              ? "text-emerald-600"
+                              : "text-gray-600"
+                          }`}
+                        >
+                          {rental.payment.status === "held_in_escrow"
+                            ? "🔒 Secured in Escrow"
+                            : rental.payment.status === "completed"
+                            ? "✅ Released to Owner"
+                            : rental.payment.status}
+                        </span>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* ✅ NEW: WORKFLOW BUTTONS COMPONENT */}
+                  <RentalActionsComponent
+                    rental={rental}
+                    currentUser={currentUser || localUser}
+                    onUpdate={fetchRentals}
+                  />
+
+                  {/* KEEP YOUR EXISTING PAY BUTTON FOR APPROVED RENTALS */}
+                  {rental.status === "approved" &&
+                    isRenter &&
+                    (!rental.payment?.status ||
+                      rental.payment?.status === "pending") && (
+                      <button
+                        onClick={() => {
+                          setPaymentRental(rental);
+                          setShowPaymentModal(true);
+                        }}
+                        className="w-full mt-4 bg-gradient-to-r from-emerald-500 to-teal-500 text-white py-3 rounded-xl font-bold hover:shadow-xl transition"
+                      >
+                        💳 Pay Now - ${rental.pricing?.totalPrice?.toFixed(2)}
+                      </button>
+                    )}
+
+                  {/* Review UI - Only after payment released */}
+                  {rental.status === "completed" &&
+                    rental.payment?.status === "completed" &&
+                    isRenter && (
+                      <>
+                        {rental.isReviewed ? (
+                          <div className="mt-4 bg-amber-50 border-l-4 border-amber-500 p-3 rounded">
+                            <div className="flex justify-between items-start">
+                              <div>
+                                <p className="text-sm font-semibold text-amber-800">
+                                  ⭐ You rated this: {rental.review?.rating}{" "}
+                                  stars
+                                </p>
+                                {rental.review?.comment && (
+                                  <p className="text-sm text-gray-700 mt-1 italic">
+                                    "{rental.review.comment}"
+                                  </p>
+                                )}
+                              </div>
+                              <button
+                                onClick={() => {
+                                  setReviewingRental(rental);
+                                  setReviewData({
+                                    rating: rental.review?.rating || 5,
+                                    comment: rental.review?.comment || "",
+                                  });
+                                  setShowReviewModal(true);
+                                }}
+                                className="text-xs text-blue-600 font-semibold hover:underline"
+                              >
+                                Edit
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <button
+                            onClick={() => {
+                              setReviewingRental(rental);
+                              setReviewData({ rating: 5, comment: "" });
+                              setShowReviewModal(true);
+                            }}
+                            className="w-full mt-4 bg-gradient-to-r from-amber-500 to-orange-500 text-white py-2 rounded-xl font-semibold hover:shadow-lg transition"
+                          >
+                            ⭐ Leave a Review
+                          </button>
+                        )}
+                      </>
+                    )}
+                </div>
+              );
+            })}
           </div>
         )}
       </div>
