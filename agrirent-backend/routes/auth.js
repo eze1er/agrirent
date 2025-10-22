@@ -228,6 +228,7 @@ router.post('/register', async (req, res) => {
       phoneVerificationCode: verificationCode,
       phoneVerificationExpires: Date.now() + 10 * 60 * 1000,
       phoneVerificationAttempts: 1,
+      mobileMoneyInfo: req.body.mobileMoneyInfo,
     });
 
     console.log('✅ User created:', user.email, 'Phone:', user.phone);

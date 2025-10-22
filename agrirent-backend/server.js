@@ -16,12 +16,12 @@ const stripeInstance = stripe(process.env.STRIPE_SECRET_KEY);
 const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
 
 // After dotenv.config()
-console.log('🔑 Google Client ID:', process.env.GOOGLE_CLIENT_ID ? '✅ Found' : '❌ Missing');
-console.log('🔑 Google Secret:', process.env.GOOGLE_CLIENT_SECRET ? '✅ Found' : '❌ Missing');
+// console.log('🔑 Google Client ID:', process.env.GOOGLE_CLIENT_ID ? '✅ Found' : '❌ Missing');
+// console.log('🔑 Google Secret:', process.env.GOOGLE_CLIENT_SECRET ? '✅ Found' : '❌ Missing');
 
 // 🔍 DEBUG: Log all requests
 app.use((req, res, next) => {
-  console.log(`📥 ${req.method} ${req.path}`);
+  // console.log(`📥 ${req.method} ${req.path}`);
   next();
 });
 // ✅ ADD THIS DEBUG LINE
@@ -33,11 +33,11 @@ console.log(
         ")"
     : "❌ NOT FOUND"
 );
-console.log("📁 Current directory:", __dirname);
-console.log(
-  "📄 Looking for .env in:",
-  require("path").resolve(process.cwd(), ".env")
-);
+// console.log("📁 Current directory:", __dirname);
+// console.log(
+//   "📄 Looking for .env in:",
+//   require("path").resolve(process.cwd(), ".env")
+// );
 
 // CORS configuration
 app.use(
@@ -76,7 +76,7 @@ app.post(
         // Find this section in server.js and replace it:
         case "checkout.session.completed": {
           const session = event.data.object;
-          console.log(`✅ Checkout Session completed: ${session.id}`);
+          // console.log(`✅ Checkout Session completed: ${session.id}`);
 
           // Récupérer les métadonnées
           const rentalId = session.metadata?.rentalId;
@@ -86,7 +86,7 @@ app.post(
             break;
           }
 
-          console.log(`📝 Updating rental ${rentalId} with payment info`);
+          // console.log(`📝 Updating rental ${rentalId} with payment info`);
 
           // Importer les modèles nécessaires
           const Rental = require("./models/Rental");
@@ -130,13 +130,13 @@ app.post(
             break;
           }
 
-          console.log(`✅ Rental updated successfully`);
-          console.log(`   Status: ${updatedRental.status}`);
-          console.log(
-            `   Payment status: ${updatedRental.payment?.status || "N/A"}`
-          );
+          // console.log(`✅ Rental updated successfully`);
+          // console.log(`   Status: ${updatedRental.status}`);
+          // console.log(
+          //   `   Payment status: ${updatedRental.payment?.status || "N/A"}`
+          // );
 
-          console.log(`✅ Rental updated successfully`);
+          // console.log(`✅ Rental updated successfully`);
 
           // 3. Update or create Payment record
           let payment = await Payment.findOne({ rentalId });

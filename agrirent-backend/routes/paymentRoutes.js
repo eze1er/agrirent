@@ -8,7 +8,7 @@ const Machine = require("../models/Machine");
 const { sendEmail } = require("../services/emailService");
 const { sendSMS } = require("../services/smsService");
 const { sendNotificationSMS } = require("../services/smsService");
-
+const orangeMoneyService = require('../services/orangeMoneyService');
 // Initialize Stripe
 let stripe = null;
 if (process.env.STRIPE_SECRET_KEY) {
@@ -1083,5 +1083,115 @@ router.post(
     }
   }
 );
+
+// ============================================
+// ORANGE MONEY: INITIATE PAYMENT
+// ============================================
+router.post("/orange-money/init-payment/:rentalId", protect, async (req, res) => {
+  try {
+    const { rentalId } = req.params;
+
+    const rental = await Rental.findById(rentalId)
+      .populate("machineId")
+      .populate("renterId")
+      .populate("ownerId");
+
+    if (!rental) {
+      return res.status(404).json({ success: false, message: "Rental not found" });
+    }
+
+    if (rental.renterId._id.toString() !== req.user.id) {
+      return res.status(403).json({ success: false, message: "Not authorized" });
+    }
+
+    if (rental.status !== "approved") {
+      return res.status(400).json({ 
+        success: false, 
+        message: "Rental must be approved first" 
+      });
+    }
+
+    const amount = rental.pricing?.totalPrice || 0;
+
+    // Initialize Orange Money payment
+    const paymentResult = await orangeMoneyService.initPayment({
+      amount: amount,
+      currency: 'CDF',
+      orderRef: `RENTAL-${rentalId}`,
+      customerPhone: rental.renterId.phoneNumber,
+      description: `Rental: ${rental.machineId?.name}`
+    });
+
+    // Create payment record
+    const payment = await Payment.create({
+      rentalId,
+      userId: rental.renterId._id,
+      ownerId: rental.ownerId._id,
+      amount: amount,
+      currency: 'CDF',
+      method: 'orange_money',
+      transactionId: paymentResult.transactionId,
+      status: 'pending',
+      escrowStatus: 'pending',
+    });
+
+    res.json({
+      success: true,
+      data: {
+        paymentId: payment._id,
+        paymentUrl: paymentResult.paymentUrl,
+      }
+    });
+  } catch (error) {
+    console.error("Orange Money init error:", error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// ============================================
+// ORANGE MONEY: WEBHOOK
+// ============================================
+router.post("/orange-money-webhook", async (req, res) => {
+  try {
+    const payload = req.body;
+    console.log("📥 Orange Money webhook:", payload);
+
+    const { order_id, status, notif_token } = payload;
+
+    if (status === 'SUCCESS' || status === 'SUCCESSFUL') {
+      const rentalId = order_id.replace('RENTAL-', '');
+
+      const payment = await Payment.findOne({ 
+        rentalId, 
+        transactionId: notif_token 
+      });
+
+      if (payment) {
+        payment.status = 'completed';
+        payment.escrowStatus = 'held';
+        payment.escrowTimeline = payment.escrowTimeline || {};
+        payment.escrowTimeline.paidAt = new Date();
+        payment.escrowTimeline.heldAt = new Date();
+        await payment.save();
+
+        await Rental.findByIdAndUpdate(rentalId, {
+          status: 'active',
+          'payment.status': 'held_in_escrow',
+          'payment.transactionId': notif_token,
+          'payment.method': 'orange_money',
+          'payment.amount': payment.amount,
+          'payment.paidAt': new Date(),
+        });
+
+        console.log("✅ Orange Money payment confirmed");
+      }
+    }
+
+    res.json({ success: true });
+  } catch (error) {
+    console.error("Webhook error:", error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
 
 module.exports = router;

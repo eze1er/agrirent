@@ -257,7 +257,7 @@ export default function Auth({ onLoginSuccess }) {
 
               <div>
                 <label className="block text-sm font-semibold mb-2 text-gray-700">
-                  Phone Number *
+                  Phone Number (International Format) *
                 </label>
                 <div className="relative">
                   <Phone
@@ -269,7 +269,7 @@ export default function Auth({ onLoginSuccess }) {
                     type="tel"
                     onInput={handlePhoneInput}
                     required
-                    placeholder="+16472377070"
+                    placeholder="+243812345678 or +16472377070"
                     className={`w-full border-2 rounded-xl pl-12 pr-4 py-3 focus:outline-none transition ${
                       phoneError
                         ? "border-rose-500 focus:border-rose-500"
@@ -277,6 +277,9 @@ export default function Auth({ onLoginSuccess }) {
                     }`}
                   />
                 </div>
+                <p className="text-xs text-gray-500 mt-1">
+                  Examples: +243... (DRC), +1... (US/Canada), +33... (France)
+                </p>
                 {phoneError && (
                   <p className="text-rose-500 text-xs mt-1 flex items-center gap-1">
                     <AlertCircle size={12} />

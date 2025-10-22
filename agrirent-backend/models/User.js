@@ -31,18 +31,31 @@ const userSchema = new mongoose.Schema({
   },
   
   // Phone (REQUIRED for verification)
-  phone: {
-    type: String,
-    required: [true, 'Phone number is required'],
-    trim: true,
-    validate: {
-      validator: function (v) {
-        return !v || /^\+[1-9]\d{1,14}$/.test(v);
-      },
-      message: "Phone number must be in international format (e.g., +16472377070)",
+phone: {
+  type: String,
+  required: true,
+  validate: {
+    validator: function(v) {
+      // Accept international format: + followed by 10-15 digits
+      return /^\+\d{10,15}$/.test(v);
     },
+    message: props => `${props.value} is not a valid phone number! Use international format: +1234567890`
+  }
+},
+  // Add country code field (optional but useful)
+countryCode: {
+  type: String,
+  // Examples: +243 (DRC), +1 (US/Canada), +33 (France), etc.
+},
+
+mobileMoneyInfo: {
+  provider: {
+    type: String,
+    enum: ['mtn', 'orange', 'moov', 'airtel', 'other'],
   },
-  
+  accountNumber: String,
+  accountName: String,
+},
   // Role
   role: {
     type: String,
