@@ -49,6 +49,15 @@ const userSchema = new mongoose.Schema({
     enum: ['renter', 'owner', 'both', 'admin'],
     default: 'renter',
   },
+
+  mobileMoneyInfo: {
+  provider: {
+    type: String,
+    enum: ['mtn', 'orange', 'moov', 'airtel', 'other'],
+  },
+  accountNumber: String,
+  accountName: String,
+},
   
   // ✅ ONLY Phone Verification (no email verification)
   isPhoneVerified: {

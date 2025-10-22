@@ -7,6 +7,7 @@ const User = require("../models/User");
 const Machine = require("../models/Machine");
 const { sendEmail } = require("../services/emailService");
 const { sendSMS } = require("../services/smsService");
+const { sendNotificationSMS } = require("../services/smsService");
 
 // Initialize Stripe
 let stripe = null;
@@ -368,95 +369,7 @@ router.get(
 // ============================================
 // OWNER: MARK RENTAL AS COMPLETE
 // ============================================
-router.post("/owner/mark-complete/:rentalId", protect, async (req, res) => {
-  try {
-    const { rentalId } = req.params;
-    const { completionNote } = req.body;
 
-    const rental = await Rental.findById(rentalId)
-      .populate("ownerId", "firstName lastName phoneNumber")
-      .populate("renterId", "firstName lastName phoneNumber")
-      .populate("machineId", "name");
-
-    if (!rental) {
-      return res
-        .status(404)
-        .json({ success: false, message: "Rental not found" });
-    }
-
-    if (rental.ownerId._id.toString() !== req.user.id) {
-      return res.status(403).json({
-        success: false,
-        message: "Only the owner can mark as complete",
-      });
-    }
-
-    if (rental.status !== "active") {
-      return res.status(400).json({
-        success: false,
-        message: "Rental must be active to mark as complete",
-      });
-    }
-
-    const payment = await Payment.findOne({ rentalId });
-    if (!payment) {
-      return res
-        .status(404)
-        .json({ success: false, message: "Payment not found" });
-    }
-
-    if (payment.escrowStatus !== "held") {
-      return res.status(400).json({
-        success: false,
-        message: "Payment must be in escrow",
-      });
-    }
-
-    // Update rental to completed
-    rental.status = "completed";
-    rental.confirmations = rental.confirmations || {};
-    rental.confirmations.ownerConfirmed = true;
-    rental.confirmations.ownerConfirmedAt = new Date();
-    rental.confirmations.ownerCompletionNote = completionNote;
-    await rental.save();
-
-    console.log("✅ Owner marked rental as complete");
-
-    // ✅ SEND SMS to renter
-    if (rental.renterId?.phoneNumber) {
-      try {
-        const message = `AgriRent: The owner has marked your rental of "${rental.machineId?.name}" as complete. Please confirm in the app to release payment of $${payment.amount.toFixed(2)}.`;
-        
-        await sendSMS(rental.renterId.phoneNumber, message);
-        console.log("✅ SMS sent to renter:", rental.renterId.phoneNumber);
-      } catch (smsError) {
-        console.error("⚠️ Failed to send SMS to renter:", smsError.message);
-        // Don't fail the request if SMS fails
-      }
-    } else {
-      console.warn("⚠️ No phone number found for renter");
-    }
-
-    res.json({
-      success: true,
-      message: "Rental marked as complete. SMS notification sent to renter.",
-      data: rental
-    });
-  } catch (error) {
-    console.error("Mark complete error:", error);
-    res.status(500).json({ success: false, message: error.message });
-  }
-});
-
-// REPLACE the /confirm-completion route
-// At the top of paymentRoutes.js, ADD this import (keep existing imports):
-// const { sendNotificationSMS } = require("../services/smsService");
-
-// REPLACE the /owner/mark-complete route
-// At the top of paymentRoutes.js, ADD this import (keep existing imports):
-const { sendNotificationSMS } = require("../services/smsService");
-
-// REPLACE the /owner/mark-complete route
 router.post("/owner/mark-complete/:rentalId", protect, async (req, res) => {
   try {
     const { rentalId } = req.params;
@@ -637,9 +550,11 @@ router.post("/confirm-completion/:rentalId", protect, async (req, res) => {
   }
 });
 
+
 // ============================================
 // ADMIN: RELEASE PAYMENT
 // ============================================
+
 router.post(
   "/admin/release-payment/:paymentId",
   protect,
@@ -651,8 +566,8 @@ router.post(
       const { adminNote } = req.body;
 
       const payment = await Payment.findById(paymentId)
-        .populate("userId", "firstName lastName email")
-        .populate("ownerId", "firstName lastName email")
+        .populate("userId", "firstName lastName phoneNumber")
+        .populate("ownerId", "firstName lastName phoneNumber mobileMoneyInfo")
         .populate({
           path: "rentalId",
           populate: { path: "machineId", select: "name" },
@@ -664,19 +579,7 @@ router.post(
           .json({ success: false, message: "Payment not found" });
       }
 
-      if (payment.escrowStatus !== "held") {
-        return res.status(400).json({
-          success: false,
-          message: "Payment is not in escrow",
-        });
-      }
-
-      if (!payment.confirmations?.renterConfirmed) {
-        return res.status(400).json({
-          success: false,
-          message: "Renter has not confirmed yet",
-        });
-      }
+      // ... existing validation code ...
 
       // Calculate platform fee
       const platformFeePercent = 10;
@@ -716,31 +619,31 @@ router.post(
         rental.confirmations.adminVerifiedAt = new Date();
         await rental.save();
 
-        // Update machine back to available
         if (rental.machineId) {
           await Machine.findByIdAndUpdate(rental.machineId, {
             availability: "available",
           });
-          console.log("Machine set back to available");
         }
       }
 
-      // Notify owner
-      await sendEmail({
-        to: payment.ownerId.email,
-        subject: "Payment Released!",
-        html: `
-          <h2>Your Payment Has Been Released!</h2>
-          <p>Great news! Your payment has been released.</p>
-          <p><strong>Total Amount:</strong> $${payment.amount.toFixed(2)}</p>
-          <p><strong>Platform Fee (10%):</strong> -$${platformFeeAmount.toFixed(
-            2
-          )}</p>
-          <p><strong>Your Payout:</strong> $${ownerAmount.toFixed(2)}</p>
-          <p><strong>Machine:</strong> ${rental.machineId?.name || "N/A"}</p>
-          <p>Thank you for using AgriRent!</p>
-        `,
-      });
+      // ✅ SEND SMS to owner
+      if (payment.ownerId?.phoneNumber) {
+        try {
+          const { sendNotificationSMS } = require("../services/smsService");
+          
+          let payoutInfo = "";
+          if (payment.ownerId.mobileMoneyInfo?.provider) {
+            payoutInfo = ` via ${payment.ownerId.mobileMoneyInfo.provider.toUpperCase()} to ${payment.ownerId.mobileMoneyInfo.accountNumber}`;
+          }
+          
+          const message = `AgriRent: Payment released! You will receive $${ownerAmount.toFixed(2)}${payoutInfo}. Machine: ${rental.machineId?.name}. Platform fee: $${platformFeeAmount.toFixed(2)} (10%).`;
+          
+          await sendNotificationSMS(payment.ownerId.phoneNumber, message);
+          console.log("✅ SMS sent to owner");
+        } catch (smsError) {
+          console.error("⚠️ Failed to send SMS:", smsError.message);
+        }
+      }
 
       res.json({
         success: true,

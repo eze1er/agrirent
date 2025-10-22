@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from "react";
-import { Mail, Lock, Phone, AlertCircle } from "lucide-react";
+import { Mail, Lock, Phone, AlertCircle, Wallet } from "lucide-react";
 import { authAPI } from "../services/api";
 import { Link } from "react-router-dom";
 
@@ -8,6 +8,7 @@ export default function Auth({ onLoginSuccess }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [phoneError, setPhoneError] = useState("");
+  const [selectedRole, setSelectedRole] = useState("renter"); // ✅ NEW: Track selected role
 
   const firstNameRef = useRef(null);
   const lastNameRef = useRef(null);
@@ -15,8 +16,12 @@ export default function Auth({ onLoginSuccess }) {
   const passwordRef = useRef(null);
   const phoneRef = useRef(null);
   const roleRef = useRef(null);
+  
+  // ✅ NEW: Mobile Money refs
+  const mobileMoneyProviderRef = useRef(null);
+  const mobileMoneyNumberRef = useRef(null);
+  const mobileMoneyNameRef = useRef(null);
 
-  // ✅ NEW: Check for Google Auth errors/success on component mount
   useEffect(() => {
     const urlParams = new URLSearchParams(window.location.search);
     const token = urlParams.get('token');
@@ -27,7 +32,6 @@ export default function Auth({ onLoginSuccess }) {
     if (error) {
       console.log('❌ Auth error:', error);
       
-      // Handle specific errors
       if (error === 'user_not_found') {
         setError(`Email "${email}" is not registered. Please create an account first.`);
       } else if (error === 'auth_failed') {
@@ -36,7 +40,6 @@ export default function Auth({ onLoginSuccess }) {
         setError('Authentication failed. Please try again.');
       }
 
-      // Clear URL parameters
       window.history.replaceState({}, document.title, window.location.pathname);
       setLoading(false);
       return;
@@ -49,7 +52,6 @@ export default function Auth({ onLoginSuccess }) {
         localStorage.setItem('token', token);
         localStorage.setItem('user', JSON.stringify(user));
         onLoginSuccess(user);
-        // Clear URL
         window.history.replaceState({}, document.title, window.location.pathname);
       } catch (err) {
         console.error('Error parsing user data:', err);
@@ -102,6 +104,17 @@ export default function Auth({ onLoginSuccess }) {
             role: roleRef.current.value,
           };
 
+      // ✅ NEW: Add mobile money info if user is owner or both
+      if (!isLogin && (roleRef.current.value === 'owner' || roleRef.current.value === 'both')) {
+        if (mobileMoneyProviderRef.current?.value) {
+          formData.mobileMoneyInfo = {
+            provider: mobileMoneyProviderRef.current.value,
+            accountNumber: mobileMoneyNumberRef.current.value,
+            accountName: mobileMoneyNameRef.current.value,
+          };
+        }
+      }
+
       const response = isLogin
         ? await authAPI.login(formData)
         : await authAPI.register(formData);
@@ -149,6 +162,7 @@ export default function Auth({ onLoginSuccess }) {
     setIsLogin(!isLogin);
     setError("");
     setPhoneError("");
+    setSelectedRole("renter");
     
     if (firstNameRef.current) firstNameRef.current.value = "";
     if (lastNameRef.current) lastNameRef.current.value = "";
@@ -156,11 +170,14 @@ export default function Auth({ onLoginSuccess }) {
     if (passwordRef.current) passwordRef.current.value = "";
     if (phoneRef.current) phoneRef.current.value = "";
     if (roleRef.current) roleRef.current.value = "renter";
+    if (mobileMoneyProviderRef.current) mobileMoneyProviderRef.current.value = "";
+    if (mobileMoneyNumberRef.current) mobileMoneyNumberRef.current.value = "";
+    if (mobileMoneyNameRef.current) mobileMoneyNameRef.current.value = "";
   };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 flex items-center justify-center p-4">
-      <div className="bg-white rounded-3xl shadow-2xl max-w-md w-full p-8">
+      <div className="bg-white rounded-3xl shadow-2xl max-w-md w-full p-8 max-h-[95vh] overflow-y-auto">
         <div className="text-center mb-8">
           <h1 className="text-4xl font-bold bg-gradient-to-r from-indigo-600 to-purple-600 bg-clip-text text-transparent mb-2">
             AgriRent
@@ -275,7 +292,8 @@ export default function Auth({ onLoginSuccess }) {
                 <select
                   ref={roleRef}
                   required
-                  defaultValue="renter"
+                  value={selectedRole}
+                  onChange={(e) => setSelectedRole(e.target.value)}
                   className="w-full border-2 border-gray-200 rounded-xl px-4 py-3 focus:border-indigo-500 focus:outline-none transition"
                 >
                   <option value="renter">Renter (looking for equipment)</option>
@@ -283,6 +301,63 @@ export default function Auth({ onLoginSuccess }) {
                   <option value="both">Both</option>
                 </select>
               </div>
+
+              {/* ✅ NEW: Mobile Money Section - Only for owners */}
+              {(selectedRole === 'owner' || selectedRole === 'both') && (
+                <div className="bg-emerald-50 border-2 border-emerald-200 rounded-xl p-4 space-y-3">
+                  <div className="flex items-center gap-2 mb-2">
+                    <Wallet className="text-emerald-600" size={20} />
+                    <h3 className="font-semibold text-gray-800">Payment Information</h3>
+                  </div>
+                  <p className="text-xs text-gray-600 mb-3">
+                    We'll use this to send your rental earnings
+                  </p>
+
+                  <div>
+                    <label className="block text-sm font-semibold mb-2 text-gray-700">
+                      Mobile Money Provider *
+                    </label>
+                    <select
+                      ref={mobileMoneyProviderRef}
+                      required
+                      className="w-full border-2 border-gray-200 rounded-xl px-4 py-3 focus:border-emerald-500 focus:outline-none transition"
+                    >
+                      <option value="">Select provider</option>
+                      <option value="mtn">MTN Mobile Money</option>
+                      <option value="orange">Orange Money</option>
+                      <option value="moov">Moov Money</option>
+                      <option value="airtel">Airtel Money</option>
+                      <option value="other">Other</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-semibold mb-2 text-gray-700">
+                      Mobile Money Number *
+                    </label>
+                    <input
+                      ref={mobileMoneyNumberRef}
+                      type="tel"
+                      required
+                      placeholder="+237123456789"
+                      className="w-full border-2 border-gray-200 rounded-xl px-4 py-3 focus:border-emerald-500 focus:outline-none transition"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-semibold mb-2 text-gray-700">
+                      Account Name *
+                    </label>
+                    <input
+                      ref={mobileMoneyNameRef}
+                      type="text"
+                      required
+                      placeholder="Full name on account"
+                      className="w-full border-2 border-gray-200 rounded-xl px-4 py-3 focus:border-emerald-500 focus:outline-none transition"
+                    />
+                  </div>
+                </div>
+              )}
             </>
           )}
 
