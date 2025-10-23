@@ -15,29 +15,11 @@ const app = express();
 const stripeInstance = stripe(process.env.STRIPE_SECRET_KEY);
 const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
 
-// After dotenv.config()
-// console.log('🔑 Google Client ID:', process.env.GOOGLE_CLIENT_ID ? '✅ Found' : '❌ Missing');
-// console.log('🔑 Google Secret:', process.env.GOOGLE_CLIENT_SECRET ? '✅ Found' : '❌ Missing');
-
 // 🔍 DEBUG: Log all requests
 app.use((req, res, next) => {
-  // console.log(`📥 ${req.method} ${req.path}`);
   next();
 });
 // ✅ ADD THIS DEBUG LINE
-console.log(
-  "🔑 Stripe Key Check:",
-  process.env.STRIPE_SECRET_KEY
-    ? "✅ Found (starts with " +
-        process.env.STRIPE_SECRET_KEY.substring(0, 7) +
-        ")"
-    : "❌ NOT FOUND"
-);
-// console.log("📁 Current directory:", __dirname);
-// console.log(
-//   "📄 Looking for .env in:",
-//   require("path").resolve(process.cwd(), ".env")
-// );
 
 // CORS configuration
 app.use(
