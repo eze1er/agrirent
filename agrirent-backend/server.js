@@ -6,8 +6,8 @@ const cors = require("cors");
 const session = require("express-session");
 const passport = require("passport");
 const stripe = require("stripe");
-const paymentRoutes = require("./routes/paymentRoutes");
-const userRoutes = require('./routes/users');
+// const paymentRoutes = require("./routes/paymentRoutes");
+// const userRoutes = require("./routes/users");
 
 const app = express();
 
@@ -49,17 +49,12 @@ app.post(
       console.error(`⚠️ Webhook Signature Error: ${err.message}`);
       return res.status(400).send(`Webhook Error: ${err.message}`);
     }
-
-    console.log(`🔔 Webhook received: ${event.type}`);
-
     // Traitement des événements Stripe
     try {
       switch (event.type) {
         // Find this section in server.js and replace it:
         case "checkout.session.completed": {
           const session = event.data.object;
-          // console.log(`✅ Checkout Session completed: ${session.id}`);
-
           // Récupérer les métadonnées
           const rentalId = session.metadata?.rentalId;
 
@@ -67,8 +62,6 @@ app.post(
             console.error("❌ No rentalId found in session metadata");
             break;
           }
-
-          // console.log(`📝 Updating rental ${rentalId} with payment info`);
 
           // Importer les modèles nécessaires
           const Rental = require("./models/Rental");
@@ -112,14 +105,6 @@ app.post(
             break;
           }
 
-          // console.log(`✅ Rental updated successfully`);
-          // console.log(`   Status: ${updatedRental.status}`);
-          // console.log(
-          //   `   Payment status: ${updatedRental.payment?.status || "N/A"}`
-          // );
-
-          // console.log(`✅ Rental updated successfully`);
-
           // 3. Update or create Payment record
           let payment = await Payment.findOne({ rentalId });
 
@@ -132,7 +117,6 @@ app.post(
             payment.escrowTimeline = payment.escrowTimeline || {};
             payment.escrowTimeline.paidAt = new Date();
             await payment.save();
-            console.log(`✅ Payment record updated: ${payment._id}`);
           } else {
             // Create new payment if it doesn't exist
             payment = await Payment.create({
@@ -153,7 +137,6 @@ app.post(
                 paidAt: new Date(),
               },
             });
-            console.log(`✅ Payment record created: ${payment._id}`);
           }
 
           break;
@@ -161,17 +144,11 @@ app.post(
 
         case "payment_intent.succeeded": {
           const paymentIntent = event.data.object;
-          console.log(
-            `✅ PaymentIntent réussi (Transaction ID: ${paymentIntent.id})`
-          );
           break;
         }
 
         case "transfer.succeeded": {
           const transfer = event.data.object;
-          console.log(
-            `✅ Transfert réussi vers le compte connecté: ${transfer.id}`
-          );
           break;
         }
 
@@ -198,15 +175,10 @@ app.post(
       }
     } catch (error) {
       console.error("❌ Error processing webhook:", error);
-      // On retourne quand même 200 pour éviter les retry de Stripe
-      // mais on log l'erreur pour investigation
     }
-
-    // Retourner un '200 OK' rapidement à Stripe pour accuser réception
     res.json({ received: true });
   }
 );
-// -------------------------------------------------------------------------
 
 // Global Middleware pour le reste de l'application
 app.use(express.json());
@@ -226,7 +198,7 @@ app.use(
 );
 
 // Initialisation de la configuration Passport
-require('./middleware/config/passport');
+require("./middleware/config/passport");
 // Initialize Passport
 app.use(passport.initialize());
 app.use(passport.session());
@@ -236,8 +208,6 @@ mongoose
   .connect(process.env.MONGODB_URI)
   .then(() => console.log("✅ MongoDB Connected Successfully"))
   .catch((err) => console.error("❌ MongoDB Error:", err));
-
-// Routes publiques
 app.get("/", (req, res) => {
   res.json({
     message: "AgriRent API is running!",
@@ -260,11 +230,10 @@ app.use("/api/auth", require("./routes/auth"));
 app.use("/api/users", require("./routes/users"));
 app.use("/api/machines", require("./routes/machines"));
 app.use("/api/rentals", require("./routes/rentals"));
-app.use('/api/users', require('./routes/users'));  // ← ADD THIS
+app.use("/api/users", require("./routes/users")); // ← ADD THIS
 app.use("/api/notifications", require("./routes/notifications"));
 app.use("/api/upload", require("./routes/upload"));
-app.use('/api/payments', require('./routes/paymentRoutes'));
-
+app.use("/api/payments", require("./routes/paymentRoutes"));
 
 // 404 handler
 app.use((req, res) => {

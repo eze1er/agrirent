@@ -231,7 +231,6 @@ router.post("/", protect, async (req, res) => {
     // ✅ UPDATE MACHINE STATUS to 'pending' when rental is created
     machine.availability = 'pending';
     await machine.save();
-    console.log(`✅ Machine ${machine.name} status updated to: pending`);
 
     const populatedRental = await Rental.findById(rental._id)
       .populate(
@@ -338,7 +337,6 @@ router.patch("/:id/status", protect, async (req, res) => {
       const machine = await Machine.findById(rental.machineId._id);
       machine.availability = "rented";
       await machine.save();
-      console.log(`✅ Machine ${machine.name} status updated to: rented (approved)`);
 
       // Create notification
       await createNotification(
@@ -455,8 +453,6 @@ router.patch("/:id/status", protect, async (req, res) => {
         </html>
       `;
 
-      console.log("📧 Sending approval email to:", rental.renterId.email);
-
       try {
         await sendEmail(rental.renterId.email, emailSubject, emailHtml);
         console.log("✅ Approval email sent successfully");
@@ -492,7 +488,6 @@ router.patch("/:id/status", protect, async (req, res) => {
             to: rental.renterId.phone,
           });
 
-          console.log("✅ SMS sent successfully");
         } catch (smsError) {
           console.error("❌ SMS sending failed:", smsError);
         }
@@ -505,7 +500,6 @@ router.patch("/:id/status", protect, async (req, res) => {
       const machine = await Machine.findById(rental.machineId._id);
       machine.availability = "available";
       await machine.save();
-      console.log(`✅ Machine ${machine.name} status updated to: available (rejected)`);
 
       // Create notification
       await createNotification(
@@ -568,8 +562,6 @@ router.patch("/:id/status", protect, async (req, res) => {
         </html>
       `;
 
-      console.log("📧 Sending rejection email to:", rental.renterId.email);
-
       try {
         await sendEmail(rental.renterId.email, emailSubject, emailHtml);
         console.log("✅ Rejection email sent successfully");
@@ -597,7 +589,6 @@ router.patch("/:id/status", protect, async (req, res) => {
             to: rental.renterId.phone,
           });
 
-          console.log("✅ SMS sent successfully!");
         } catch (smsError) {
           console.error("❌ SMS sending failed:", smsError.message);
         }

@@ -2,10 +2,6 @@ const passport = require('passport');
 const GoogleStrategy = require('passport-google-oauth20').Strategy;
 const User = require('../../models/User');
 
-console.log('=== CONFIGURING PASSPORT ===');
-console.log('Client ID:', process.env.GOOGLE_CLIENT_ID?.substring(0, 30) + '...');
-console.log('Callback URL:', process.env.GOOGLE_CALLBACK_URL);
-
 passport.use(new GoogleStrategy({
   clientID: process.env.GOOGLE_CLIENT_ID,
   clientSecret: process.env.GOOGLE_CLIENT_SECRET,

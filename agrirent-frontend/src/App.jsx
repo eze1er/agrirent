@@ -22,7 +22,6 @@ const clearInvalidTokens = () => {
   if (token) {
     const tokenParts = token.split(".");
     if (token.length < 10 || tokenParts.length !== 3) {
-      console.log("🔄 Clearing malformed token");
       localStorage.removeItem("token");
       localStorage.removeItem("user");
       return true;
@@ -149,7 +148,6 @@ function App() {
         } catch (err) {
           console.error("Error fetching user profile:", err);
           if (err.response?.status === 401) {
-            console.log("🔄 Invalid token detected, clearing storage");
             localStorage.removeItem("token");
             localStorage.removeItem("user");
             setIsAuthenticated(false);

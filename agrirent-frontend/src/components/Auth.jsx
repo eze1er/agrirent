@@ -31,8 +31,6 @@ export default function Auth({ onLoginSuccess }) {
     const email = urlParams.get("email");
 
     if (error) {
-      console.log("❌ Auth error:", error);
-
       if (error === "user_not_found") {
         setError(
           `Email "${email}" is not registered. Please create an account first.`
@@ -49,7 +47,6 @@ export default function Auth({ onLoginSuccess }) {
     }
 
     if (token && userParam) {
-      console.log("✅ Google login successful");
       try {
         const user = JSON.parse(decodeURIComponent(userParam));
         localStorage.setItem("token", token);
@@ -61,7 +58,6 @@ export default function Auth({ onLoginSuccess }) {
           window.location.pathname
         );
       } catch (err) {
-        console.error("Error parsing user data:", err);
         setError("Error processing login. Please try again.");
       }
       return;

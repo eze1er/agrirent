@@ -66,7 +66,6 @@ exports.protect = async (req, res, next) => {
     // ✅ ADDED: Validate token format before verification
     const tokenParts = token.split('.');
     if (tokenParts.length !== 3) {
-      console.log('❌ Malformed token format - expected 3 parts, got:', tokenParts.length);
       return res.status(401).json({ 
         success: false, 
         message: 'Invalid token format' 
@@ -75,7 +74,6 @@ exports.protect = async (req, res, next) => {
     
     // ✅ ADDED: Check if token is empty or too short
     if (token.length < 10) {
-      console.log('❌ Token too short:', token.length);
       return res.status(401).json({ 
         success: false, 
         message: 'Invalid token' 
