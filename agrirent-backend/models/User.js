@@ -1,145 +1,165 @@
 const mongoose = require("mongoose");
 const bcrypt = require("bcryptjs");
 
-const userSchema = new mongoose.Schema({
-  // Basic Info
-  firstName: {
-    type: String,
-    required: [true, 'First name is required'],
-    trim: true,
-  },
-  lastName: {
-    type: String,
-    required: [true, 'Last name is required'],
-    trim: true,
-  },
-  email: {
-    type: String,
-    required: [true, 'Email is required'],
-    unique: true,
-    lowercase: true,
-    trim: true,
-    match: [/^\S+@\S+\.\S+$/, 'Please enter a valid email'],
-  },
-  password: {
-    type: String,
-    required: function() {
-      return !this.googleId;
+const userSchema = new mongoose.Schema(
+  {
+    // Basic Info
+    firstName: {
+      type: String,
+      required: [true, "First name is required"],
+      trim: true,
     },
-    minlength: [6, 'Password must be at least 6 characters'],
-    select: false,
-  },
-  
-  // Phone (REQUIRED for verification)
-phone: {
-  type: String,
-  required: true,
-  validate: {
-    validator: function(v) {
-      // Accept international format: + followed by 10-15 digits
-      return /^\+\d{10,15}$/.test(v);
+    lastName: {
+      type: String,
+      required: [true, "Last name is required"],
+      trim: true,
     },
-    message: props => `${props.value} is not a valid phone number! Use international format: +1234567890`
-  }
-},
-  // Add country code field (optional but useful)
-countryCode: {
+// In models/User.js, update the email field:
+email: {
   type: String,
-  // Examples: +243 (DRC), +1 (US/Canada), +33 (France), etc.
+  required: false, // ✅ CHANGE from true to false
+  unique: true,
+  lowercase: true,
+  trim: true,
+  sparse: true, // ✅ ADD this - allows multiple null values
 },
+    username: {
+      type: String,
+      required: true,
+      unique: true,
+      trim: true,
+      lowercase: true,
+      minlength: 3,
+      maxlength: 30,
+      validate: {
+        validator: function (v) {
+          // Username: letters, numbers, underscores, hyphens only
+          return /^[a-zA-Z0-9_-]+$/.test(v);
+        },
+        message:
+          "Username can only contain letters, numbers, underscores, and hyphens",
+      },
+    },
+    password: {
+      type: String,
+      required: function () {
+        return !this.googleId;
+      },
+      minlength: [6, "Password must be at least 6 characters"],
+      select: false,
+    },
 
-mobileMoneyInfo: {
-  provider: {
-    type: String,
-    enum: ['mtn', 'orange', 'moov', 'airtel', 'other'],
-  },
-  accountNumber: String,
-  accountName: String,
-},
-  // Role
-  role: {
-    type: String,
-    enum: ['renter', 'owner', 'both', 'admin'],
-    default: 'renter',
-  },
+    // Phone (REQUIRED for verification)
+    phone: {
+      type: String,
+      required: true,
+      validate: {
+        validator: function (v) {
+          // Accept international format: + followed by 10-15 digits
+          return /^\+\d{10,15}$/.test(v);
+        },
+        message: (props) =>
+          `${props.value} is not a valid phone number! Use international format: +1234567890`,
+      },
+    },
+    // Add country code field (optional but useful)
+    countryCode: {
+      type: String,
+      // Examples: +243 (DRC), +1 (US/Canada), +33 (France), etc.
+    },
 
-  mobileMoneyInfo: {
-  provider: {
-    type: String,
-    enum: ['mtn', 'orange', 'moov', 'airtel', 'other'],
+    mobileMoneyInfo: {
+      provider: {
+        type: String,
+        enum: ["mtn", "orange", "moov", "airtel", "other"],
+      },
+      accountNumber: String,
+      accountName: String,
+    },
+    // Role
+    role: {
+      type: String,
+      enum: ["renter", "owner", "both", "admin"],
+      default: "renter",
+    },
+
+    mobileMoneyInfo: {
+      provider: {
+        type: String,
+        enum: ["mtn", "orange", "moov", "airtel", "other"],
+      },
+      accountNumber: String,
+      accountName: String,
+    },
+
+    // ✅ ONLY Phone Verification (no email verification)
+    isPhoneVerified: {
+      type: Boolean,
+      default: false,
+    },
+    phoneVerificationCode: {
+      type: String,
+    },
+    phoneVerificationExpires: {
+      type: Date,
+    },
+    phoneVerificationAttempts: {
+      type: Number,
+      default: 0,
+    },
+
+    // Password Reset (still use email for password reset)
+    passwordResetToken: String,
+    passwordResetExpires: Date,
+
+    // Google OAuth
+    googleId: {
+      type: String,
+      sparse: true,
+      unique: true,
+    },
+    avatar: {
+      type: String,
+    },
+
+    // Profile
+    profileImage: String,
+
+    // Address
+    address: {
+      street: String,
+      city: String,
+      state: String,
+      zipCode: String,
+      country: String,
+    },
+
+    // Rating system
+    rating: {
+      average: { type: Number, default: 0 },
+      count: { type: Number, default: 0 },
+    },
+
+    // Verification status (for document verification, NOT phone)
+    verificationStatus: {
+      type: String,
+      enum: ["pending", "verified", "rejected"],
+      default: "pending",
+    },
+
+    // Active status
+    isActive: {
+      type: Boolean,
+      default: true,
+    },
   },
-  accountNumber: String,
-  accountName: String,
-},
-  
-  // ✅ ONLY Phone Verification (no email verification)
-  isPhoneVerified: {
-    type: Boolean,
-    default: false,
-  },
-  phoneVerificationCode: {
-    type: String,
-  },
-  phoneVerificationExpires: {
-    type: Date,
-  },
-  phoneVerificationAttempts: {
-    type: Number,
-    default: 0,
-  },
-  
-  // Password Reset (still use email for password reset)
-  passwordResetToken: String,
-  passwordResetExpires: Date,
-  
-  // Google OAuth
-  googleId: { 
-    type: String, 
-    sparse: true, 
-    unique: true 
-  },
-  avatar: { 
-    type: String 
-  },
-  
-  // Profile
-  profileImage: String,
-  
-  // Address
-  address: {
-    street: String,
-    city: String,
-    state: String,
-    zipCode: String,
-    country: String,
-  },
-  
-  // Rating system
-  rating: {
-    average: { type: Number, default: 0 },
-    count: { type: Number, default: 0 },
-  },
-  
-  // Verification status (for document verification, NOT phone)
-  verificationStatus: {
-    type: String,
-    enum: ["pending", "verified", "rejected"],
-    default: "pending",
-  },
-  
-  // Active status
-  isActive: { 
-    type: Boolean, 
-    default: true 
-  },
-}, 
-{ timestamps: true }
+  { timestamps: true }
 );
 
 // Hash password before saving
 userSchema.pre("save", async function (next) {
   if (!this.isModified("password") || !this.password) return next();
-  
+
   try {
     this.password = await bcrypt.hash(this.password, 12);
     next();
