@@ -407,7 +407,6 @@ export default function Dashboard({ user: currentUser, onLogout }) {
   };
 
   // ============== HOME SCREEN ==============
-  // ============== HOME SCREEN ==============
   const HomeScreen = () => {
     const activeMachines = machines.filter((m) => m.isActive).length;
     const activeRentals = rentals.filter((r) => r.status === "active").length;
@@ -693,10 +692,20 @@ export default function Dashboard({ user: currentUser, onLogout }) {
 
   // ============== MACHINES SCREEN ==============
   const MachinesScreen = () => {
-    const filteredMachines =
-      selectedFilter === "All"
-        ? machines
-        : machines.filter((m) => m.category === selectedFilter);
+    const [locationFilter, setLocationFilter] = useState("");
+
+    const filteredMachines = machines.filter((m) => {
+      if (selectedFilter !== "All" && m.category !== selectedFilter)
+        return false;
+
+      if (locationFilter) {
+        const location =
+          `${m.address?.city} ${m.address?.commune} ${m.address?.quartier} ${m.address?.province}`.toLowerCase();
+        if (!location.includes(locationFilter.toLowerCase())) return false;
+      }
+
+      return true;
+    });
 
     if (loadingMachines) {
       return (
@@ -740,6 +749,43 @@ export default function Dashboard({ user: currentUser, onLogout }) {
             </button>
           ))}
         </div>
+        <div className="mb-4">
+          <div className="relative">
+            <input
+              type="text"
+              placeholder="🔍 Search by city, commune, or quartier..."
+              value={locationFilter}
+              onChange={(e) => setLocationFilter(e.target.value)}
+              className="w-full px-4 py-3 pl-12 border-2 border-gray-200 rounded-xl focus:border-blue-500 focus:outline-none"
+            />
+            <span className="absolute left-4 top-1/2 -translate-y-1/2 text-2xl">
+              📍
+            </span>
+            {locationFilter && (
+              <button
+                onClick={() => setLocationFilter("")}
+                className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+              >
+                ✕
+              </button>
+            )}
+          </div>
+        </div>
+        {/* Location Search */}
+        {/* <div className="mb-4">
+          <div className="relative">
+            <input
+              type="text"
+              placeholder="🔍 Search by city, commune, or quartier..."
+              value={locationFilter}
+              onChange={(e) => setLocationFilter(e.target.value)}
+              className="w-full px-4 py-3 pl-12 border-2 border-gray-200 rounded-xl focus:border-blue-500 focus:outline-none"
+            />
+            <span className="absolute left-4 top-1/2 -translate-y-1/2 text-2xl">
+              📍
+            </span>
+          </div>
+        </div> */}
 
         {filteredMachines.length === 0 ? (
           <div className="bg-white rounded-2xl p-8 text-center shadow-lg">
@@ -795,6 +841,29 @@ export default function Dashboard({ user: currentUser, onLogout }) {
                   <h3 className="text-lg font-bold text-gray-800">
                     {machine.name}
                   </h3>
+
+                  {/* LOCATION - PROMINENT AND BOLD */}
+                  <div className="bg-blue-50 border-2 border-blue-200 rounded-lg p-3 my-3">
+                    <div className="flex items-start gap-2">
+                      <span className="text-blue-600 text-xl mt-0.5">📍</span>
+                      <div className="flex-1">
+                        <p className="text-lg font-bold text-blue-900 leading-tight">
+                          {machine.address?.city || "Location N/A"}
+                          {machine.address?.commune &&
+                            `, ${machine.address.commune}`}
+                        </p>
+                        {machine.address?.quartier && (
+                          <p className="text-sm font-semibold text-blue-700 mt-0.5">
+                            Quartier: {machine.address.quartier}
+                          </p>
+                        )}
+                        <p className="text-xs text-blue-600 font-medium mt-1">
+                          {machine.address?.province || "Province N/A"}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
                   <p className="text-sm text-gray-500 mt-1 capitalize">
                     {machine.category} • {machine.brand}
                   </p>
@@ -809,9 +878,6 @@ export default function Dashboard({ user: currentUser, onLogout }) {
                         {machine.rating.count !== 1 ? "s" : ""})
                       </span>
                     )}
-                    <span className="text-sm text-gray-500 ml-1">
-                      • {machine.address?.city || "Location N/A"}
-                    </span>
                   </div>
                   <div className="mt-4">
                     {machine.pricingType === "daily" && (
@@ -1727,6 +1793,7 @@ export default function Dashboard({ user: currentUser, onLogout }) {
   );
 
   // ============== ADD MACHINE FORM ==============
+  // ============== ADD MACHINE FORM ==============
   const AddMachineForm = () => {
     const [formData, setFormData] = useState({
       name: "",
@@ -1739,6 +1806,10 @@ export default function Dashboard({ user: currentUser, onLogout }) {
       minimumHectares: "1",
       horsepower: "",
       description: "",
+      province: "",
+      city: "",
+      commune: "",
+      quartier: "",
     });
     const [imageFiles, setImageFiles] = useState([]);
     const [localUploadedImages, setLocalUploadedImages] = useState([]);
@@ -1749,7 +1820,6 @@ export default function Dashboard({ user: currentUser, onLogout }) {
       setFormData({ ...formData, [e.target.name]: e.target.value });
     };
 
-    // ✅ ADD THIS: Prevent form submission on Enter key
     const handleKeyDown = (e) => {
       if (e.key === "Enter") {
         e.preventDefault();
@@ -1790,13 +1860,15 @@ export default function Dashboard({ user: currentUser, onLogout }) {
             horsepower: parseInt(formData.horsepower || 0),
           },
           description: formData.description,
+          address: {
+            province: formData.province,
+            city: formData.city,
+            commune: formData.commune,
+            quartier: formData.quartier,
+          },
           location: {
             type: "Point",
             coordinates: [-79.5, 43.8],
-          },
-          address: {
-            city: "Vaughan",
-            state: "ON",
           },
           images:
             imageUrls.length > 0
@@ -1832,7 +1904,6 @@ export default function Dashboard({ user: currentUser, onLogout }) {
       } catch (err) {
         console.error("Error adding machine:", err);
 
-        // ✅ IMPROVED ERROR HANDLING FOR VERIFICATION
         if (
           err.response?.status === 403 &&
           err.response?.data?.requiresVerification
@@ -1841,7 +1912,6 @@ export default function Dashboard({ user: currentUser, onLogout }) {
             "⚠️ Email verification required! Please verify your email before listing machines."
           );
 
-          // Update local user state to reflect unverified status
           const updatedUser = { ...localUser, isEmailVerified: false };
           setLocalUser(updatedUser);
           localStorage.setItem("user", JSON.stringify(updatedUser));
@@ -1864,7 +1934,6 @@ export default function Dashboard({ user: currentUser, onLogout }) {
               {error}
             </div>
           )}
-          {/* ✅ ADD onKeyDown={handleKeyDown} TO THE FORM */}
           <form
             onSubmit={handleSubmit}
             onKeyDown={handleKeyDown}
@@ -1933,7 +2002,6 @@ export default function Dashboard({ user: currentUser, onLogout }) {
                   onChange={handleChange}
                   required
                   placeholder="2024"
-                  // ✅ ADD onKeyDown HERE TOO FOR EXTRA SAFETY
                   onKeyDown={handleKeyDown}
                   className="w-full border-2 border-gray-200 rounded-xl px-4 py-3 focus:border-blue-500 focus:outline-none"
                 />
@@ -2036,6 +2104,107 @@ export default function Dashboard({ user: currentUser, onLogout }) {
               />
             </div>
 
+            {/* LOCATION SECTION */}
+            <div>
+              <label className="block text-sm font-semibold mb-2 text-red-600">
+                📍 Location (Very Important!)
+              </label>
+              <div className="bg-yellow-50 border-2 border-yellow-300 rounded-xl p-4 space-y-3">
+                <p className="text-xs text-gray-700 font-semibold">
+                  ⚠️ Renters will see this location to know if your machine is
+                  nearby
+                </p>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-semibold mb-1">
+                      Province *
+                    </label>
+                    <select
+                      name="province"
+                      value={formData.province}
+                      onChange={handleChange}
+                      required
+                      className="w-full border-2 border-gray-200 rounded-xl px-3 py-2 text-sm focus:border-yellow-500 focus:outline-none"
+                    >
+                      <option value="">Select Province</option>
+                      <option value="Kinshasa">Kinshasa</option>
+                      <option value="Kongo-Central">Kongo-Central</option>
+                      <option value="Haut-Katanga">Haut-Katanga</option>
+                      <option value="Lualaba">Lualaba</option>
+                      <option value="Nord-Kivu">Nord-Kivu</option>
+                      <option value="Sud-Kivu">Sud-Kivu</option>
+                      <option value="Équateur">Équateur</option>
+                      <option value="Tshopo">Tshopo</option>
+                      <option value="Kasaï">Kasaï</option>
+                      <option value="Kasaï-Central">Kasaï-Central</option>
+                      <option value="Kasaï-Oriental">Kasaï-Oriental</option>
+                      <option value="Lomami">Lomami</option>
+                      <option value="Sankuru">Sankuru</option>
+                      <option value="Maniema">Maniema</option>
+                      <option value="Tanganyika">Tanganyika</option>
+                      <option value="Haut-Lomami">Haut-Lomami</option>
+                      <option value="Ituri">Ituri</option>
+                      <option value="Bas-Uélé">Bas-Uélé</option>
+                      <option value="Haut-Uélé">Haut-Uélé</option>
+                      <option value="Mongala">Mongala</option>
+                      <option value="Nord-Ubangi">Nord-Ubangi</option>
+                      <option value="Sud-Ubangi">Sud-Ubangi</option>
+                      <option value="Tshuapa">Tshuapa</option>
+                      <option value="Mai-Ndombe">Mai-Ndombe</option>
+                      <option value="Kwango">Kwango</option>
+                      <option value="Kwilu">Kwilu</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold mb-1">
+                      City/Town *
+                    </label>
+                    <input
+                      type="text"
+                      name="city"
+                      value={formData.city}
+                      onChange={handleChange}
+                      required
+                      placeholder="e.g., Lubumbashi"
+                      className="w-full border-2 border-gray-200 rounded-xl px-3 py-2 text-sm focus:border-yellow-500 focus:outline-none"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-semibold mb-1">
+                      Commune
+                    </label>
+                    <input
+                      type="text"
+                      name="commune"
+                      value={formData.commune}
+                      onChange={handleChange}
+                      placeholder="e.g., Limete"
+                      className="w-full border-2 border-gray-200 rounded-xl px-3 py-2 text-sm focus:border-yellow-500 focus:outline-none"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold mb-1">
+                      Quartier
+                    </label>
+                    <input
+                      type="text"
+                      name="quartier"
+                      value={formData.quartier}
+                      onChange={handleChange}
+                      placeholder="e.g., Kingabwa"
+                      className="w-full border-2 border-gray-200 rounded-xl px-3 py-2 text-sm focus:border-yellow-500 focus:outline-none"
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
+
             <div>
               <label className="block text-sm font-semibold mb-2">
                 Upload Images
@@ -2104,330 +2273,290 @@ export default function Dashboard({ user: currentUser, onLogout }) {
   };
 
   // ============== EDIT MACHINE FORM ==============
-// ============== EDIT MACHINE FORM ==============
-const EditMachineForm = () => {
-  const [formData, setFormData] = useState({
-    name: editingMachine?.name || "",
-    category: editingMachine?.category || "",
-    brand: editingMachine?.brand || "",
-    year: editingMachine?.year || "",
-    pricingType: editingMachine?.pricingType || "daily",
-    pricePerDay: editingMachine?.pricePerDay || "",
-    pricePerHectare: editingMachine?.pricePerHectare || "",
-    minimumHectares: editingMachine?.minimumHectares || "1",
-    horsepower: editingMachine?.specifications?.horsepower || "",
-    description: editingMachine?.description || "",
-    availability: editingMachine?.availability || "available",
-  });
-  const [imageFiles, setImageFiles] = useState([]);
-  const [existingImages, setExistingImages] = useState(
-    editingMachine?.images || []
-  );
-  const [newImagePreviews, setNewImagePreviews] = useState([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
+  const EditMachineForm = () => {
+    const [formData, setFormData] = useState({
+      name: editingMachine?.name || "",
+      category: editingMachine?.category || "",
+      brand: editingMachine?.brand || "",
+      year: editingMachine?.year || "",
+      pricingType: editingMachine?.pricingType || "daily",
+      pricePerDay: editingMachine?.pricePerDay || "",
+      pricePerHectare: editingMachine?.pricePerHectare || "",
+      minimumHectares: editingMachine?.minimumHectares || "1",
+      horsepower: editingMachine?.specifications?.horsepower || "",
+      description: editingMachine?.description || "",
+      availability: editingMachine?.availability || "available",
+      province: editingMachine?.province || "",
+      city: editingMachine?.city || "",
+      commune: editingMachine?.commune || "",
+      quartier: editingMachine?.quartier || "",
+    });
+    const [imageFiles, setImageFiles] = useState([]);
+    const [existingImages, setExistingImages] = useState(
+      editingMachine?.images || []
+    );
+    const [newImagePreviews, setNewImagePreviews] = useState([]);
+    const [loading, setLoading] = useState(false);
+    const [error, setError] = useState("");
 
-  const handleChange = (e) => {
-    setFormData({ ...formData, [e.target.name]: e.target.value });
-  };
+    const [locationFilter, setLocationFilter] = useState("");
 
-  const handleKeyDown = (e) => {
-    if (e.key === "Enter") {
+    const filteredMachines = machines.filter((m) => {
+      // Category filter
+      if (selectedFilter !== "All" && m.category !== selectedFilter)
+        return false;
+
+      // Location filter
+      if (locationFilter.trim()) {
+        const locationText = `${m.address?.city || ""} ${
+          m.address?.commune || ""
+        } ${m.address?.quartier || ""} ${
+          m.address?.province || ""
+        }`.toLowerCase();
+        if (!locationText.includes(locationFilter.toLowerCase().trim()))
+          return false;
+      }
+
+      return true;
+    });
+
+    const handleChange = (e) => {
+      setFormData({ ...formData, [e.target.name]: e.target.value });
+    };
+
+    const handleKeyDown = (e) => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+      }
+    };
+
+    const handleImageUpload = (e) => {
+      const files = Array.from(e.target.files);
+      setImageFiles([...imageFiles, ...files]);
+      const previewUrls = files.map((file) => URL.createObjectURL(file));
+      setNewImagePreviews([...newImagePreviews, ...previewUrls]);
+    };
+
+    const removeExistingImage = (index) => {
+      setExistingImages(existingImages.filter((_, i) => i !== index));
+    };
+
+    const removeNewImage = (index) => {
+      setImageFiles(imageFiles.filter((_, i) => i !== index));
+      setNewImagePreviews(newImagePreviews.filter((_, i) => i !== index));
+    };
+
+    const handleSubmit = async (e) => {
       e.preventDefault();
-    }
-  };
+      setLoading(true);
+      setError("");
 
-  const handleImageUpload = (e) => {
-    const files = Array.from(e.target.files);
-    setImageFiles([...imageFiles, ...files]);
-    const previewUrls = files.map((file) => URL.createObjectURL(file));
-    setNewImagePreviews([...newImagePreviews, ...previewUrls]);
-  };
+      try {
+        let newImageUrls = [];
+        if (imageFiles.length > 0) {
+          const uploadResponse = await uploadAPI.uploadImages(imageFiles);
+          newImageUrls = uploadResponse.data.images.map((img) => img.url);
+        }
 
-  const removeExistingImage = (index) => {
-    setExistingImages(existingImages.filter((_, i) => i !== index));
-  };
+        const allImages = [...existingImages, ...newImageUrls];
 
-  const removeNewImage = (index) => {
-    setImageFiles(imageFiles.filter((_, i) => i !== index));
-    setNewImagePreviews(newImagePreviews.filter((_, i) => i !== index));
-  };
+        const machineData = {
+          name: formData.name,
+          category: formData.category.toLowerCase(),
+          brand: formData.brand,
+          year: parseInt(formData.year),
+          pricingType: formData.pricingType,
+          availability: formData.availability,
+          specifications: {
+            horsepower: parseInt(formData.horsepower || 0),
+          },
+          description: formData.description,
+          images:
+            allImages.length > 0
+              ? allImages
+              : [
+                  "https://images.unsplash.com/photo-1625246333195-78d9c38ad449?w=400",
+                ],
+        };
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    setLoading(true);
-    setError("");
+        if (
+          formData.pricingType === "daily" ||
+          formData.pricingType === "both"
+        ) {
+          machineData.pricePerDay = parseFloat(formData.pricePerDay);
+        }
+        if (
+          formData.pricingType === "per_hectare" ||
+          formData.pricingType === "both"
+        ) {
+          machineData.pricePerHectare = parseFloat(formData.pricePerHectare);
+          machineData.minimumHectares = parseFloat(formData.minimumHectares);
+        }
 
-    try {
-      let newImageUrls = [];
-      if (imageFiles.length > 0) {
-        const uploadResponse = await uploadAPI.uploadImages(imageFiles);
-        newImageUrls = uploadResponse.data.images.map((img) => img.url);
+        const response = await machineAPI.update(
+          editingMachine._id,
+          machineData
+        );
+        if (response.data.success) {
+          setShowEditMachineForm(false);
+          setEditingMachine(null);
+          setNewImagePreviews([]);
+          setImageFiles([]);
+          await fetchMachines();
+          alert("✅ Machine updated successfully!");
+        }
+      } catch (err) {
+        console.error("Error updating machine:", err);
+        setError(err.response?.data?.message || "Failed to update machine");
+      } finally {
+        setLoading(false);
       }
+    };
 
-      const allImages = [...existingImages, ...newImageUrls];
+    return (
+      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50 overflow-y-auto">
+        <div className="bg-white rounded-2xl p-6 max-w-2xl w-full my-8 shadow-2xl max-h-[95vh] overflow-y-auto">
+          <div className="flex justify-between items-center mb-4">
+            <h2 className="text-2xl font-bold bg-gradient-to-r from-blue-600 to-cyan-600 bg-clip-text text-transparent">
+              Edit Machine
+            </h2>
+            <button
+              onClick={() => {
+                setShowEditMachineForm(false);
+                setEditingMachine(null);
+              }}
+              className="text-gray-400 hover:text-gray-600 text-2xl"
+            >
+              ×
+            </button>
+          </div>
 
-      const machineData = {
-        name: formData.name,
-        category: formData.category.toLowerCase(),
-        brand: formData.brand,
-        year: parseInt(formData.year),
-        pricingType: formData.pricingType,
-        availability: formData.availability,
-        specifications: {
-          horsepower: parseInt(formData.horsepower || 0),
-        },
-        description: formData.description,
-        images:
-          allImages.length > 0
-            ? allImages
-            : [
-                "https://images.unsplash.com/photo-1625246333195-78d9c38ad449?w=400",
-              ],
-      };
-
-      if (
-        formData.pricingType === "daily" ||
-        formData.pricingType === "both"
-      ) {
-        machineData.pricePerDay = parseFloat(formData.pricePerDay);
-      }
-      if (
-        formData.pricingType === "per_hectare" ||
-        formData.pricingType === "both"
-      ) {
-        machineData.pricePerHectare = parseFloat(formData.pricePerHectare);
-        machineData.minimumHectares = parseFloat(formData.minimumHectares);
-      }
-
-      const response = await machineAPI.update(
-        editingMachine._id,
-        machineData
-      );
-      if (response.data.success) {
-        setShowEditMachineForm(false);
-        setEditingMachine(null);
-        setNewImagePreviews([]);
-        setImageFiles([]);
-        await fetchMachines();
-        alert("✅ Machine updated successfully!");
-      }
-    } catch (err) {
-      console.error("Error updating machine:", err);
-      setError(err.response?.data?.message || "Failed to update machine");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50 overflow-y-auto">
-      <div className="bg-white rounded-2xl p-6 max-w-2xl w-full my-8 shadow-2xl max-h-[95vh] overflow-y-auto">
-        <div className="flex justify-between items-center mb-4">
-          <h2 className="text-2xl font-bold bg-gradient-to-r from-blue-600 to-cyan-600 bg-clip-text text-transparent">
-            Edit Machine
-          </h2>
-          <button
-            onClick={() => {
-              setShowEditMachineForm(false);
-              setEditingMachine(null);
-            }}
-            className="text-gray-400 hover:text-gray-600 text-2xl"
-          >
-            ×
-          </button>
-        </div>
-
-        {/* Machine Info Summary */}
-        <div className="bg-blue-50 border-2 border-blue-200 rounded-xl p-4 mb-6">
-          <h3 className="font-semibold text-blue-800 mb-2">📋 Current Information</h3>
-          <div className="grid grid-cols-2 gap-2 text-sm">
-            <div>
-              <span className="text-gray-600">Category:</span>
-              <span className="font-semibold ml-2 capitalize">{editingMachine?.category}</span>
-            </div>
-            <div>
-              <span className="text-gray-600">Brand:</span>
-              <span className="font-semibold ml-2">{editingMachine?.brand}</span>
-            </div>
-            <div>
-              <span className="text-gray-600">Year:</span>
-              <span className="font-semibold ml-2">{editingMachine?.year}</span>
-            </div>
-            <div>
-              <span className="text-gray-600">Status:</span>
-              <span className={`font-semibold ml-2 capitalize ${
-                editingMachine?.availability === 'available' ? 'text-green-600' : 'text-orange-600'
-              }`}>
-                {editingMachine?.availability}
-              </span>
-            </div>
-            <div>
-              <span className="text-gray-600">Pricing:</span>
-              <span className="font-semibold ml-2 capitalize">{editingMachine?.pricingType}</span>
-            </div>
-            {editingMachine?.rating?.count > 0 && (
+          {/* Machine Info Summary */}
+          <div className="bg-blue-50 border-2 border-blue-200 rounded-xl p-4 mb-6">
+            <h3 className="font-semibold text-blue-800 mb-2">
+              📋 Current Information
+            </h3>
+            <div className="grid grid-cols-2 gap-2 text-sm">
               <div>
-                <span className="text-gray-600">Rating:</span>
-                <span className="font-semibold ml-2">
-                  ⭐ {editingMachine?.rating?.average?.toFixed(1)} ({editingMachine?.rating?.count})
+                <span className="text-gray-600">Category:</span>
+                <span className="font-semibold ml-2 capitalize">
+                  {editingMachine?.category}
                 </span>
               </div>
-            )}
-          </div>
-        </div>
-
-        {error && (
-          <div className="bg-rose-100 border border-rose-300 text-rose-700 px-4 py-3 rounded-xl mb-4 text-sm">
-            {error}
-          </div>
-        )}
-
-        <form onSubmit={handleSubmit} onKeyDown={handleKeyDown} className="space-y-4">
-          <div>
-            <label className="block text-sm font-semibold mb-2">
-              Machine Name *
-            </label>
-            <input
-              type="text"
-              name="name"
-              value={formData.name}
-              onChange={handleChange}
-              required
-              className="w-full border-2 border-gray-200 rounded-xl px-4 py-3 focus:border-blue-500 focus:outline-none"
-            />
-          </div>
-
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-sm font-semibold mb-2">
-                Category *
-              </label>
-              <select
-                name="category"
-                value={formData.category}
-                onChange={handleChange}
-                required
-                className="w-full border-2 border-gray-200 rounded-xl px-4 py-3 focus:border-blue-500 focus:outline-none"
-              >
-                <option value="">Select Category</option>
-                <option value="tractor">Tractor</option>
-                <option value="harvester">Harvester</option>
-                <option value="planter">Planter</option>
-                <option value="sprayer">Sprayer</option>
-                <option value="desherbeuse">Desherbeuse</option>
-                <option value="excavator">Excavator</option>
-                <option value="cultivator">Cultivator</option>
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-sm font-semibold mb-2">
-                Brand *
-              </label>
-              <input
-                type="text"
-                name="brand"
-                value={formData.brand}
-                onChange={handleChange}
-                required
-                className="w-full border-2 border-gray-200 rounded-xl px-4 py-3 focus:border-blue-500 focus:outline-none"
-              />
+              <div>
+                <span className="text-gray-600">Brand:</span>
+                <span className="font-semibold ml-2">
+                  {editingMachine?.brand}
+                </span>
+              </div>
+              <div>
+                <span className="text-gray-600">Year:</span>
+                <span className="font-semibold ml-2">
+                  {editingMachine?.year}
+                </span>
+              </div>
+              <div>
+                <span className="text-gray-600">Status:</span>
+                <span
+                  className={`font-semibold ml-2 capitalize ${
+                    editingMachine?.availability === "available"
+                      ? "text-green-600"
+                      : "text-orange-600"
+                  }`}
+                >
+                  {editingMachine?.availability}
+                </span>
+              </div>
+              <div>
+                <span className="text-gray-600">Pricing:</span>
+                <span className="font-semibold ml-2 capitalize">
+                  {editingMachine?.pricingType}
+                </span>
+              </div>
+              {editingMachine?.rating?.count > 0 && (
+                <div>
+                  <span className="text-gray-600">Rating:</span>
+                  <span className="font-semibold ml-2">
+                    ⭐ {editingMachine?.rating?.average?.toFixed(1)} (
+                    {editingMachine?.rating?.count})
+                  </span>
+                </div>
+              )}
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-sm font-semibold mb-2">
-                Year *
-              </label>
-              <input
-                type="number"
-                name="year"
-                value={formData.year}
-                onChange={handleChange}
-                required
-                onKeyDown={handleKeyDown}
-                className="w-full border-2 border-gray-200 rounded-xl px-4 py-3 focus:border-blue-500 focus:outline-none"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-semibold mb-2">
-                Horsepower
-              </label>
-              <input
-                type="number"
-                name="horsepower"
-                value={formData.horsepower}
-                onChange={handleChange}
-                onKeyDown={handleKeyDown}
-                className="w-full border-2 border-gray-200 rounded-xl px-4 py-3 focus:border-blue-500 focus:outline-none"
-              />
-            </div>
-          </div>
-
-          <div>
-            <label className="block text-sm font-semibold mb-2">
-              Availability Status *
-            </label>
-            <select
-              name="availability"
-              value={formData.availability}
-              onChange={handleChange}
-              required
-              className="w-full border-2 border-gray-200 rounded-xl px-4 py-3 focus:border-blue-500 focus:outline-none"
-            >
-              <option value="available">✅ Available</option>
-              <option value="rented">🔒 Currently Rented</option>
-              <option value="unavailable">❌ Unavailable</option>
-              <option value="maintenance">🔧 Under Maintenance</option>
-            </select>
-          </div>
-
-          <div>
-            <label className="block text-sm font-semibold mb-2">
-              Pricing Type *
-            </label>
-            <select
-              name="pricingType"
-              value={formData.pricingType}
-              onChange={handleChange}
-              required
-              className="w-full border-2 border-gray-200 rounded-xl px-4 py-3 focus:border-blue-500 focus:outline-none"
-            >
-              <option value="daily">Daily Rental</option>
-              <option value="per_hectare">Per Hectare</option>
-              <option value="both">Both (Daily & Per Hectare)</option>
-            </select>
-          </div>
-
-          {(formData.pricingType === "daily" || formData.pricingType === "both") && (
-            <div>
-              <label className="block text-sm font-semibold mb-2">
-                Price per Day ($) *
-              </label>
-              <input
-                type="number"
-                name="pricePerDay"
-                value={formData.pricePerDay}
-                onChange={handleChange}
-                required
-                onKeyDown={handleKeyDown}
-                className="w-full border-2 border-gray-200 rounded-xl px-4 py-3 focus:border-blue-500 focus:outline-none"
-              />
+          {error && (
+            <div className="bg-rose-100 border border-rose-300 text-rose-700 px-4 py-3 rounded-xl mb-4 text-sm">
+              {error}
             </div>
           )}
 
-          {(formData.pricingType === "per_hectare" || formData.pricingType === "both") && (
-            <>
+          <form
+            onSubmit={handleSubmit}
+            onKeyDown={handleKeyDown}
+            className="space-y-4"
+          >
+            <div>
+              <label className="block text-sm font-semibold mb-2">
+                Machine Name *
+              </label>
+              <input
+                type="text"
+                name="name"
+                value={formData.name}
+                onChange={handleChange}
+                required
+                className="w-full border-2 border-gray-200 rounded-xl px-4 py-3 focus:border-blue-500 focus:outline-none"
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="block text-sm font-semibold mb-2">
-                  Price per Hectare ($) *
+                  Category *
+                </label>
+                <select
+                  name="category"
+                  value={formData.category}
+                  onChange={handleChange}
+                  required
+                  className="w-full border-2 border-gray-200 rounded-xl px-4 py-3 focus:border-blue-500 focus:outline-none"
+                >
+                  <option value="">Select Category</option>
+                  <option value="tractor">Tractor</option>
+                  <option value="harvester">Harvester</option>
+                  <option value="planter">Planter</option>
+                  <option value="sprayer">Sprayer</option>
+                  <option value="desherbeuse">Desherbeuse</option>
+                  <option value="excavator">Excavator</option>
+                  <option value="cultivator">Cultivator</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-semibold mb-2">
+                  Brand *
+                </label>
+                <input
+                  type="text"
+                  name="brand"
+                  value={formData.brand}
+                  onChange={handleChange}
+                  required
+                  className="w-full border-2 border-gray-200 rounded-xl px-4 py-3 focus:border-blue-500 focus:outline-none"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-sm font-semibold mb-2">
+                  Year *
                 </label>
                 <input
                   type="number"
-                  name="pricePerHectare"
-                  value={formData.pricePerHectare}
+                  name="year"
+                  value={formData.year}
                   onChange={handleChange}
                   required
                   onKeyDown={handleKeyDown}
@@ -2436,134 +2565,221 @@ const EditMachineForm = () => {
               </div>
               <div>
                 <label className="block text-sm font-semibold mb-2">
-                  Minimum Hectares
+                  Horsepower
                 </label>
                 <input
                   type="number"
-                  name="minimumHectares"
-                  value={formData.minimumHectares}
+                  name="horsepower"
+                  value={formData.horsepower}
                   onChange={handleChange}
                   onKeyDown={handleKeyDown}
                   className="w-full border-2 border-gray-200 rounded-xl px-4 py-3 focus:border-blue-500 focus:outline-none"
                 />
               </div>
-            </>
-          )}
+            </div>
 
-          <div>
-            <label className="block text-sm font-semibold mb-2">
-              Description
-            </label>
-            <textarea
-              name="description"
-              value={formData.description}
-              onChange={handleChange}
-              placeholder="Describe your machine..."
-              rows="3"
-              className="w-full border-2 border-gray-200 rounded-xl px-4 py-3 focus:border-blue-500 focus:outline-none"
-            />
-          </div>
-
-          {existingImages.length > 0 && (
             <div>
               <label className="block text-sm font-semibold mb-2">
-                Current Images ({existingImages.length})
+                Availability Status *
               </label>
-              <div className="grid grid-cols-4 gap-2">
-                {existingImages.map((img, idx) => (
-                  <div key={idx} className="relative">
-                    <img
-                      src={img}
-                      alt={`Current ${idx}`}
-                      className="w-full h-24 object-cover rounded-lg"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => removeExistingImage(idx)}
-                      className="absolute -top-2 -right-2 bg-rose-500 text-white rounded-full w-6 h-6 flex items-center justify-center text-xs hover:bg-rose-600"
-                    >
-                      ×
-                    </button>
-                  </div>
-                ))}
-              </div>
+              <select
+                name="availability"
+                value={formData.availability}
+                onChange={handleChange}
+                required
+                className="w-full border-2 border-gray-200 rounded-xl px-4 py-3 focus:border-blue-500 focus:outline-none"
+              >
+                <option value="available">✅ Available</option>
+                <option value="rented">🔒 Currently Rented</option>
+                <option value="unavailable">❌ Unavailable</option>
+                <option value="maintenance">🔧 Under Maintenance</option>
+              </select>
             </div>
-          )}
 
-          <div>
-            <label className="block text-sm font-semibold mb-2">
-              Add New Images
-            </label>
-            <input
-              type="file"
-              accept="image/*"
-              multiple
-              onChange={handleImageUpload}
-              className="hidden"
-              id="editImageUpload"
-            />
-            <label
-              htmlFor="editImageUpload"
-              className="border-2 border-dashed border-blue-300 rounded-xl p-4 text-center cursor-pointer hover:border-blue-500 hover:bg-blue-50 transition block"
-            >
-              <Plus size={24} className="mx-auto text-blue-400 mb-1" />
-              <p className="text-sm text-gray-600">Click to upload new images</p>
-            </label>
-            {newImagePreviews.length > 0 && (
-              <div className="grid grid-cols-4 gap-2 mt-3">
-                {newImagePreviews.map((img, idx) => (
-                  <div key={idx} className="relative">
-                    <img
-                      src={img}
-                      alt={`New ${idx}`}
-                      className="w-full h-24 object-cover rounded-lg"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => removeNewImage(idx)}
-                      className="absolute -top-2 -right-2 bg-rose-500 text-white rounded-full w-6 h-6 flex items-center justify-center text-xs hover:bg-rose-600"
-                    >
-                      ×
-                    </button>
-                  </div>
-                ))}
+            <div>
+              <label className="block text-sm font-semibold mb-2">
+                Pricing Type *
+              </label>
+              <select
+                name="pricingType"
+                value={formData.pricingType}
+                onChange={handleChange}
+                required
+                className="w-full border-2 border-gray-200 rounded-xl px-4 py-3 focus:border-blue-500 focus:outline-none"
+              >
+                <option value="daily">Daily Rental</option>
+                <option value="per_hectare">Per Hectare</option>
+                <option value="both">Both (Daily & Per Hectare)</option>
+              </select>
+            </div>
+
+            {(formData.pricingType === "daily" ||
+              formData.pricingType === "both") && (
+              <div>
+                <label className="block text-sm font-semibold mb-2">
+                  Price per Day ($) *
+                </label>
+                <input
+                  type="number"
+                  name="pricePerDay"
+                  value={formData.pricePerDay}
+                  onChange={handleChange}
+                  required
+                  onKeyDown={handleKeyDown}
+                  className="w-full border-2 border-gray-200 rounded-xl px-4 py-3 focus:border-blue-500 focus:outline-none"
+                />
               </div>
             )}
-          </div>
 
-          <div className="flex gap-3 mt-6 pt-4 border-t">
-            <button
-              type="button"
-              onClick={() => {
-                setShowEditMachineForm(false);
-                setEditingMachine(null);
-                setNewImagePreviews([]);
-                setImageFiles([]);
-              }}
-              className="flex-1 bg-gray-200 text-gray-700 py-3 rounded-xl font-semibold hover:bg-gray-300 transition"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={loading}
-              className="flex-1 bg-gradient-to-r from-blue-600 to-cyan-600 text-white py-3 rounded-xl font-semibold disabled:opacity-50 hover:shadow-lg transition"
-            >
-              {loading ? (
-                <span className="flex items-center justify-center gap-2">
-                  <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                  Updating...
-                </span>
-              ) : (
-                "💾 Save Changes"
+            {(formData.pricingType === "per_hectare" ||
+              formData.pricingType === "both") && (
+              <>
+                <div>
+                  <label className="block text-sm font-semibold mb-2">
+                    Price per Hectare ($) *
+                  </label>
+                  <input
+                    type="number"
+                    name="pricePerHectare"
+                    value={formData.pricePerHectare}
+                    onChange={handleChange}
+                    required
+                    onKeyDown={handleKeyDown}
+                    className="w-full border-2 border-gray-200 rounded-xl px-4 py-3 focus:border-blue-500 focus:outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-semibold mb-2">
+                    Minimum Hectares
+                  </label>
+                  <input
+                    type="number"
+                    name="minimumHectares"
+                    value={formData.minimumHectares}
+                    onChange={handleChange}
+                    onKeyDown={handleKeyDown}
+                    className="w-full border-2 border-gray-200 rounded-xl px-4 py-3 focus:border-blue-500 focus:outline-none"
+                  />
+                </div>
+              </>
+            )}
+
+            <div>
+              <label className="block text-sm font-semibold mb-2">
+                Description
+              </label>
+              <textarea
+                name="description"
+                value={formData.description}
+                onChange={handleChange}
+                placeholder="Describe your machine..."
+                rows="3"
+                className="w-full border-2 border-gray-200 rounded-xl px-4 py-3 focus:border-blue-500 focus:outline-none"
+              />
+            </div>
+
+            {existingImages.length > 0 && (
+              <div>
+                <label className="block text-sm font-semibold mb-2">
+                  Current Images ({existingImages.length})
+                </label>
+                <div className="grid grid-cols-4 gap-2">
+                  {existingImages.map((img, idx) => (
+                    <div key={idx} className="relative">
+                      <img
+                        src={img}
+                        alt={`Current ${idx}`}
+                        className="w-full h-24 object-cover rounded-lg"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => removeExistingImage(idx)}
+                        className="absolute -top-2 -right-2 bg-rose-500 text-white rounded-full w-6 h-6 flex items-center justify-center text-xs hover:bg-rose-600"
+                      >
+                        ×
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div>
+              <label className="block text-sm font-semibold mb-2">
+                Add New Images
+              </label>
+              <input
+                type="file"
+                accept="image/*"
+                multiple
+                onChange={handleImageUpload}
+                className="hidden"
+                id="editImageUpload"
+              />
+              <label
+                htmlFor="editImageUpload"
+                className="border-2 border-dashed border-blue-300 rounded-xl p-4 text-center cursor-pointer hover:border-blue-500 hover:bg-blue-50 transition block"
+              >
+                <Plus size={24} className="mx-auto text-blue-400 mb-1" />
+                <p className="text-sm text-gray-600">
+                  Click to upload new images
+                </p>
+              </label>
+              {newImagePreviews.length > 0 && (
+                <div className="grid grid-cols-4 gap-2 mt-3">
+                  {newImagePreviews.map((img, idx) => (
+                    <div key={idx} className="relative">
+                      <img
+                        src={img}
+                        alt={`New ${idx}`}
+                        className="w-full h-24 object-cover rounded-lg"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => removeNewImage(idx)}
+                        className="absolute -top-2 -right-2 bg-rose-500 text-white rounded-full w-6 h-6 flex items-center justify-center text-xs hover:bg-rose-600"
+                      >
+                        ×
+                      </button>
+                    </div>
+                  ))}
+                </div>
               )}
-            </button>
-          </div>
-        </form>
+            </div>
+
+            <div className="flex gap-3 mt-6 pt-4 border-t">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowEditMachineForm(false);
+                  setEditingMachine(null);
+                  setNewImagePreviews([]);
+                  setImageFiles([]);
+                }}
+                className="flex-1 bg-gray-200 text-gray-700 py-3 rounded-xl font-semibold hover:bg-gray-300 transition"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={loading}
+                className="flex-1 bg-gradient-to-r from-blue-600 to-cyan-600 text-white py-3 rounded-xl font-semibold disabled:opacity-50 hover:shadow-lg transition"
+              >
+                {loading ? (
+                  <span className="flex items-center justify-center gap-2">
+                    <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                    Updating...
+                  </span>
+                ) : (
+                  "💾 Save Changes"
+                )}
+              </button>
+            </div>
+          </form>
+        </div>
       </div>
-    </div>
-  );
-};
+    );
+  };
 
   // ============== REVIEW MODAL ==============
   const ReviewModal = () => {

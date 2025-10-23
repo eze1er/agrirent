@@ -56,13 +56,14 @@ const machineSchema = new mongoose.Schema({
     coordinates: [Number] // [longitude, latitude]
   },
   
-  address: {
-    street: String,
-    city: String,
-    state: String,
-    zipCode: String,
-    country: { type: String, default: 'Canada' }
-  },
+address: {
+  province: String,      // e.g., "Kinshasa", "Haut-Katanga"
+  city: String,          // e.g., "Lubumbashi", "Goma"
+  commune: String,       // e.g., "Limete", "Kampemba"
+  quartier: String,      // e.g., "Kingabwa", "Kenya"
+  avenue: String,
+  number: String,
+},
   
 availability: {
   type: String,
