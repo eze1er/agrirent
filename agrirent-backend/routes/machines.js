@@ -44,6 +44,23 @@ const requireVerifiedEmail = async (req, res, next) => {
   }
 };
 
+// GET /api/machines/categories
+router.get('/categories', async (req, res) => {
+  try {
+    // Get all unique categories from the Machine collection
+    const categories = await Machine.distinct('category');
+    
+    // Optional: filter out null/empty and sort
+    const validCategories = categories
+      .filter(cat => cat && typeof cat === 'string')
+      .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
+
+    res.json({ success: true, data: validCategories });
+  } catch (error) {
+    console.error('Error fetching categories:', error);
+    res.status(500).json({ success: false, message: 'Failed to fetch categories' });
+  }
+});
 // ✅ SPECIFIC ROUTES FIRST (before /:id)
 
 // Get all machines

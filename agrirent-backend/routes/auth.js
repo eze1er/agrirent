@@ -1010,4 +1010,18 @@ router.get("/google/callback", async (req, res) => {
   }
 });
 
+// GET /api/machines/categories
+router.get('/categories', async (req, res) => {
+  try {
+    const categories = await Machine.find(
+      { isActive: true, availability: 'available' }, // or your visibility rules
+      'category'
+    ).distinct('category');
+    
+    res.json({ success: true, data: categories });
+  } catch (error) {
+    res.status(500).json({ success: false, message: 'Failed to fetch categories' });
+  }
+});
+
 module.exports = router;

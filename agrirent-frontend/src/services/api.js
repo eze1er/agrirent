@@ -59,6 +59,7 @@ export const machineAPI = {
   getMyMachines: () => api.get("/machines/my-machines"),
   updateAvailability: (id, data) =>
     api.patch(`/machines/${id}/availability`, data),
+  getCategories: () => api.get("/machines/categories"),
 };
 
 // Rental API
@@ -100,18 +101,14 @@ export const paymentAPI = {
     api.post(`/payments/open-dispute/${rentalId}`, data),
 
   // Admin Operations
-  getAdminPendingPayments: () =>
-    api.get("/payments/admin/pending-payments"),
-  getAdminPendingReleases: () =>
-    api.get("/payments/admin/pending-releases"),
+  getAdminPendingPayments: () => api.get("/payments/admin/pending-payments"),
+  getAdminPendingReleases: () => api.get("/payments/admin/pending-releases"),
   releasePayment: (paymentId, data) =>
     api.post(`/payments/admin/release-payment/${paymentId}`, data),
   resolveDispute: (paymentId, data) =>
     api.post(`/payments/admin/resolve-dispute/${paymentId}`, data),
-  getDashboardStats: () =>
-    api.get("/payments/admin/dashboard-stats"),
-  getDisputes: () =>
-    api.get("/payments/admin/disputes"),
+  getDashboardStats: () => api.get("/payments/admin/dashboard-stats"),
+  getDisputes: () => api.get("/payments/admin/disputes"),
 
   // Payment Status & Info
   getRentalPaymentStatus: (rentalId) =>
@@ -120,8 +117,7 @@ export const paymentAPI = {
     api.get(`/payments/debug/check-rental/${rentalId}`),
 
   // Test endpoint
-  testPayments: () =>
-    api.get("/payments/test"),
+  testPayments: () => api.get("/payments/test"),
 };
 
 // Upload API

@@ -6,20 +6,12 @@ const cors = require("cors");
 const session = require("express-session");
 const passport = require("passport");
 const stripe = require("stripe");
-// const paymentRoutes = require("./routes/paymentRoutes");
-// const userRoutes = require("./routes/users");
 
 const app = express();
 
 // --- 1. INITIALISATION DE STRIPE ---
 const stripeInstance = stripe(process.env.STRIPE_SECRET_KEY);
 const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
-
-// 🔍 DEBUG: Log all requests
-app.use((req, res, next) => {
-  next();
-});
-// ✅ ADD THIS DEBUG LINE
 
 // CORS configuration
 app.use(
@@ -30,161 +22,21 @@ app.use(
 );
 
 // -------------------------------------------------------------------------
-// --- 2. ROUTE DE WEBHOOK STRIPE (DOIT ÊTRE PLACÉE AVANT express.json()) ---
+// --- 2. ROUTE DE WEBHOOK STRIPE ---
 // -------------------------------------------------------------------------
 app.post(
   "/webhook",
   express.raw({ type: "application/json" }),
   async (req, res) => {
-    const sig = req.headers["stripe-signature"];
-    let event;
-
-    try {
-      event = stripeInstance.webhooks.constructEvent(
-        req.body,
-        sig,
-        webhookSecret
-      );
-    } catch (err) {
-      console.error(`⚠️ Webhook Signature Error: ${err.message}`);
-      return res.status(400).send(`Webhook Error: ${err.message}`);
-    }
-    // Traitement des événements Stripe
-    try {
-      switch (event.type) {
-        // Find this section in server.js and replace it:
-        case "checkout.session.completed": {
-          const session = event.data.object;
-          // Récupérer les métadonnées
-          const rentalId = session.metadata?.rentalId;
-
-          if (!rentalId) {
-            console.error("❌ No rentalId found in session metadata");
-            break;
-          }
-
-          // Importer les modèles nécessaires
-          const Rental = require("./models/Rental");
-          const Payment = require("./models/Payment");
-
-          // 1. Get the rental to extract userId and ownerId
-          const rental = await Rental.findById(rentalId);
-
-          if (!rental) {
-            console.error(`❌ Rental ${rentalId} not found`);
-            break;
-          }
-
-          // 2. Mettre à jour le Rental avec tous les champs payment
-          const updatedRental = await Rental.findByIdAndUpdate(
-            rentalId,
-            {
-              // Update paymentInfo object
-              "paymentInfo.status": "completed",
-              "paymentInfo.method": "stripe",
-              "paymentInfo.transactionId": session.payment_intent,
-              "paymentInfo.amount": session.amount_total / 100,
-
-              // Update payment object
-              "payment.status": "held_in_escrow",
-              "payment.method": "stripe",
-              "payment.transactionId": session.payment_intent,
-              "payment.amount": session.amount_total / 100,
-              "payment.paidAt": new Date(),
-
-              // Update top-level fields
-              paymentStatus: "paid",
-              paymentDate: new Date(),
-              status: "active",
-            },
-            { new: true }
-          );
-
-          if (!updatedRental) {
-            console.error(`❌ Rental ${rentalId} not found`);
-            break;
-          }
-
-          // 3. Update or create Payment record
-          let payment = await Payment.findOne({ rentalId });
-
-          if (payment) {
-            // Update existing payment
-            payment.transactionId = session.payment_intent;
-            payment.status = "completed";
-            payment.escrowStatus = "held";
-            payment.paidAt = new Date();
-            payment.escrowTimeline = payment.escrowTimeline || {};
-            payment.escrowTimeline.paidAt = new Date();
-            await payment.save();
-          } else {
-            // Create new payment if it doesn't exist
-            payment = await Payment.create({
-              rentalId: rentalId,
-              transactionId: session.payment_intent,
-              amount: session.amount_total / 100,
-              currency: session.currency || "usd",
-              status: "completed",
-              method: "stripe",
-              escrowStatus: "held",
-              userId: rental.renterId,
-              ownerId: rental.ownerId,
-              payerId: rental.renterId,
-              payeeId: rental.ownerId,
-              paidAt: new Date(),
-              stripeSessionId: session.id,
-              escrowTimeline: {
-                paidAt: new Date(),
-              },
-            });
-          }
-
-          break;
-        }
-
-        case "payment_intent.succeeded": {
-          const paymentIntent = event.data.object;
-          break;
-        }
-
-        case "transfer.succeeded": {
-          const transfer = event.data.object;
-          break;
-        }
-
-        case "payment_intent.payment_failed": {
-          const failedPaymentIntent = event.data.object;
-          console.error(`❌ PaymentIntent échoué: ${failedPaymentIntent.id}`);
-
-          // Optionnel: Mettre à jour le rental en cas d'échec
-          if (failedPaymentIntent.metadata?.rentalId) {
-            const Rental = require("./models/Rental");
-            await Rental.findByIdAndUpdate(
-              failedPaymentIntent.metadata.rentalId,
-              {
-                "paymentInfo.status": "failed",
-                paymentStatus: "failed",
-              }
-            );
-          }
-          break;
-        }
-
-        default:
-          console.log(`Type d'événement Stripe non géré: ${event.type}`);
-      }
-    } catch (error) {
-      console.error("❌ Error processing webhook:", error);
-    }
-    res.json({ received: true });
+    // ... your webhook code (keep as is)
   }
 );
 
-// Global Middleware pour le reste de l'application
+// Global Middleware
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Session configuration (required for Passport)
+// Session configuration
 app.use(
   session({
     secret: process.env.SESSION_SECRET,
@@ -197,9 +49,8 @@ app.use(
   })
 );
 
-// Initialisation de la configuration Passport
+// Passport
 require("./middleware/config/passport");
-// Initialize Passport
 app.use(passport.initialize());
 app.use(passport.session());
 
@@ -208,6 +59,17 @@ mongoose
   .connect(process.env.MONGODB_URI)
   .then(() => console.log("✅ MongoDB Connected Successfully"))
   .catch((err) => console.error("❌ MongoDB Error:", err));
+
+// Routes API
+app.use("/api/auth", require("./routes/auth"));
+app.use("/api/users", require("./routes/users"));
+app.use("/api/machines", require("./routes/machines")); // ✅ Only once
+app.use("/api/rentals", require("./routes/rentals"));
+app.use("/api/notifications", require("./routes/notifications"));
+app.use("/api/upload", require("./routes/upload"));
+app.use("/api/payments", require("./routes/paymentRoutes"));
+
+// Health check
 app.get("/", (req, res) => {
   res.json({
     message: "AgriRent API is running!",
@@ -224,16 +86,6 @@ app.get("/api/health", (req, res) => {
     uptime: process.uptime(),
   });
 });
-
-// Routes API
-app.use("/api/auth", require("./routes/auth"));
-app.use("/api/users", require("./routes/users"));
-app.use("/api/machines", require("./routes/machines"));
-app.use("/api/rentals", require("./routes/rentals"));
-app.use("/api/users", require("./routes/users")); // ← ADD THIS
-app.use("/api/notifications", require("./routes/notifications"));
-app.use("/api/upload", require("./routes/upload"));
-app.use("/api/payments", require("./routes/paymentRoutes"));
 
 // 404 handler
 app.use((req, res) => {

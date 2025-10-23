@@ -693,17 +693,47 @@ export default function Dashboard({ user: currentUser, onLogout }) {
   // ============== MACHINES SCREEN ==============
   const MachinesScreen = () => {
     const [locationFilter, setLocationFilter] = useState("");
+    const [categories, setCategories] = useState(["All"]);
+    const [machines, setMachines] = useState([]);
+    useEffect(() => {
+      const fetchData = async () => {
+        try {
+          // Fetch machines
+          const machinesRes = await machineAPI.getAll();
+          if (machinesRes.data.success) {
+            setMachines(machinesRes.data.data);
+          }
+
+          // Fetch ALL categories (from backend)
+          const categoriesRes = await machineAPI.getCategories(); // 👈 This calls /api/machines/categories
+          if (categoriesRes.data.success) {
+            const sorted = categoriesRes.data.data
+              .filter((cat) => cat && typeof cat === "string")
+              .sort((a, b) =>
+                a.localeCompare(b, undefined, { sensitivity: "base" })
+              );
+            setCategories(["All", ...sorted]);
+          }
+        } catch (error) {
+          console.error("Error fetching data:", error);
+        }
+      };
+
+      fetchData();
+    }, []);
 
     const filteredMachines = machines.filter((m) => {
       if (selectedFilter !== "All" && m.category !== selectedFilter)
         return false;
-
-      if (locationFilter) {
-        const location =
-          `${m.address?.city} ${m.address?.commune} ${m.address?.quartier} ${m.address?.province}`.toLowerCase();
-        if (!location.includes(locationFilter.toLowerCase())) return false;
+      if (locationFilter.trim()) {
+        const locationText = `${m.address?.city || ""} ${
+          m.address?.commune || ""
+        } ${m.address?.quartier || ""} ${
+          m.address?.province || ""
+        }`.toLowerCase();
+        if (!locationText.includes(locationFilter.toLowerCase().trim()))
+          return false;
       }
-
       return true;
     });
 
@@ -734,8 +764,9 @@ export default function Dashboard({ user: currentUser, onLogout }) {
           )}
         </div>
 
+        {/* Category Filter Buttons */}
         <div className="bg-white rounded-2xl p-3 mb-4 shadow-md flex gap-2 overflow-x-auto">
-          {["All", "tractor", "harvester", "planter"].map((filter) => (
+          {categories.map((filter) => (
             <button
               key={filter}
               onClick={() => setSelectedFilter(filter)}
@@ -749,6 +780,8 @@ export default function Dashboard({ user: currentUser, onLogout }) {
             </button>
           ))}
         </div>
+
+        {/* Location Search */}
         <div className="mb-4">
           <div className="relative">
             <input
@@ -771,22 +804,8 @@ export default function Dashboard({ user: currentUser, onLogout }) {
             )}
           </div>
         </div>
-        {/* Location Search */}
-        {/* <div className="mb-4">
-          <div className="relative">
-            <input
-              type="text"
-              placeholder="🔍 Search by city, commune, or quartier..."
-              value={locationFilter}
-              onChange={(e) => setLocationFilter(e.target.value)}
-              className="w-full px-4 py-3 pl-12 border-2 border-gray-200 rounded-xl focus:border-blue-500 focus:outline-none"
-            />
-            <span className="absolute left-4 top-1/2 -translate-y-1/2 text-2xl">
-              📍
-            </span>
-          </div>
-        </div> */}
 
+        {/* Machine List */}
         {filteredMachines.length === 0 ? (
           <div className="bg-white rounded-2xl p-8 text-center shadow-lg">
             <Tractor size={48} className="mx-auto text-gray-400 mb-3" />
@@ -841,8 +860,7 @@ export default function Dashboard({ user: currentUser, onLogout }) {
                   <h3 className="text-lg font-bold text-gray-800">
                     {machine.name}
                   </h3>
-
-                  {/* LOCATION - PROMINENT AND BOLD */}
+                  {/* LOCATION */}
                   <div className="bg-blue-50 border-2 border-blue-200 rounded-lg p-3 my-3">
                     <div className="flex items-start gap-2">
                       <span className="text-blue-600 text-xl mt-0.5">📍</span>
@@ -863,7 +881,6 @@ export default function Dashboard({ user: currentUser, onLogout }) {
                       </div>
                     </div>
                   </div>
-
                   <p className="text-sm text-gray-500 mt-1 capitalize">
                     {machine.category} • {machine.brand}
                   </p>
