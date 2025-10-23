@@ -691,213 +691,209 @@ export default function Dashboard({ user: currentUser, onLogout }) {
   };
 
   // ============== MACHINES SCREEN ==============
-  const MachinesScreen = () => {
-    const [locationFilter, setLocationFilter] = useState("");
-    const [categories, setCategories] = useState(["All"]);
-    const [machines, setMachines] = useState([]);
-    useEffect(() => {
-      const fetchData = async () => {
-        try {
-          // Fetch machines
-          const machinesRes = await machineAPI.getAll();
-          if (machinesRes.data.success) {
-            setMachines(machinesRes.data.data);
-          }
+const MachinesScreen = () => {
+  const [locationFilter, setLocationFilter] = useState("");
+  const [categories, setCategories] = useState(["All"]);
 
-          // Fetch ALL categories (from backend)
-          const categoriesRes = await machineAPI.getCategories(); // 👈 This calls /api/machines/categories
-          if (categoriesRes.data.success) {
-            const sorted = categoriesRes.data.data
-              .filter((cat) => cat && typeof cat === "string")
-              .sort((a, b) =>
-                a.localeCompare(b, undefined, { sensitivity: "base" })
-              );
-            setCategories(["All", ...sorted]);
-          }
-        } catch (error) {
-          console.error("Error fetching data:", error);
-        }
-      };
-
-      fetchData();
-    }, []);
-
-    const filteredMachines = machines.filter((m) => {
-      if (selectedFilter !== "All" && m.category !== selectedFilter)
-        return false;
-      if (locationFilter.trim()) {
-        const locationText = `${m.address?.city || ""} ${
-          m.address?.commune || ""
-        } ${m.address?.quartier || ""} ${
-          m.address?.province || ""
-        }`.toLowerCase();
-        if (!locationText.includes(locationFilter.toLowerCase().trim()))
-          return false;
-      }
-      return true;
-    });
-
-    if (loadingMachines) {
-      return (
-        <div className="p-4 flex items-center justify-center h-64">
-          <div className="text-center">
-            <div className="w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-            <p className="text-gray-600">Loading machines...</p>
-          </div>
-        </div>
-      );
+  useEffect(() => {
+    if (machines && machines.length > 0) {
+      const uniqueCategories = [...new Set(machines.map(m => m.category))];
+      const sortedCategories = uniqueCategories
+        .filter(cat => cat && typeof cat === 'string')
+        .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
+      setCategories(["All", ...sortedCategories]);
     }
+  }, [machines]);
 
+  const filteredMachines = machines.filter((m) => {
+    if (selectedFilter !== "All" && m.category !== selectedFilter) return false;
+    if (locationFilter.trim()) {
+      const locationText = `${m.address?.city || ''} ${m.address?.commune || ''} ${m.address?.quartier || ''} ${m.address?.province || ''}`.toLowerCase();
+      if (!locationText.includes(locationFilter.toLowerCase().trim())) return false;
+    }
+    return true;
+  });
+
+  if (loadingMachines) {
     return (
-      <div className="p-4">
-        <div className="flex justify-between items-center mb-4">
-          <h1 className="text-2xl font-bold bg-gradient-to-r from-blue-600 to-cyan-600 bg-clip-text text-transparent">
-            Available Machines
-          </h1>
-          {isOwner && (
+      <div className="p-4 flex items-center justify-center h-64">
+        <div className="text-center">
+          <div className="w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+          <p className="text-gray-600">Loading machines...</p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="p-4">
+      <div className="flex justify-between items-center mb-4">
+        <h1 className="text-2xl font-bold bg-gradient-to-r from-blue-600 to-cyan-600 bg-clip-text text-transparent">
+          Available Machines
+        </h1>
+        {isOwner && (
+          <button
+            onClick={() => setShowAddMachineForm(true)}
+            className="bg-gradient-to-r from-emerald-500 to-teal-500 text-white p-3 rounded-xl shadow-lg hover:shadow-xl transition"
+          >
+            <Plus size={20} />
+          </button>
+        )}
+      </div>
+
+      {/* Category Filter Buttons */}
+      <div className="bg-white rounded-2xl p-3 mb-4 shadow-md flex gap-2 overflow-x-auto">
+        {categories.map((filter) => (
+          <button
+            key={filter}
+            onClick={() => setSelectedFilter(filter)}
+            className={`px-5 py-2 rounded-xl text-sm font-semibold whitespace-nowrap transition capitalize ${
+              selectedFilter === filter
+                ? "bg-gradient-to-r from-blue-600 to-cyan-600 text-white shadow-lg"
+                : "bg-gray-100 text-gray-700"
+            }`}
+          >
+            {filter === "All" ? "All" : `${filter}s`}
+          </button>
+        ))}
+      </div>
+
+      {/* Location Search */}
+      <div className="mb-4">
+        <div className="relative">
+          <input
+            type="text"
+            placeholder="🔍 Search by city, commune, or quartier..."
+            value={locationFilter}
+            onChange={(e) => setLocationFilter(e.target.value)}
+            className="w-full px-4 py-3 pl-12 border-2 border-gray-200 rounded-xl focus:border-blue-500 focus:outline-none"
+          />
+          <span className="absolute left-4 top-1/2 -translate-y-1/2 text-2xl">📍</span>
+          {locationFilter && (
             <button
-              onClick={() => setShowAddMachineForm(true)}
-              className="bg-gradient-to-r from-emerald-500 to-teal-500 text-white p-3 rounded-xl shadow-lg hover:shadow-xl transition"
+              onClick={() => setLocationFilter("")}
+              className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
             >
-              <Plus size={20} />
+              ✕
             </button>
           )}
         </div>
+      </div>
 
-        {/* Category Filter Buttons */}
-        <div className="bg-white rounded-2xl p-3 mb-4 shadow-md flex gap-2 overflow-x-auto">
-          {categories.map((filter) => (
+      {/* Machine List */}
+      {filteredMachines.length === 0 ? (
+        <div className="bg-white rounded-2xl p-8 text-center shadow-lg">
+          <Tractor size={48} className="mx-auto text-gray-400 mb-3" />
+          <p className="text-gray-600">No machines found</p>
+          {isOwner && (
             <button
-              key={filter}
-              onClick={() => setSelectedFilter(filter)}
-              className={`px-5 py-2 rounded-xl text-sm font-semibold whitespace-nowrap transition capitalize ${
-                selectedFilter === filter
-                  ? "bg-gradient-to-r from-blue-600 to-cyan-600 text-white shadow-lg"
-                  : "bg-gray-100 text-gray-700"
-              }`}
+              onClick={() => setShowAddMachineForm(true)}
+              className="mt-4 px-6 py-2 bg-gradient-to-r from-blue-600 to-cyan-600 text-white rounded-xl font-semibold"
             >
-              {filter === "All" ? "All" : `${filter}s`}
+              Add Your First Machine
             </button>
-          ))}
+          )}
         </div>
-
-        {/* Location Search */}
-        <div className="mb-4">
-          <div className="relative">
-            <input
-              type="text"
-              placeholder="🔍 Search by city, commune, or quartier..."
-              value={locationFilter}
-              onChange={(e) => setLocationFilter(e.target.value)}
-              className="w-full px-4 py-3 pl-12 border-2 border-gray-200 rounded-xl focus:border-blue-500 focus:outline-none"
-            />
-            <span className="absolute left-4 top-1/2 -translate-y-1/2 text-2xl">
-              📍
-            </span>
-            {locationFilter && (
-              <button
-                onClick={() => setLocationFilter("")}
-                className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
-              >
-                ✕
-              </button>
-            )}
-          </div>
-        </div>
-
-        {/* Machine List */}
-        {filteredMachines.length === 0 ? (
-          <div className="bg-white rounded-2xl p-8 text-center shadow-lg">
-            <Tractor size={48} className="mx-auto text-gray-400 mb-3" />
-            <p className="text-gray-600">No machines found</p>
-            {isOwner && (
-              <button
-                onClick={() => setShowAddMachineForm(true)}
-                className="mt-4 px-6 py-2 bg-gradient-to-r from-blue-600 to-cyan-600 text-white rounded-xl font-semibold"
-              >
-                Add Your First Machine
-              </button>
-            )}
-          </div>
-        ) : (
-          <div className="space-y-4">
-            {filteredMachines.map((machine) => (
-              <div
-                key={machine._id}
-                onClick={() => {
-                  setSelectedMachine(machine);
-                  setCurrentView("machineDetail");
-                }}
-                className="bg-white rounded-2xl shadow-lg overflow-hidden cursor-pointer hover:shadow-2xl transition hover:scale-[1.02]"
-              >
-                <div className="relative">
-                  <img
-                    src={
-                      machine.images?.[0] ||
-                      "https://images.unsplash.com/photo-1625246333195-78d9c38ad449?w=400"
-                    }
-                    alt={machine.name}
-                    className="w-full h-48 object-cover"
-                  />
-                  <span
-                    className={`absolute top-3 right-3 px-4 py-2 rounded-xl text-xs font-bold shadow-lg ${
-                      machine.availability === "available"
-                        ? "bg-emerald-500 text-white"
-                        : machine.availability === "pending"
-                        ? "bg-amber-500 text-white"
-                        : machine.availability === "rented"
-                        ? "bg-blue-500 text-white"
-                        : "bg-rose-500 text-white"
-                    }`}
-                  >
-                    {machine.availability === "available" && "✅ Available"}
-                    {machine.availability === "pending" && "⏳ Pending"}
-                    {machine.availability === "rented" && "🔒 Rented"}
-                    {machine.availability === "unavailable" && "❌ Unavailable"}
-                  </span>
-                </div>
-                <div className="p-4">
-                  <h3 className="text-lg font-bold text-gray-800">
-                    {machine.name}
-                  </h3>
-                  {/* LOCATION */}
-                  <div className="bg-blue-50 border-2 border-blue-200 rounded-lg p-3 my-3">
-                    <div className="flex items-start gap-2">
-                      <span className="text-blue-600 text-xl mt-0.5">📍</span>
-                      <div className="flex-1">
-                        <p className="text-lg font-bold text-blue-900 leading-tight">
-                          {machine.address?.city || "Location N/A"}
-                          {machine.address?.commune &&
-                            `, ${machine.address.commune}`}
+      ) : (
+        <div className="space-y-4">
+          {filteredMachines.map((machine) => (
+            <div
+              key={machine._id}
+              onClick={() => {
+                setSelectedMachine(machine);
+                setCurrentView("machineDetail");
+              }}
+              className="bg-white rounded-2xl shadow-lg overflow-hidden cursor-pointer hover:shadow-2xl transition hover:scale-[1.02]"
+            >
+              <div className="relative">
+                <img
+                  src={
+                    machine.images?.[0] ||
+                    "https://images.unsplash.com/photo-1625246333195-78d9c38ad449?w=400"
+                  }
+                  alt={machine.name}
+                  className="w-full h-48 object-cover"
+                />
+                <span
+                  className={`absolute top-3 right-3 px-4 py-2 rounded-xl text-xs font-bold shadow-lg ${
+                    machine.availability === "available"
+                      ? "bg-emerald-500 text-white"
+                      : machine.availability === "pending"
+                      ? "bg-amber-500 text-white"
+                      : machine.availability === "rented"
+                      ? "bg-blue-500 text-white"
+                      : "bg-rose-500 text-white"
+                  }`}
+                >
+                  {machine.availability === "available" && "✅ Available"}
+                  {machine.availability === "pending" && "⏳ Pending"}
+                  {machine.availability === "rented" && "🔒 Rented"}
+                  {machine.availability === "unavailable" && "❌ Unavailable"}
+                </span>
+              </div>
+              <div className="p-4">
+                <h3 className="text-lg font-bold text-gray-800">
+                  {machine.name}
+                </h3>
+                {/* LOCATION */}
+                <div className="bg-blue-50 border-2 border-blue-200 rounded-lg p-3 my-3">
+                  <div className="flex items-start gap-2">
+                    <span className="text-blue-600 text-xl mt-0.5">📍</span>
+                    <div className="flex-1">
+                      <p className="text-lg font-bold text-blue-900 leading-tight">
+                        {machine.address?.city || "Location N/A"}
+                        {machine.address?.commune &&
+                          `, ${machine.address.commune}`}
+                      </p>
+                      {machine.address?.quartier && (
+                        <p className="text-sm font-semibold text-blue-700 mt-0.5">
+                          Quartier: {machine.address.quartier}
                         </p>
-                        {machine.address?.quartier && (
-                          <p className="text-sm font-semibold text-blue-700 mt-0.5">
-                            Quartier: {machine.address.quartier}
-                          </p>
-                        )}
-                        <p className="text-xs text-blue-600 font-medium mt-1">
-                          {machine.address?.province || "Province N/A"}
-                        </p>
-                      </div>
+                      )}
+                      <p className="text-xs text-blue-600 font-medium mt-1">
+                        {machine.address?.province || "Province N/A"}
+                      </p>
                     </div>
                   </div>
-                  <p className="text-sm text-gray-500 mt-1 capitalize">
-                    {machine.category} • {machine.brand}
-                  </p>
-                  <div className="flex items-center gap-1 mt-2">
-                    <Star size={16} className="text-amber-400 fill-amber-400" />
-                    <span className="text-sm font-semibold">
-                      {(machine.rating?.average || 0).toFixed(1)}
+                </div>
+                <p className="text-sm text-gray-500 mt-1 capitalize">
+                  {machine.category} • {machine.brand}
+                </p>
+                <div className="flex items-center gap-1 mt-2">
+                  <Star size={16} className="text-amber-400 fill-amber-400" />
+                  <span className="text-sm font-semibold">
+                    {(machine.rating?.average || 0).toFixed(1)}
+                  </span>
+                  {machine.rating?.count > 0 && (
+                    <span className="text-xs text-gray-500">
+                      ({machine.rating.count} review
+                      {machine.rating.count !== 1 ? "s" : ""})
                     </span>
-                    {machine.rating?.count > 0 && (
-                      <span className="text-xs text-gray-500">
-                        ({machine.rating.count} review
-                        {machine.rating.count !== 1 ? "s" : ""})
+                  )}
+                </div>
+                <div className="mt-4">
+                  {machine.pricingType === "daily" && (
+                    <div className="flex justify-between items-center">
+                      <span className="text-2xl font-bold bg-gradient-to-r from-blue-600 to-cyan-600 bg-clip-text text-transparent">
+                        ${machine.pricePerDay}/day
                       </span>
-                    )}
-                  </div>
-                  <div className="mt-4">
-                    {machine.pricingType === "daily" && (
+                      <span className="text-sm text-gray-600 font-medium">
+                        {machine.specifications?.horsepower || 0} HP
+                      </span>
+                    </div>
+                  )}
+                  {machine.pricingType === "per_hectare" && (
+                    <div className="flex justify-between items-center">
+                      <span className="text-2xl font-bold bg-gradient-to-r from-emerald-600 to-teal-600 bg-clip-text text-transparent">
+                        ${machine.pricePerHectare}/Ha
+                      </span>
+                      <span className="text-sm text-gray-600 font-medium">
+                        Min {machine.minimumHectares} Ha
+                      </span>
+                    </div>
+                  )}
+                  {machine.pricingType === "both" && (
+                    <div className="space-y-1">
                       <div className="flex justify-between items-center">
                         <span className="text-2xl font-bold bg-gradient-to-r from-blue-600 to-cyan-600 bg-clip-text text-transparent">
                           ${machine.pricePerDay}/day
@@ -906,42 +902,21 @@ export default function Dashboard({ user: currentUser, onLogout }) {
                           {machine.specifications?.horsepower || 0} HP
                         </span>
                       </div>
-                    )}
-                    {machine.pricingType === "per_hectare" && (
-                      <div className="flex justify-between items-center">
-                        <span className="text-2xl font-bold bg-gradient-to-r from-emerald-600 to-teal-600 bg-clip-text text-transparent">
-                          ${machine.pricePerHectare}/Ha
-                        </span>
-                        <span className="text-sm text-gray-600 font-medium">
-                          Min {machine.minimumHectares} Ha
-                        </span>
+                      <div className="text-sm text-gray-600 italic">
+                        or ${machine.pricePerHectare}/hectare (min{" "}
+                        {machine.minimumHectares} Ha)
                       </div>
-                    )}
-                    {machine.pricingType === "both" && (
-                      <div className="space-y-1">
-                        <div className="flex justify-between items-center">
-                          <span className="text-2xl font-bold bg-gradient-to-r from-blue-600 to-cyan-600 bg-clip-text text-transparent">
-                            ${machine.pricePerDay}/day
-                          </span>
-                          <span className="text-sm text-gray-600 font-medium">
-                            {machine.specifications?.horsepower || 0} HP
-                          </span>
-                        </div>
-                        <div className="text-sm text-gray-600 italic">
-                          or ${machine.pricePerHectare}/hectare (min{" "}
-                          {machine.minimumHectares} Ha)
-                        </div>
-                      </div>
-                    )}
-                  </div>
+                    </div>
+                  )}
                 </div>
               </div>
-            ))}
-          </div>
-        )}
-      </div>
-    );
-  };
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
 
   // ============== MACHINE DETAIL SCREEN ==============
   const MachineDetailScreen = () => {
