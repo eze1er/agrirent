@@ -2264,6 +2264,410 @@ const MachinesScreen = () => {
     );
   };
 
+// ============== ADMIN DASHBOARD SCREEN ==============
+const AdminDashboardScreen = () => {
+  const [stats, setStats] = useState(null);
+  const [allRentals, setAllRentals] = useState([]);
+  const [allUsers, setAllUsers] = useState([]);
+  const [loadingStats, setLoadingStats] = useState(true);
+  const [activeTab, setActiveTab] = useState('overview'); // overview, rentals, users
+  const [searchTerm, setSearchTerm] = useState('');
+  const [statusFilter, setStatusFilter] = useState('all');
+
+  useEffect(() => {
+    if (currentView === 'adminDashboard') {
+      fetchAdminData();
+    }
+  }, [currentView]);
+
+  const fetchAdminData = async () => {
+    setLoadingStats(true);
+    try {
+      const token = localStorage.getItem('token');
+      
+      // Fetch overview stats
+      const statsRes = await fetch('http://localhost:3001/api/admin/dashboard/overview', {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      const statsData = await statsRes.json();
+      if (statsData.success) setStats(statsData.data);
+
+      // Fetch all rentals
+      const rentalsRes = await fetch('http://localhost:3001/api/admin/rentals/all', {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      const rentalsData = await rentalsRes.json();
+      if (rentalsData.success) setAllRentals(rentalsData.data.rentals);
+
+      // Fetch all users
+      const usersRes = await fetch('http://localhost:3001/api/admin/users/all', {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      const usersData = await usersRes.json();
+      if (usersData.success) setAllUsers(usersData.data.users);
+
+    } catch (error) {
+      console.error('Error fetching admin data:', error);
+    } finally {
+      setLoadingStats(false);
+    }
+  };
+
+  const exportToCSV = async () => {
+    try {
+      const token = localStorage.getItem('token');
+      const response = await fetch(
+        `http://localhost:3001/api/admin/export/rentals?format=csv&status=${statusFilter}`,
+        { headers: { 'Authorization': `Bearer ${token}` } }
+      );
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `agrirent-rentals-${Date.now()}.csv`;
+      a.click();
+    } catch (error) {
+      console.error('Export error:', error);
+      alert('Failed to export data');
+    }
+  };
+
+  const filteredRentals = allRentals.filter(rental => {
+    const matchesStatus = statusFilter === 'all' || rental.status === statusFilter;
+    const matchesSearch = !searchTerm || 
+      rental.renterId?.firstName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      rental.renterId?.lastName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      rental.ownerId?.firstName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      rental.ownerId?.lastName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      rental.machineId?.name?.toLowerCase().includes(searchTerm.toLowerCase());
+    
+    return matchesStatus && matchesSearch;
+  });
+
+  const filteredUsers = allUsers.filter(user => {
+    if (!searchTerm) return true;
+    return user.firstName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+           user.lastName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+           user.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+           user.phoneNumber?.includes(searchTerm);
+  });
+
+  if (loadingStats) {
+    return (
+      <div className="p-4">
+        <BackButton onClick={() => setCurrentView('profile')} />
+        <div className="flex items-center justify-center h-64">
+          <div className="text-center">
+            <div className="w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-2"></div>
+            <p className="text-gray-600">Loading admin data...</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="p-4">
+      <BackButton onClick={() => setCurrentView('profile')} label="Back to Profile" />
+      
+      {/* Header */}
+      <div className="mb-6">
+        <h2 className="text-3xl font-bold bg-gradient-to-r from-purple-600 to-pink-600 bg-clip-text text-transparent">
+          Admin Dashboard
+        </h2>
+        <p className="text-gray-600 text-sm">Manage all rentals and users</p>
+      </div>
+
+      {/* Tabs */}
+      <div className="flex gap-2 mb-6 overflow-x-auto">
+        <button
+          onClick={() => setActiveTab('overview')}
+          className={`px-4 py-2 rounded-xl font-semibold whitespace-nowrap transition ${
+            activeTab === 'overview'
+              ? 'bg-purple-600 text-white'
+              : 'bg-white text-gray-700'
+          }`}
+        >
+          Overview
+        </button>
+        <button
+          onClick={() => setActiveTab('rentals')}
+          className={`px-4 py-2 rounded-xl font-semibold whitespace-nowrap transition ${
+            activeTab === 'rentals'
+              ? 'bg-purple-600 text-white'
+              : 'bg-white text-gray-700'
+          }`}
+        >
+          All Rentals ({allRentals.length})
+        </button>
+        <button
+          onClick={() => setActiveTab('users')}
+          className={`px-4 py-2 rounded-xl font-semibold whitespace-nowrap transition ${
+            activeTab === 'users'
+              ? 'bg-purple-600 text-white'
+              : 'bg-white text-gray-700'
+          }`}
+        >
+          Users ({allUsers.length})
+        </button>
+      </div>
+
+      {/* Overview Tab */}
+      {activeTab === 'overview' && stats && (
+        <div className="space-y-4">
+          {/* Stats Grid */}
+          <div className="grid grid-cols-2 gap-4">
+            <div className="bg-gradient-to-br from-blue-500 to-cyan-500 rounded-2xl p-4 text-white shadow-lg">
+              <p className="text-sm opacity-90 mb-1">Total Users</p>
+              <p className="text-3xl font-bold">{stats.users?.total || 0}</p>
+              <p className="text-xs opacity-75 mt-1">
+                {stats.users?.owners || 0} owners, {stats.users?.renters || 0} renters
+              </p>
+            </div>
+            <div className="bg-gradient-to-br from-green-500 to-emerald-500 rounded-2xl p-4 text-white shadow-lg">
+              <p className="text-sm opacity-90 mb-1">Machines</p>
+              <p className="text-3xl font-bold">{stats.machines?.total || 0}</p>
+              <p className="text-xs opacity-75 mt-1">
+                {stats.machines?.available || 0} available
+              </p>
+            </div>
+            <div className="bg-gradient-to-br from-purple-500 to-pink-500 rounded-2xl p-4 text-white shadow-lg">
+              <p className="text-sm opacity-90 mb-1">Active Rentals</p>
+              <p className="text-3xl font-bold">{stats.rentals?.active || 0}</p>
+              <p className="text-xs opacity-75 mt-1">
+                {stats.rentals?.pending || 0} pending
+              </p>
+            </div>
+            <div className="bg-gradient-to-br from-amber-500 to-orange-500 rounded-2xl p-4 text-white shadow-lg">
+              <p className="text-sm opacity-90 mb-1">Revenue</p>
+              <p className="text-2xl font-bold">${stats.revenue?.total?.toFixed(2) || '0.00'}</p>
+              <p className="text-xs opacity-75 mt-1">
+                ${stats.revenue?.escrow?.toFixed(2) || '0.00'} in escrow
+              </p>
+            </div>
+          </div>
+
+          {/* Quick Actions */}
+          <div className="bg-white rounded-2xl p-4 shadow-sm">
+            <h3 className="font-bold text-gray-900 mb-3">Quick Actions</h3>
+            <div className="space-y-2">
+              <button
+                onClick={() => setActiveTab('rentals')}
+                className="w-full flex items-center justify-between p-3 bg-blue-50 hover:bg-blue-100 rounded-xl transition"
+              >
+                <span className="font-semibold text-blue-900">View All Rentals</span>
+                <span className="text-blue-600">→</span>
+              </button>
+              <button
+                onClick={() => setActiveTab('users')}
+                className="w-full flex items-center justify-between p-3 bg-purple-50 hover:bg-purple-100 rounded-xl transition"
+              >
+                <span className="font-semibold text-purple-900">Manage Users</span>
+                <span className="text-purple-600">→</span>
+              </button>
+              <button
+                onClick={exportToCSV}
+                className="w-full flex items-center justify-between p-3 bg-green-50 hover:bg-green-100 rounded-xl transition"
+              >
+                <span className="font-semibold text-green-900">Export Data (CSV)</span>
+                <span className="text-green-600">📥</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Rentals Tab */}
+      {activeTab === 'rentals' && (
+        <div className="space-y-4">
+          {/* Search and Filters */}
+          <div className="bg-white rounded-2xl p-4 shadow-sm space-y-3">
+            <input
+              type="text"
+              placeholder="Search rentals..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="w-full px-4 py-2 border-2 border-gray-200 rounded-xl focus:border-purple-500 focus:outline-none"
+            />
+            <div className="flex gap-2 overflow-x-auto">
+              {['all', 'pending', 'approved', 'active', 'completed', 'cancelled'].map(status => (
+                <button
+                  key={status}
+                  onClick={() => setStatusFilter(status)}
+                  className={`px-4 py-2 rounded-xl font-semibold whitespace-nowrap transition ${
+                    statusFilter === status
+                      ? 'bg-purple-600 text-white'
+                      : 'bg-gray-100 text-gray-700'
+                  }`}
+                >
+                  {status === 'all' ? 'All' : status.charAt(0).toUpperCase() + status.slice(1)}
+                </button>
+              ))}
+            </div>
+            <button
+              onClick={exportToCSV}
+              className="w-full px-4 py-2 bg-green-600 text-white rounded-xl font-semibold"
+            >
+              📥 Export to CSV
+            </button>
+          </div>
+
+          {/* Rentals List */}
+          <div className="space-y-3">
+            {filteredRentals.length === 0 ? (
+              <div className="bg-white rounded-2xl p-8 text-center text-gray-500">
+                No rentals found
+              </div>
+            ) : (
+              filteredRentals.map(rental => (
+                <div key={rental._id} className="bg-white rounded-2xl p-4 shadow-sm">
+                  {/* Machine Info */}
+                  <div className="flex justify-between items-start mb-3">
+                    <div>
+                      <h3 className="font-bold text-gray-900">{rental.machineId?.name}</h3>
+                      <p className="text-sm text-gray-500">{rental.machineId?.category}</p>
+                    </div>
+                    <span className={`px-3 py-1 rounded-full text-xs font-bold ${
+                      rental.status === 'active' ? 'bg-green-100 text-green-800' :
+                      rental.status === 'pending' ? 'bg-amber-100 text-amber-800' :
+                      rental.status === 'completed' ? 'bg-blue-100 text-blue-800' :
+                      'bg-gray-100 text-gray-800'
+                    }`}>
+                      {rental.status}
+                    </span>
+                  </div>
+
+                  {/* Contact Info Grid */}
+                  <div className="grid grid-cols-2 gap-3 text-sm border-t pt-3">
+                    {/* Renter */}
+                    <div>
+                      <p className="font-semibold text-gray-700 mb-1">🙋 Renter:</p>
+                      <p className="text-gray-900 font-medium">
+                        {rental.renterId?.firstName} {rental.renterId?.lastName}
+                      </p>
+                      <a 
+                        href={`mailto:${rental.renterId?.email}`}
+                        className="text-blue-600 text-xs block truncate"
+                      >
+                        📧 {rental.renterId?.email}
+                      </a>
+                      <a 
+                        href={`tel:${rental.renterId?.phoneNumber}`}
+                        className="text-green-600 text-xs block"
+                      >
+                        📱 {rental.renterId?.phoneNumber || 'N/A'}
+                      </a>
+                    </div>
+
+                    {/* Owner */}
+                    <div>
+                      <p className="font-semibold text-gray-700 mb-1">👤 Owner:</p>
+                      <p className="text-gray-900 font-medium">
+                        {rental.ownerId?.firstName} {rental.ownerId?.lastName}
+                      </p>
+                      <a 
+                        href={`mailto:${rental.ownerId?.email}`}
+                        className="text-blue-600 text-xs block truncate"
+                      >
+                        📧 {rental.ownerId?.email}
+                      </a>
+                      <a 
+                        href={`tel:${rental.ownerId?.phoneNumber}`}
+                        className="text-green-600 text-xs block"
+                      >
+                        📱 {rental.ownerId?.phoneNumber || 'N/A'}
+                      </a>
+                    </div>
+                  </div>
+
+                  {/* Amount and Date */}
+                  <div className="flex justify-between items-center mt-3 pt-3 border-t">
+                    <span className="text-xl font-bold text-purple-600">
+                      ${rental.pricing?.totalPrice?.toFixed(2)}
+                    </span>
+                    <span className="text-xs text-gray-500">
+                      {new Date(rental.createdAt).toLocaleDateString()}
+                    </span>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Users Tab */}
+      {activeTab === 'users' && (
+        <div className="space-y-4">
+          {/* Search */}
+          <div className="bg-white rounded-2xl p-4 shadow-sm">
+            <input
+              type="text"
+              placeholder="Search users by name, email, or phone..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="w-full px-4 py-2 border-2 border-gray-200 rounded-xl focus:border-purple-500 focus:outline-none"
+            />
+          </div>
+
+          {/* Users List */}
+          <div className="space-y-3">
+            {filteredUsers.length === 0 ? (
+              <div className="bg-white rounded-2xl p-8 text-center text-gray-500">
+                No users found
+              </div>
+            ) : (
+              filteredUsers.map(user => (
+                <div key={user._id} className="bg-white rounded-2xl p-4 shadow-sm">
+                  <div className="flex items-start gap-3">
+                    {/* Avatar */}
+                    <div className="w-12 h-12 bg-gradient-to-br from-purple-500 to-pink-500 rounded-full flex items-center justify-center text-white font-bold text-lg flex-shrink-0">
+                      {user.firstName?.[0]}{user.lastName?.[0]}
+                    </div>
+
+                    {/* User Info */}
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 mb-1">
+                        <h3 className="font-bold text-gray-900">
+                          {user.firstName} {user.lastName}
+                        </h3>
+                        <span className="px-2 py-1 bg-blue-100 text-blue-800 text-xs font-bold rounded">
+                          {user.role}
+                        </span>
+                      </div>
+                      <a 
+                        href={`mailto:${user.email}`}
+                        className="text-blue-600 text-sm block truncate"
+                      >
+                        📧 {user.email}
+                      </a>
+                      {user.phoneNumber && (
+                        <a 
+                          href={`tel:${user.phoneNumber}`}
+                          className="text-green-600 text-sm block"
+                        >
+                          📱 {user.phoneNumber}
+                        </a>
+                      )}
+
+                      {/* User Stats */}
+                      {user.stats && (
+                        <div className="flex gap-4 mt-2 text-xs text-gray-600">
+                          <span>📦 {user.stats.totalRentalsAsRenter} rentals</span>
+                          <span>🚜 {user.stats.activeMachines} machines</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
   // ============== EDIT MACHINE FORM ==============
   const EditMachineForm = () => {
     const [formData, setFormData] = useState({

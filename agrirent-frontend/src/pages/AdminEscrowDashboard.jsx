@@ -1,391 +1,916 @@
 import { useState, useEffect } from 'react';
-import { DollarSign, Clock, CheckCircle, TrendingUp, AlertCircle, ArrowLeft } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { 
+  ArrowLeft, 
+  CheckCircle, 
+  XCircle, 
+  AlertTriangle, 
+  DollarSign, 
+  Calendar, 
+  User, 
+  Shield,
+  LogOut,
+  LayoutDashboard,
+  Menu,
+  X,
+  TrendingUp,
+  Clock,
+  Percent,
+  MessageSquare,
+  Eye,
+  Send
+} from 'lucide-react';
 
-export default function AdminEscrowDashboard() {
-  const [stats, setStats] = useState(null);
-  const [pendingReleases, setPendingReleases] = useState([]);
+export default function AdminEscrowDashboard({ user, onLogout }) {
+  const navigate = useNavigate();
+  const [escrowData, setEscrowData] = useState(null);
+  const [rentals, setRentals] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [releasing, setReleasing] = useState(null);
-  const [error, setError] = useState('');
+  const [filter, setFilter] = useState('pending');
+  const [selectedRental, setSelectedRental] = useState(null);
+  const [showReleaseModal, setShowReleaseModal] = useState(false);
+  const [showRejectModal, setShowRejectModal] = useState(false);
+  const [showDetailsModal, setShowDetailsModal] = useState(false);
+  const [adminNote, setAdminNote] = useState('');
+  const [processing, setProcessing] = useState(false);
+  const [showMobileMenu, setShowMobileMenu] = useState(false);
 
-  // Fetch dashboard stats
-  const fetchStats = async () => {
-    try {
-      const token = localStorage.getItem('token');
-      const response = await fetch('http://localhost:3001/api/payments/admin/dashboard-stats', {
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
-      });
-      const data = await response.json();
-      if (data.success) {
-        setStats(data.data);
-      }
-    } catch (error) {
-      console.error('Error fetching stats:', error);
-      setError('Failed to load dashboard stats');
+  const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:3001/api';
+
+  useEffect(() => {
+    if (user?.role !== 'admin') {
+      alert('⚠️ Access denied. Admin privileges required.');
+      navigate('/');
+      return;
     }
-  };
+    fetchEscrowData();
+  }, [user, navigate]);
 
-  // Fetch pending releases
-  const fetchPendingReleases = async () => {
+  const fetchEscrowData = async () => {
+    setLoading(true);
     try {
       const token = localStorage.getItem('token');
-      const response = await fetch('http://localhost:3001/api/payments/admin/pending-releases', {
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
+      const response = await fetch(`${API_BASE}/admin/escrow/overview`, {
+        headers: { 'Authorization': `Bearer ${token}` }
       });
+      
       const data = await response.json();
+      
       if (data.success) {
-        setPendingReleases(data.data);
+        setEscrowData(data.data);
+        setRentals(data.data.rentals || []);
+      } else {
+        await fetchRentalsFallback();
       }
     } catch (error) {
-      console.error('Error fetching pending releases:', error);
-      setError('Failed to load pending releases');
+      console.log('⚠️ Using fallback...');
+      await fetchRentalsFallback();
     } finally {
       setLoading(false);
     }
   };
 
-  // Release payment
-  const handleRelease = async (paymentId) => {
-    if (!confirm('Are you sure you want to release this payment to the owner?')) return;
-    
-    setReleasing(paymentId);
+  const fetchRentalsFallback = async () => {
     try {
       const token = localStorage.getItem('token');
-      const response = await fetch(`http://localhost:3001/api/payments/admin/release-payment/${paymentId}`, {
+      const fallbackResponse = await fetch(`${API_BASE}/rentals`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      const fallbackData = await fallbackResponse.json();
+      
+      if (fallbackData.success) {
+        const rentalsWithPayment = fallbackData.data.filter(r => 
+          r.payment && r.payment.status
+        );
+        setRentals(rentalsWithPayment);
+        const stats = calculateStats(rentalsWithPayment);
+        setEscrowData(stats);
+      }
+    } catch (fallbackError) {
+      console.error('❌ Fallback failed:', fallbackError);
+      alert('Failed to load escrow data. Please refresh the page.');
+    }
+  };
+
+  const calculateStats = (rentals) => {
+    const stats = {
+      totalInEscrow: 0,
+      pendingApproval: 0,
+      completedPayments: 0,
+      disputedPayments: 0,
+      totalRevenue: 0,
+      platformFees: 0,
+      ownerPayouts: 0,
+      rentals: rentals
+    };
+
+    rentals.forEach(rental => {
+      const amount = rental.pricing?.totalPrice || 0;
+      const platformFee = amount * 0.10;
+
+      if (rental.payment?.status === 'held_in_escrow') {
+        stats.totalInEscrow += amount;
+        if (rental.renterConfirmedCompletion) {
+          stats.pendingApproval += 1;
+        }
+      }
+
+      if (rental.payment?.status === 'completed') {
+        stats.completedPayments += 1;
+        stats.totalRevenue += amount;
+        stats.platformFees += platformFee;
+        stats.ownerPayouts += (amount - platformFee);
+      }
+
+      if (rental.status === 'disputed') {
+        stats.disputedPayments += 1;
+      }
+    });
+
+    return stats;
+  };
+
+  const handleReleasePayment = async () => {
+    if (!adminNote.trim() || adminNote.length < 10) {
+      alert('❌ Please provide detailed verification notes (minimum 10 characters)');
+      return;
+    }
+
+    const amount = selectedRental.pricing?.totalPrice || 0;
+    const platformFee = amount * 0.10;
+    const ownerPayout = amount - platformFee;
+
+    if (!window.confirm(
+      `🔐 CONFIRM PAYMENT RELEASE:\n\n` +
+      `Total Amount: $${amount.toFixed(2)}\n` +
+      `Platform Fee (10%): $${platformFee.toFixed(2)}\n` +
+      `Owner Receives: $${ownerPayout.toFixed(2)}\n\n` +
+      `This action cannot be undone. Continue?`
+    )) {
+      return;
+    }
+
+    try {
+      setProcessing(true);
+      const token = localStorage.getItem('token');
+      
+      // ✅ FIXED: Use /api/payments/admin/release
+      const response = await fetch(`${API_BASE}/payments/admin/release/${selectedRental._id}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`
         },
         body: JSON.stringify({
-          adminNote: 'Payment released by admin - service confirmed complete'
+          adminNote: adminNote,
+          platformFee: platformFee,
+          ownerPayout: ownerPayout
         })
       });
-      
+
       const data = await response.json();
+
       if (data.success) {
-        alert('✅ Payment released successfully!\n\nOwner will receive: $' + data.data.ownerPayout.toFixed(2) + '\nPlatform fee: $' + data.data.platformFee.toFixed(2));
-        fetchStats();
-        fetchPendingReleases();
+        alert(
+          `✅ Payment Released Successfully!\n\n` +
+          `Owner receives: $${ownerPayout.toFixed(2)}\n` +
+          `Platform earned: $${platformFee.toFixed(2)}\n\n` +
+          `Owner has been notified.`
+        );
+        setShowReleaseModal(false);
+        setSelectedRental(null);
+        setAdminNote('');
+        await fetchEscrowData();
       } else {
-        alert('❌ Error: ' + data.message);
+        throw new Error(data.message || 'Failed to release payment');
       }
     } catch (error) {
-      console.error('Error releasing payment:', error);
-      alert('❌ Failed to release payment. Please try again.');
+      console.error('Release error:', error);
+      alert(`❌ Failed to release payment: ${error.message}`);
     } finally {
-      setReleasing(null);
+      setProcessing(false);
     }
   };
 
-  useEffect(() => {
-    fetchStats();
-    fetchPendingReleases();
-    
-    // Auto-refresh every 30 seconds
-    const interval = setInterval(() => {
-      fetchStats();
-      fetchPendingReleases();
-    }, 30000);
-    
-    return () => clearInterval(interval);
-  }, []);
+  const handleRejectRelease = async () => {
+    if (!adminNote.trim() || adminNote.length < 20) {
+      alert('❌ Please provide a detailed reason for rejection (minimum 20 characters)');
+      return;
+    }
 
-  const platformFeePercent = 10;
+    try {
+      setProcessing(true);
+      const token = localStorage.getItem('token');
+      
+      // ✅ FIXED: Use /api/payments/admin/reject
+      const response = await fetch(`${API_BASE}/payments/admin/reject/${selectedRental._id}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          reason: adminNote
+        })
+      });
+
+      const data = await response.json();
+
+      if (data.success) {
+        alert('❌ Release Rejected. Both parties have been notified.');
+        setShowRejectModal(false);
+        setSelectedRental(null);
+        setAdminNote('');
+        await fetchEscrowData();
+      } else {
+        throw new Error(data.message || 'Failed to reject release');
+      }
+    } catch (error) {
+      console.error('Reject error:', error);
+      alert(`❌ Failed to reject release: ${error.message}`);
+    } finally {
+      setProcessing(false);
+    }
+  };
+
+  const getFilteredRentals = () => {
+    switch (filter) {
+      case 'pending':
+        return rentals.filter(r => 
+          r.renterConfirmedCompletion && 
+          r.payment?.status === 'held_in_escrow'
+        );
+      case 'escrow':
+        return rentals.filter(r => r.payment?.status === 'held_in_escrow');
+      case 'completed':
+        return rentals.filter(r => r.payment?.status === 'completed');
+      case 'disputed':
+        return rentals.filter(r => r.status === 'disputed');
+      case 'all':
+        return rentals;
+      default:
+        return rentals;
+    }
+  };
+
+  const filteredRentals = getFilteredRentals();
+
+  const handleLogoutClick = () => {
+    if (window.confirm('Are you sure you want to logout?')) {
+      onLogout();
+      navigate('/');
+    }
+  };
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-gray-50 to-blue-50 flex items-center justify-center">
+      <div className="min-h-screen bg-gradient-to-br from-gray-50 to-rose-50 flex items-center justify-center">
         <div className="text-center">
-          <div className="w-16 h-16 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-          <p className="text-xl text-gray-600">Loading admin dashboard...</p>
+          <div className="w-16 h-16 border-4 border-rose-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+          <p className="text-gray-600 font-semibold">Loading escrow dashboard...</p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-50 to-blue-50">
-      <div className="max-w-7xl mx-auto p-4 md:p-8">
+    <div className="min-h-screen bg-gradient-to-br from-gray-50 to-rose-50 pb-20">
+      {/* Header */}
+      <div className="bg-gradient-to-r from-rose-600 to-red-600 text-white shadow-xl">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="flex items-center justify-between py-4 border-b border-white/20">
+            <div className="flex items-center gap-3">
+              <button
+                onClick={() => navigate('/admin/dashboard')}
+                className="p-2 hover:bg-white/20 rounded-xl transition"
+              >
+                <ArrowLeft size={24} />
+              </button>
+              <div className="flex items-center gap-2">
+                <Shield size={32} />
+                <div>
+                  <h1 className="text-xl sm:text-2xl font-bold">Escrow Management</h1>
+                  <p className="text-xs sm:text-sm text-rose-100">Payment verification & release</p>
+                </div>
+              </div>
+            </div>
+
+            {/* Desktop Nav */}
+            <div className="hidden md:flex items-center gap-3">
+              <button
+                onClick={() => navigate('/admin/dashboard')}
+                className="flex items-center gap-2 px-4 py-2 bg-white/10 hover:bg-white/20 rounded-lg transition font-semibold"
+              >
+                <LayoutDashboard size={20} />
+                Dashboard
+              </button>
+              <div className="flex items-center gap-2 px-4 py-2 bg-white/10 rounded-lg">
+                <User size={20} />
+                <span className="font-semibold text-sm">{user?.email}</span>
+              </div>
+              <button
+                onClick={handleLogoutClick}
+                className="flex items-center gap-2 px-4 py-2 bg-red-700 hover:bg-red-800 rounded-lg transition font-semibold"
+              >
+                <LogOut size={20} />
+                Logout
+              </button>
+            </div>
+
+            {/* Mobile Menu */}
+            <button 
+              onClick={() => setShowMobileMenu(!showMobileMenu)}
+              className="md:hidden p-2 hover:bg-white/10 rounded-lg"
+            >
+              {showMobileMenu ? <X size={24} /> : <Menu size={24} />}
+            </button>
+          </div>
+
+          {showMobileMenu && (
+            <div className="md:hidden py-4 space-y-2 border-b border-white/20">
+              <button
+                onClick={() => {
+                  navigate('/admin/dashboard');
+                  setShowMobileMenu(false);
+                }}
+                className="w-full flex items-center gap-2 px-4 py-2 bg-white/10 hover:bg-white/20 rounded-lg transition font-semibold"
+              >
+                <LayoutDashboard size={20} />
+                Dashboard
+              </button>
+              <div className="px-4 py-2 bg-white/10 rounded-lg">
+                <span className="text-sm">{user?.email}</span>
+              </div>
+              <button
+                onClick={handleLogoutClick}
+                className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-red-700 hover:bg-red-800 rounded-lg transition font-semibold"
+              >
+                <LogOut size={20} />
+                Logout
+              </button>
+            </div>
+          )}
+
+          {/* Money Stats */}
+          <div className="py-6">
+            <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
+              <StatCard icon={<DollarSign size={20} />} label="In Escrow" value={`$${escrowData?.totalInEscrow?.toFixed(2) || '0.00'}`} sublabel="Held funds" color="yellow" />
+              <StatCard icon={<AlertTriangle size={20} />} label="Pending" value={escrowData?.pendingApproval || 0} sublabel="Need action" color="yellow" />
+              <StatCard icon={<CheckCircle size={20} />} label="Completed" value={escrowData?.completedPayments || 0} sublabel="Released" color="green" />
+              <StatCard icon={<TrendingUp size={20} />} label="Revenue" value={`$${escrowData?.totalRevenue?.toFixed(2) || '0.00'}`} sublabel="All time" color="green" />
+              <StatCard icon={<Percent size={20} />} label="Platform Fees" value={`$${escrowData?.platformFees?.toFixed(2) || '0.00'}`} sublabel="10% earned" color="blue" />
+            </div>
+
+            <div className="grid grid-cols-2 lg:grid-cols-3 gap-4 mt-4">
+              <StatCard icon={<DollarSign size={18} />} label="Owner Payouts" value={`$${escrowData?.ownerPayouts?.toFixed(2) || '0.00'}`} sublabel="90% paid" color="white" />
+              <StatCard icon={<XCircle size={18} />} label="Disputed" value={escrowData?.disputedPayments || 0} sublabel="Need resolution" color="white" />
+              <StatCard icon={<Clock size={18} />} label="Transactions" value={rentals.length} sublabel="All payments" color="white" />
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Filters */}
+      <div className="max-w-7xl mx-auto px-4 mt-6">
+        <div className="bg-white rounded-2xl p-2 shadow-lg flex gap-2 overflow-x-auto">
+          {[
+            { key: 'pending', label: 'Pending Approval', count: escrowData?.pendingApproval },
+            { key: 'escrow', label: 'All in Escrow', count: rentals.filter(r => r.payment?.status === 'held_in_escrow').length },
+            { key: 'disputed', label: 'Disputed', count: escrowData?.disputedPayments },
+            { key: 'completed', label: 'Completed', count: escrowData?.completedPayments },
+            { key: 'all', label: 'All Payments', count: rentals.length }
+          ].map((tab) => (
+            <button
+              key={tab.key}
+              onClick={() => setFilter(tab.key)}
+              className={`px-6 py-3 rounded-xl font-semibold whitespace-nowrap transition ${
+                filter === tab.key
+                  ? 'bg-gradient-to-r from-rose-500 to-red-500 text-white shadow-lg'
+                  : 'text-gray-600 hover:bg-gray-100'
+              }`}
+            >
+              {tab.label} ({tab.count || 0})
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Rentals List */}
+      <div className="max-w-7xl mx-auto px-4 mt-6">
+        {filteredRentals.length === 0 ? (
+          <EmptyState filter={filter} />
+        ) : (
+          <div className="space-y-4">
+            {filteredRentals.map((rental) => (
+              <RentalCard 
+                key={rental._id} 
+                rental={rental}
+                onRelease={() => {
+                  setSelectedRental(rental);
+                  setShowReleaseModal(true);
+                  setAdminNote('');
+                }}
+                onReject={() => {
+                  setSelectedRental(rental);
+                  setShowRejectModal(true);
+                  setAdminNote('');
+                }}
+                onViewDetails={() => {
+                  setSelectedRental(rental);
+                  setShowDetailsModal(true);
+                }}
+              />
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Release Modal */}
+      {showReleaseModal && selectedRental && (
+        <ReleaseModal
+          rental={selectedRental}
+          adminNote={adminNote}
+          setAdminNote={setAdminNote}
+          processing={processing}
+          onConfirm={handleReleasePayment}
+          onCancel={() => {
+            setShowReleaseModal(false);
+            setSelectedRental(null);
+            setAdminNote('');
+          }}
+        />
+      )}
+
+      {/* Reject Modal */}
+      {showRejectModal && selectedRental && (
+        <RejectModal
+          rental={selectedRental}
+          adminNote={adminNote}
+          setAdminNote={setAdminNote}
+          processing={processing}
+          onConfirm={handleRejectRelease}
+          onCancel={() => {
+            setShowRejectModal(false);
+            setSelectedRental(null);
+            setAdminNote('');
+          }}
+        />
+      )}
+
+      {/* Details Modal */}
+      {showDetailsModal && selectedRental && (
+        <DetailsModal
+          rental={selectedRental}
+          onClose={() => {
+            setShowDetailsModal(false);
+            setSelectedRental(null);
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+// Stat Card Component
+function StatCard({ icon, label, value, sublabel, color }) {
+  const colorClasses = {
+    yellow: 'text-yellow-300',
+    green: 'text-green-300',
+    blue: 'text-blue-300',
+    white: 'text-white'
+  };
+
+  return (
+    <div className="bg-white/10 backdrop-blur-sm rounded-xl p-4">
+      <div className="flex items-center gap-2 mb-2">
+        <div className={colorClasses[color]}>{icon}</div>
+        <span className="text-xs sm:text-sm font-semibold text-white">{label}</span>
+      </div>
+      <p className="text-2xl sm:text-3xl font-bold text-white">{value}</p>
+      <p className="text-xs text-rose-100 mt-1">{sublabel}</p>
+    </div>
+  );
+}
+
+// Rental Card Component
+function RentalCard({ rental, onRelease, onReject, onViewDetails }) {
+  const amount = rental.pricing?.totalPrice || 0;
+  const platformFee = amount * 0.10;
+  const ownerPayout = amount - platformFee;
+  const showActions = rental.renterConfirmedCompletion && rental.payment?.status === 'held_in_escrow';
+
+  return (
+    <div className="bg-white rounded-2xl shadow-lg overflow-hidden">
+      <div className="p-6">
         {/* Header */}
-        <div className="mb-8">
-          <button
-            onClick={() => window.history.back()}
-            className="flex items-center gap-2 text-blue-600 font-semibold hover:text-blue-700 transition mb-4"
+        <div className="flex items-start justify-between mb-4">
+          <div className="flex-1">
+            <h3 className="text-xl font-bold text-gray-900 mb-1">
+              {rental.machineId?.name || 'Machine'}
+            </h3>
+            <p className="text-sm text-gray-500">{rental.machineId?.category}</p>
+          </div>
+          <span
+            className={`px-4 py-1.5 rounded-full text-xs font-bold ${
+              rental.payment?.status === 'held_in_escrow'
+                ? 'bg-amber-100 text-amber-800'
+                : rental.payment?.status === 'completed'
+                ? 'bg-emerald-100 text-emerald-800'
+                : 'bg-gray-100 text-gray-800'
+            }`}
           >
-            <ArrowLeft size={20} />
-            Back to Dashboard
-          </button>
-          <h1 className="text-3xl md:text-4xl font-bold bg-gradient-to-r from-blue-600 via-cyan-600 to-teal-600 bg-clip-text text-transparent">
-            Admin Escrow Dashboard
-          </h1>
-          <p className="text-gray-600 mt-2">Manage payments and releases</p>
+            {rental.payment?.status?.replace('_', ' ').toUpperCase()}
+          </span>
         </div>
 
-        {error && (
-          <div className="mb-6 bg-rose-100 border border-rose-300 text-rose-700 px-4 py-3 rounded-xl">
-            {error}
+        {/* Money Breakdown */}
+        <div className="bg-gradient-to-r from-blue-50 to-cyan-50 rounded-xl p-4 mb-4">
+          <h4 className="font-bold text-gray-900 mb-3 flex items-center gap-2">
+            <DollarSign size={20} className="text-blue-600" />
+            Payment Breakdown
+          </h4>
+          <div className="grid grid-cols-3 gap-4 text-sm">
+            <div>
+              <p className="text-gray-600 mb-1">Total Amount</p>
+              <p className="text-2xl font-bold text-gray-900">${amount.toFixed(2)}</p>
+            </div>
+            <div>
+              <p className="text-gray-600 mb-1">Platform (10%)</p>
+              <p className="text-2xl font-bold text-blue-600">${platformFee.toFixed(2)}</p>
+            </div>
+            <div>
+              <p className="text-gray-600 mb-1">Owner Gets (90%)</p>
+              <p className="text-2xl font-bold text-emerald-600">${ownerPayout.toFixed(2)}</p>
+            </div>
+          </div>
+        </div>
+
+        {/* Parties */}
+        <div className="grid md:grid-cols-2 gap-4 mb-4 bg-gray-50 rounded-xl p-4">
+          <div>
+            <p className="text-xs text-gray-500 font-semibold mb-1">RENTER</p>
+            <p className="font-bold text-gray-900">{rental.renterId?.firstName} {rental.renterId?.lastName}</p>
+            <p className="text-sm text-gray-600">{rental.renterId?.email}</p>
+            <p className="text-sm text-gray-600">{rental.renterId?.phoneNumber}</p>
+          </div>
+          <div>
+            <p className="text-xs text-gray-500 font-semibold mb-1">OWNER</p>
+            <p className="font-bold text-gray-900">{rental.ownerId?.firstName} {rental.ownerId?.lastName}</p>
+            <p className="text-sm text-gray-600">{rental.ownerId?.email}</p>
+            <p className="text-sm text-gray-600">{rental.ownerId?.phoneNumber}</p>
+          </div>
+        </div>
+
+        {/* Comments Preview */}
+        {(rental.renterConfirmationNote || rental.ownerNote || rental.disputeReason) && (
+          <div className="mb-4">
+            <button
+              onClick={onViewDetails}
+              className="w-full flex items-center justify-between p-4 bg-blue-50 hover:bg-blue-100 rounded-xl transition border-2 border-blue-200"
+            >
+              <div className="flex items-center gap-2">
+                <MessageSquare size={20} className="text-blue-600" />
+                <span className="font-semibold text-blue-900">View All Comments & Details</span>
+              </div>
+              <Eye size={20} className="text-blue-600" />
+            </button>
           </div>
         )}
 
-        {/* Stats Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 md:gap-6 mb-8">
-          {/* Money in Escrow */}
-          <div className="bg-white rounded-2xl shadow-lg p-6 hover:shadow-xl transition">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-gray-600 font-medium">In Escrow</p>
-                <p className="text-3xl font-bold text-orange-600 mt-1">
-                  ${stats?.escrow?.totalHeld?.toFixed(2) || '0.00'}
-                </p>
-                <p className="text-xs text-gray-500 mt-2">
-                  {stats?.escrow?.count || 0} active payment{stats?.escrow?.count !== 1 ? 's' : ''}
-                </p>
-              </div>
-              <div className="bg-orange-100 p-3 rounded-xl">
-                <Clock className="w-8 h-8 text-orange-500" />
-              </div>
-            </div>
-          </div>
-
-          {/* Pending Releases */}
-          <div className="bg-white rounded-2xl shadow-lg p-6 hover:shadow-xl transition">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-gray-600 font-medium">Pending Release</p>
-                <p className="text-3xl font-bold text-yellow-600 mt-1">
-                  {stats?.pendingReleases || 0}
-                </p>
-                <p className="text-xs text-gray-500 mt-2">
-                  Need your action
-                </p>
-              </div>
-              <div className="bg-yellow-100 p-3 rounded-xl">
-                <AlertCircle className="w-8 h-8 text-yellow-500" />
-              </div>
-            </div>
-          </div>
-
-          {/* Total Released */}
-          <div className="bg-white rounded-2xl shadow-lg p-6 hover:shadow-xl transition">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-gray-600 font-medium">Total Released</p>
-                <p className="text-3xl font-bold text-green-600 mt-1">
-                  ${stats?.released?.totalReleased?.toFixed(2) || '0.00'}
-                </p>
-                <p className="text-xs text-gray-500 mt-2">
-                  {stats?.released?.count || 0} transaction{stats?.released?.count !== 1 ? 's' : ''}
-                </p>
-              </div>
-              <div className="bg-green-100 p-3 rounded-xl">
-                <CheckCircle className="w-8 h-8 text-green-500" />
-              </div>
-            </div>
-          </div>
-
-          {/* Platform Fees */}
-          <div className="bg-white rounded-2xl shadow-lg p-6 hover:shadow-xl transition">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-gray-600 font-medium">Platform Fees</p>
-                <p className="text-3xl font-bold text-blue-600 mt-1">
-                  ${stats?.released?.totalFees?.toFixed(2) || '0.00'}
-                </p>
-                <p className="text-xs text-gray-500 mt-2">
-                  {platformFeePercent}% commission
-                </p>
-              </div>
-              <div className="bg-blue-100 p-3 rounded-xl">
-                <TrendingUp className="w-8 h-8 text-blue-500" />
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Pending Releases Section */}
-        <div className="bg-white rounded-2xl shadow-lg mb-8">
-          <div className="px-6 py-5 border-b border-gray-200">
-            <h2 className="text-2xl font-bold text-gray-900">
-              Pending Payment Releases
-              {pendingReleases.length > 0 && (
-                <span className="ml-3 px-3 py-1 bg-yellow-100 text-yellow-800 text-sm font-bold rounded-full">
-                  {pendingReleases.length}
-                </span>
-              )}
-            </h2>
-            <p className="text-sm text-gray-600 mt-1">
-              Renters have confirmed completion. Review and release payments.
+        {/* Renter Confirmation */}
+        {rental.renterConfirmedCompletion && (
+          <div className="bg-green-50 border-l-4 border-green-500 p-4 mb-4 rounded">
+            <p className="text-sm font-semibold text-green-800 mb-1 flex items-center gap-2">
+              <CheckCircle size={16} />
+              ✅ Renter Confirmed Completion
+            </p>
+            {rental.renterConfirmationNote && (
+              <p className="text-sm text-gray-700 italic mt-2">
+                "{rental.renterConfirmationNote}"
+              </p>
+            )}
+            <p className="text-xs text-gray-500 mt-2">
+              Confirmed: {new Date(rental.renterConfirmedAt).toLocaleString()}
             </p>
           </div>
+        )}
 
-          {pendingReleases.length === 0 ? (
-            <div className="p-12 text-center">
-              <div className="bg-green-100 w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-4">
-                <CheckCircle className="w-10 h-10 text-green-600" />
-              </div>
-              <p className="text-gray-600 text-lg font-medium">All caught up!</p>
-              <p className="text-gray-500 text-sm mt-2">No pending releases at the moment</p>
-            </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead className="bg-gray-50">
-                  <tr>
-                    <th className="px-6 py-4 text-left text-xs font-bold text-gray-600 uppercase tracking-wider">
-                      Rental Details
-                    </th>
-                    <th className="px-6 py-4 text-left text-xs font-bold text-gray-600 uppercase tracking-wider">
-                      Owner
-                    </th>
-                    <th className="px-6 py-4 text-left text-xs font-bold text-gray-600 uppercase tracking-wider">
-                      Renter
-                    </th>
-                    <th className="px-6 py-4 text-left text-xs font-bold text-gray-600 uppercase tracking-wider">
-                      Amount
-                    </th>
-                    <th className="px-6 py-4 text-left text-xs font-bold text-gray-600 uppercase tracking-wider">
-                      Confirmed
-                    </th>
-                    <th className="px-6 py-4 text-left text-xs font-bold text-gray-600 uppercase tracking-wider">
-                      Action
-                    </th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-200">
-                  {pendingReleases.map((payment) => {
-                    const platformFee = (payment.amount * platformFeePercent) / 100;
-                    const ownerPayout = payment.amount - platformFee;
-                    
-                    return (
-                      <tr key={payment._id} className="hover:bg-blue-50 transition">
-                        <td className="px-6 py-4">
-                          <div className="flex items-center gap-3">
-                            {payment.rentalId?.machineId?.images?.[0] && (
-                              <img 
-                                src={payment.rentalId.machineId.images[0]} 
-                                alt="Machine"
-                                className="w-12 h-12 rounded-lg object-cover"
-                              />
-                            )}
-                            <div>
-                              <p className="font-semibold text-gray-900">
-                                {payment.rentalId?.machineId?.name || 'Machine'}
-                              </p>
-                              <p className="text-sm text-gray-500">
-                                ID: {payment.rentalId?._id?.slice(-8) || 'N/A'}
-                              </p>
-                            </div>
-                          </div>
-                        </td>
-                        <td className="px-6 py-4">
-                          <div>
-                            <p className="text-sm font-medium text-gray-900">
-                              {payment.ownerId?.firstName} {payment.ownerId?.lastName}
-                            </p>
-                            <p className="text-xs text-gray-500">
-                              {payment.ownerId?.email}
-                            </p>
-                          </div>
-                        </td>
-                        <td className="px-6 py-4">
-                          <div>
-                            <p className="text-sm font-medium text-gray-900">
-                              {payment.userId?.firstName} {payment.userId?.lastName}
-                            </p>
-                            <p className="text-xs text-gray-500">
-                              {payment.userId?.email}
-                            </p>
-                          </div>
-                        </td>
-                        <td className="px-6 py-4">
-                          <div>
-                            <p className="text-sm font-bold text-gray-900">
-                              ${payment.amount.toFixed(2)}
-                            </p>
-                            <p className="text-xs text-gray-500">
-                              Fee: ${platformFee.toFixed(2)}
-                            </p>
-                            <p className="text-xs text-green-600 font-semibold">
-                              Owner: ${ownerPayout.toFixed(2)}
-                            </p>
-                          </div>
-                        </td>
-                        <td className="px-6 py-4">
-                          <div className="text-sm">
-                            <div className="flex items-center gap-1 text-green-600 font-medium mb-1">
-                              <CheckCircle size={14} />
-                              Renter Confirmed
-                            </div>
-                            <p className="text-xs text-gray-500">
-                              {new Date(payment.confirmations?.renterConfirmedAt).toLocaleDateString('en-US', {
-                                month: 'short',
-                                day: 'numeric',
-                                year: 'numeric'
-                              })}
-                            </p>
-                            {payment.confirmations?.renterConfirmationNote && (
-                              <p className="text-xs text-gray-600 italic mt-1 line-clamp-2">
-                                "{payment.confirmations.renterConfirmationNote}"
-                              </p>
-                            )}
-                          </div>
-                        </td>
-                        <td className="px-6 py-4">
-                          <button
-                            onClick={() => handleRelease(payment._id)}
-                            disabled={releasing === payment._id}
-                            className={`px-5 py-2.5 rounded-xl font-bold text-sm transition-all ${
-                              releasing === payment._id
-                                ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                                : 'bg-gradient-to-r from-green-500 to-emerald-600 text-white hover:shadow-lg hover:scale-105'
-                            }`}
-                          >
-                            {releasing === payment._id ? 'Releasing...' : '💰 Release Payment'}
-                          </button>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
+        {/* Actions */}
+        {showActions && (
+          <div className="flex flex-col sm:flex-row gap-3 mt-4">
+            <button
+              onClick={onRelease}
+              className="flex-1 bg-gradient-to-r from-emerald-500 to-teal-500 text-white py-3 rounded-xl font-bold hover:shadow-xl transition flex items-center justify-center gap-2"
+            >
+              <CheckCircle size={20} />
+              Release ${ownerPayout.toFixed(2)} to Owner
+            </button>
+            <button
+              onClick={onReject}
+              className="flex-1 bg-gradient-to-r from-rose-500 to-red-500 text-white py-3 rounded-xl font-bold hover:shadow-xl transition flex items-center justify-center gap-2"
+            >
+              <XCircle size={20} />
+              Reject Release
+            </button>
+          </div>
+        )}
 
-        {/* Summary Card */}
-        <div className="bg-gradient-to-r from-blue-600 via-cyan-600 to-teal-600 rounded-2xl shadow-2xl p-8 text-white">
-          <h3 className="text-2xl font-bold mb-6">Platform Summary</h3>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            <div className="bg-white/10 backdrop-blur-sm rounded-xl p-5">
-              <p className="text-blue-100 text-sm mb-1">Total Processed</p>
-              <p className="text-4xl font-bold">
-                ${((stats?.escrow?.totalHeld || 0) + (stats?.released?.totalReleased || 0)).toFixed(2)}
-              </p>
-              <p className="text-blue-100 text-xs mt-2">All time</p>
+        {rental.payment?.status === 'completed' && (
+          <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-3 text-center">
+            <p className="text-emerald-800 font-semibold text-sm">
+              ✅ Released on {new Date(rental.payment.releasedAt).toLocaleDateString()}
+              <br />
+              <span className="text-xs">Owner: ${ownerPayout.toFixed(2)} • Platform: ${platformFee.toFixed(2)}</span>
+            </p>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// Empty State Component
+function EmptyState({ filter }) {
+  const messages = {
+    pending: { icon: CheckCircle, title: 'No pending approvals', subtitle: 'All payments processed' },
+    escrow: { icon: DollarSign, title: 'No funds in escrow', subtitle: 'No held funds' },
+    disputed: { icon: AlertTriangle, title: 'No disputes', subtitle: 'All clear' },
+    completed: { icon: CheckCircle, title: 'No completed payments', subtitle: 'No releases yet' },
+    all: { icon: Calendar, title: 'No payments', subtitle: 'Create rentals first' }
+  };
+
+  const msg = messages[filter] || messages.all;
+  const Icon = msg.icon;
+
+  return (
+    <div className="bg-white rounded-2xl p-12 text-center shadow-lg">
+      <Icon size={48} className="mx-auto text-gray-400 mb-3" />
+      <p className="text-gray-600 font-semibold text-lg">{msg.title}</p>
+      <p className="text-gray-500 text-sm mt-2">{msg.subtitle}</p>
+    </div>
+  );
+}
+
+// Release Modal Component
+function ReleaseModal({ rental, adminNote, setAdminNote, processing, onConfirm, onCancel }) {
+  const amount = rental.pricing?.totalPrice || 0;
+  const platformFee = amount * 0.10;
+  const ownerPayout = amount - platformFee;
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-2xl max-w-2xl w-full p-6 shadow-2xl max-h-[90vh] overflow-y-auto">
+        <h2 className="text-2xl font-bold mb-4 bg-gradient-to-r from-emerald-600 to-teal-600 bg-clip-text text-transparent">
+          🔐 Release Payment to Owner
+        </h2>
+
+        {/* Payment Summary */}
+        <div className="bg-gradient-to-r from-emerald-50 to-teal-50 rounded-xl p-6 mb-4 border-2 border-emerald-200">
+          <h3 className="font-bold text-gray-900 mb-4 text-lg">Payment Breakdown</h3>
+          <div className="space-y-3">
+            <div className="flex justify-between">
+              <span className="text-gray-700">Total Rental Amount:</span>
+              <span className="font-bold text-xl">${amount.toFixed(2)}</span>
             </div>
-            <div className="bg-white/10 backdrop-blur-sm rounded-xl p-5">
-              <p className="text-blue-100 text-sm mb-1">Total Transactions</p>
-              <p className="text-4xl font-bold">
-                {(stats?.escrow?.count || 0) + (stats?.released?.count || 0)}
-              </p>
-              <p className="text-blue-100 text-xs mt-2">
-                {stats?.escrow?.count || 0} active, {stats?.released?.count || 0} complete
-              </p>
+            <div className="flex justify-between text-blue-600">
+              <span>Platform Fee (10%):</span>
+              <span className="font-bold">-${platformFee.toFixed(2)}</span>
             </div>
-            <div className="bg-white/10 backdrop-blur-sm rounded-xl p-5">
-              <p className="text-blue-100 text-sm mb-1">Total Revenue</p>
-              <p className="text-4xl font-bold">
-                ${stats?.released?.totalFees?.toFixed(2) || '0.00'}
-              </p>
-              <p className="text-blue-100 text-xs mt-2">Platform fees (10%)</p>
+            <div className="border-t-2 border-emerald-300 pt-3 flex justify-between">
+              <span className="font-bold text-gray-900 text-lg">Owner Receives:</span>
+              <span className="font-bold text-emerald-600 text-2xl">${ownerPayout.toFixed(2)}</span>
             </div>
           </div>
         </div>
+
+        {/* Owner Info */}
+        <div className="bg-gray-50 rounded-xl p-4 mb-4">
+          <p className="text-sm text-gray-600 mb-2">Payment will be released to:</p>
+          <p className="font-bold text-gray-900 text-lg">
+            {rental.ownerId?.firstName} {rental.ownerId?.lastName}
+          </p>
+          <p className="text-sm text-gray-600">{rental.ownerId?.email}</p>
+          <p className="text-sm text-gray-600">{rental.ownerId?.phoneNumber}</p>
+        </div>
+
+        {/* Admin Verification Note */}
+        <div className="mb-4">
+          <label className="block font-semibold mb-2">
+            Admin Verification Notes (Required) *
+          </label>
+          <textarea
+            value={adminNote}
+            onChange={(e) => setAdminNote(e.target.value)}
+            placeholder="Example: Verified service completion. Renter confirmed satisfaction. Machine returned in good condition. All terms fulfilled."
+            rows={4}
+            className="w-full p-3 border-2 border-gray-200 rounded-xl focus:border-emerald-500 focus:outline-none"
+            maxLength={500}
+          />
+          <small className="text-gray-500 text-xs">
+            {adminNote.length}/500 characters (minimum 10 required)
+          </small>
+        </div>
+
+        {/* Warning */}
+        <div className="bg-amber-50 border-l-4 border-amber-500 p-4 mb-4 rounded">
+          <p className="text-sm text-amber-800 font-semibold">
+            ⚠️ Important: This action cannot be undone
+          </p>
+          <ul className="text-xs text-gray-700 mt-2 space-y-1 ml-4 list-disc">
+            <li>${ownerPayout.toFixed(2)} will be transferred to owner's account</li>
+            <li>${platformFee.toFixed(2)} will be added to platform revenue</li>
+            <li>Rental will be marked as completed</li>
+            <li>Owner will receive email notification</li>
+          </ul>
+        </div>
+
+        {/* Buttons */}
+        <div className="flex gap-3">
+          <button
+            onClick={onCancel}
+            disabled={processing}
+            className="flex-1 px-4 py-3 border-2 border-gray-300 rounded-xl hover:bg-gray-50 font-semibold disabled:opacity-50"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={onConfirm}
+            disabled={processing || adminNote.length < 10}
+            className="flex-1 px-4 py-3 bg-gradient-to-r from-emerald-500 to-teal-500 text-white rounded-xl font-semibold disabled:opacity-50 disabled:cursor-not-allowed hover:shadow-xl transition"
+          >
+            {processing ? 'Processing...' : `✅ Release $${ownerPayout.toFixed(2)}`}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Reject Modal Component
+function RejectModal({ rental, adminNote, setAdminNote, processing, onConfirm, onCancel }) {
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl">
+        <h2 className="text-2xl font-bold mb-4 bg-gradient-to-r from-rose-600 to-red-600 bg-clip-text text-transparent">
+          ❌ Reject Payment Release
+        </h2>
+        
+        <p className="text-gray-700 mb-4">
+          Reject release for <strong>${rental.pricing?.totalPrice?.toFixed(2)}</strong>?
+        </p>
+        
+        <div className="mb-4">
+          <label className="block font-semibold mb-2">
+            Detailed Reason (Required) *
+          </label>
+          <textarea
+            value={adminNote}
+            onChange={(e) => setAdminNote(e.target.value)}
+            placeholder="Example: Service not completed as agreed. Machine returned damaged. Further investigation required before payment release..."
+            rows={5}
+            className="w-full p-3 border-2 border-gray-200 rounded-xl focus:border-rose-500 focus:outline-none"
+            maxLength={500}
+          />
+          <small className="text-gray-500 text-xs">
+            {adminNote.length}/500 characters (minimum 20 required)
+          </small>
+        </div>
+        
+        <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 mb-4">
+          <p className="text-xs text-gray-700">
+            ⚠️ Both parties will be notified. Payment remains in escrow pending resolution.
+          </p>
+        </div>
+        
+        <div className="flex gap-3">
+          <button
+            onClick={onCancel}
+            disabled={processing}
+            className="flex-1 px-4 py-3 border-2 border-gray-300 rounded-xl hover:bg-gray-50 font-semibold disabled:opacity-50"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={onConfirm}
+            disabled={processing || adminNote.length < 20}
+            className="flex-1 px-4 py-3 bg-gradient-to-r from-rose-500 to-red-500 text-white rounded-xl font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {processing ? 'Processing...' : 'Reject Release'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Details Modal Component
+function DetailsModal({ rental, onClose }) {
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-2xl max-w-3xl w-full p-6 shadow-2xl max-h-[90vh] overflow-y-auto">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-2xl font-bold text-gray-900">Complete Rental Details</h2>
+          <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-lg">
+            <X size={24} />
+          </button>
+        </div>
+
+        {/* Renter Comment */}
+        {rental.renterConfirmationNote && (
+          <div className="bg-green-50 border-l-4 border-green-500 p-4 mb-4 rounded-lg">
+            <div className="flex items-start gap-3">
+              <MessageSquare size={20} className="text-green-600 mt-1" />
+              <div className="flex-1">
+                <p className="font-semibold text-green-800 mb-2">Renter Confirmation</p>
+                <p className="text-gray-700 italic">"{rental.renterConfirmationNote}"</p>
+                <p className="text-xs text-gray-500 mt-2">
+                  By: {rental.renterId?.firstName} {rental.renterId?.lastName} • 
+                  {new Date(rental.renterConfirmedAt).toLocaleString()}
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Owner Comment */}
+        {rental.ownerNote && (
+          <div className="bg-blue-50 border-l-4 border-blue-500 p-4 mb-4 rounded-lg">
+            <div className="flex items-start gap-3">
+              <MessageSquare size={20} className="text-blue-600 mt-1" />
+              <div className="flex-1">
+                <p className="font-semibold text-blue-800 mb-2">Owner Comment</p>
+                <p className="text-gray-700 italic">"{rental.ownerNote}"</p>
+                <p className="text-xs text-gray-500 mt-2">
+                  By: {rental.ownerId?.firstName} {rental.ownerId?.lastName}
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Dispute Reason */}
+        {rental.disputeReason && (
+          <div className="bg-orange-50 border-l-4 border-orange-500 p-4 mb-4 rounded-lg">
+            <div className="flex items-start gap-3">
+              <AlertTriangle size={20} className="text-orange-600 mt-1" />
+              <div className="flex-1">
+                <p className="font-semibold text-orange-800 mb-2">⚠️ Dispute Reason</p>
+                <p className="text-gray-700">"{rental.disputeReason}"</p>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Admin Note (if released) */}
+        {rental.payment?.adminNote && (
+          <div className="bg-purple-50 border-l-4 border-purple-500 p-4 mb-4 rounded-lg">
+            <div className="flex items-start gap-3">
+              <Shield size={20} className="text-purple-600 mt-1" />
+              <div className="flex-1">
+                <p className="font-semibold text-purple-800 mb-2">🛡️ Admin Verification Note</p>
+                <p className="text-gray-700">"{rental.payment.adminNote}"</p>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Rental Details */}
+        <div className="bg-gray-50 rounded-xl p-4 mb-4">
+          <h3 className="font-bold text-gray-900 mb-3">Rental Information</h3>
+          <div className="grid grid-cols-2 gap-3 text-sm">
+            <div>
+              <p className="text-gray-600">Machine:</p>
+              <p className="font-semibold">{rental.machineId?.name}</p>
+            </div>
+            <div>
+              <p className="text-gray-600">Category:</p>
+              <p className="font-semibold">{rental.machineId?.category}</p>
+            </div>
+            <div>
+              <p className="text-gray-600">Start Date:</p>
+              <p className="font-semibold">{new Date(rental.startDate).toLocaleDateString()}</p>
+            </div>
+            <div>
+              <p className="text-gray-600">End Date:</p>
+              <p className="font-semibold">{new Date(rental.endDate).toLocaleDateString()}</p>
+            </div>
+            <div>
+              <p className="text-gray-600">Status:</p>
+              <p className="font-semibold capitalize">{rental.status}</p>
+            </div>
+            <div>
+              <p className="text-gray-600">Payment Status:</p>
+              <p className="font-semibold capitalize">{rental.payment?.status?.replace('_', ' ')}</p>
+            </div>
+          </div>
+        </div>
+
+        <button
+          onClick={onClose}
+          className="w-full px-4 py-3 bg-gray-200 hover:bg-gray-300 rounded-xl font-semibold transition"
+        >
+          Close
+        </button>
       </div>
     </div>
   );

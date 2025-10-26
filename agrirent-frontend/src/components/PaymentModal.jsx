@@ -1,7 +1,7 @@
-// src/components/PaymentModal.jsx - CORRECTED ENDPOINTS
+// src/components/PaymentModal.jsx - WITH MOBILE MONEY OPTIONS
 import { useState } from 'react';
 import { CardElement, useStripe, useElements } from '@stripe/react-stripe-js';
-import { X } from 'lucide-react';
+import { X, CreditCard, Smartphone } from 'lucide-react';
 
 const CARD_ELEMENT_OPTIONS = {
   style: {
@@ -27,8 +27,12 @@ export default function PaymentModal({ rental, onClose, onPaymentSuccess }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [cardComplete, setCardComplete] = useState(false);
+  const [paymentMethod, setPaymentMethod] = useState('stripe'); // 'stripe', 'orange', 'mtn', 'moov'
+  const [phoneNumber, setPhoneNumber] = useState('');
 
-  // ✅ METHOD 1: Stripe Checkout (CORRECTED - Uses create-checkout-session)
+  // ============================================
+  // STRIPE CHECKOUT
+  // ============================================
   const handleCheckout = async () => {
     setLoading(true);
     setError('');
@@ -38,7 +42,6 @@ export default function PaymentModal({ rental, onClose, onPaymentSuccess }) {
       
       console.log('🔄 Creating checkout session for rental:', rental._id);
       
-      // ✅ CORRECT ENDPOINT
       const response = await fetch('http://localhost:3001/api/payments/stripe/create-checkout-session', {
         method: 'POST',
         headers: {
@@ -48,9 +51,7 @@ export default function PaymentModal({ rental, onClose, onPaymentSuccess }) {
         body: JSON.stringify({ rentalId: rental._id })
       });
 
-      console.log('📦 Response status:', response.status);
       const data = await response.json();
-      console.log('📦 Response data:', data);
 
       if (!response.ok) {
         throw new Error(data.message || `Server error: ${response.status}`);
@@ -69,7 +70,9 @@ export default function PaymentModal({ rental, onClose, onPaymentSuccess }) {
     }
   };
 
-  // ✅ METHOD 2: Inline Payment (CORRECTED - Uses create-payment)
+  // ============================================
+  // STRIPE INLINE PAYMENT
+  // ============================================
   const handleInlinePayment = async () => {
     if (!stripe || !elements) {
       setError('Payment system is still loading...');
@@ -88,9 +91,6 @@ export default function PaymentModal({ rental, onClose, onPaymentSuccess }) {
       const token = localStorage.getItem('token');
       const cardElement = elements.getElement(CardElement);
 
-      console.log('🔄 Creating payment method...');
-
-      // Create payment method with Stripe
       const { error: pmError, paymentMethod } = await stripe.createPaymentMethod({
         type: 'card',
         card: cardElement,
@@ -100,10 +100,6 @@ export default function PaymentModal({ rental, onClose, onPaymentSuccess }) {
         throw new Error(pmError.message);
       }
 
-      console.log('✅ Payment method created:', paymentMethod.id);
-      console.log('🔄 Processing payment...');
-
-      // ✅ CORRECT ENDPOINT - create-payment
       const response = await fetch('http://localhost:3001/api/payments/create-payment', {
         method: 'POST',
         headers: {
@@ -116,9 +112,7 @@ export default function PaymentModal({ rental, onClose, onPaymentSuccess }) {
         })
       });
 
-      console.log('📦 Payment response status:', response.status);
       const data = await response.json();
-      console.log('📦 Payment response data:', data);
 
       if (!response.ok) {
         throw new Error(data.message || `Payment failed: ${response.status}`);
@@ -141,6 +135,162 @@ export default function PaymentModal({ rental, onClose, onPaymentSuccess }) {
       console.error('❌ Payment error:', err);
       setError(err.message || 'Payment failed. Please try again.');
       setLoading(false);
+    }
+  };
+
+  // ============================================
+  // ORANGE MONEY PAYMENT
+  // ============================================
+  const handleOrangeMoneyPayment = async () => {
+    if (!phoneNumber) {
+      setError('Please enter your Orange Money phone number');
+      return;
+    }
+
+    setLoading(true);
+    setError('');
+
+    try {
+      const token = localStorage.getItem('token');
+
+      console.log('🔄 Initiating Orange Money payment...');
+
+      const response = await fetch(`http://localhost:3001/api/payments/orange-money/init-payment/${rental._id}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          phoneNumber: phoneNumber
+        })
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.message || 'Failed to initiate Orange Money payment');
+      }
+
+      if (data.success && data.data.paymentUrl) {
+        console.log('✅ Redirecting to Orange Money...');
+        window.location.href = data.data.paymentUrl;
+      } else {
+        throw new Error('No payment URL received');
+      }
+    } catch (err) {
+      console.error('❌ Orange Money error:', err);
+      setError(err.message || 'Failed to process Orange Money payment');
+      setLoading(false);
+    }
+  };
+
+  // ============================================
+  // MTN MONEY PAYMENT (PLACEHOLDER - YOU'LL NEED TO IMPLEMENT BACKEND)
+  // ============================================
+  const handleMTNPayment = async () => {
+    if (!phoneNumber) {
+      setError('Please enter your MTN Mobile Money phone number');
+      return;
+    }
+
+    setLoading(true);
+    setError('');
+
+    try {
+      const token = localStorage.getItem('token');
+
+      const response = await fetch(`http://localhost:3001/api/payments/mtn-money/init-payment/${rental._id}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          phoneNumber: phoneNumber
+        })
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.message || 'Failed to initiate MTN payment');
+      }
+
+      if (data.success) {
+        // Handle MTN payment success
+        if (onPaymentSuccess) {
+          onPaymentSuccess(data.data);
+        }
+      }
+    } catch (err) {
+      console.error('❌ MTN Money error:', err);
+      setError(err.message || 'MTN Money payment is not yet configured. Please contact support.');
+      setLoading(false);
+    }
+  };
+
+  // ============================================
+  // MOOV MONEY PAYMENT (PLACEHOLDER - YOU'LL NEED TO IMPLEMENT BACKEND)
+  // ============================================
+  const handleMoovPayment = async () => {
+    if (!phoneNumber) {
+      setError('Please enter your Moov Money phone number');
+      return;
+    }
+
+    setLoading(true);
+    setError('');
+
+    try {
+      const token = localStorage.getItem('token');
+
+      const response = await fetch(`http://localhost:3001/api/payments/moov-money/init-payment/${rental._id}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          phoneNumber: phoneNumber
+        })
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.message || 'Failed to initiate Moov payment');
+      }
+
+      if (data.success) {
+        if (onPaymentSuccess) {
+          onPaymentSuccess(data.data);
+        }
+      }
+    } catch (err) {
+      console.error('❌ Moov Money error:', err);
+      setError(err.message || 'Moov Money payment is not yet configured. Please contact support.');
+      setLoading(false);
+    }
+  };
+
+  // ============================================
+  // HANDLE PAYMENT BASED ON SELECTED METHOD
+  // ============================================
+  const handlePayment = () => {
+    switch (paymentMethod) {
+      case 'stripe':
+        return handleCheckout();
+      case 'stripe-inline':
+        return handleInlinePayment();
+      case 'orange':
+        return handleOrangeMoneyPayment();
+      case 'mtn':
+        return handleMTNPayment();
+      case 'moov':
+        return handleMoovPayment();
+      default:
+        setError('Please select a payment method');
     }
   };
 
@@ -219,107 +369,161 @@ export default function PaymentModal({ rental, onClose, onPaymentSuccess }) {
             </div>
           )}
 
-          {/* OPTION 1: Stripe Checkout - RECOMMENDED */}
-          <div className="mb-4">
-            <button
-              onClick={handleCheckout}
-              disabled={loading}
-              className={`w-full py-4 rounded-xl font-bold text-lg transition shadow-lg ${
-                loading
-                  ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                  : 'bg-gradient-to-r from-blue-600 to-cyan-600 text-white hover:shadow-xl hover:scale-[1.02]'
-              }`}
-            >
-              {loading ? (
-                <span className="flex items-center justify-center gap-2">
-                  <div className="w-5 h-5 border-3 border-white border-t-transparent rounded-full animate-spin"></div>
-                  Opening Checkout...
-                </span>
-              ) : (
-                `💳 Pay $${rental.pricing?.totalPrice?.toFixed(2)} with Stripe`
-              )}
-            </button>
-            <p className="text-xs text-gray-500 text-center mt-2">
-              ✅ Recommended • Secure checkout page
-            </p>
+          {/* Payment Method Selection */}
+          <div className="mb-6">
+            <label className="block text-sm font-bold text-gray-700 mb-3">
+              Select Payment Method
+            </label>
+            
+            <div className="space-y-3">
+              {/* Stripe Card Payment */}
+              <button
+                onClick={() => setPaymentMethod('stripe')}
+                className={`w-full p-4 rounded-xl border-2 transition flex items-center gap-3 ${
+                  paymentMethod === 'stripe'
+                    ? 'border-blue-600 bg-blue-50'
+                    : 'border-gray-300 hover:border-blue-400'
+                }`}
+              >
+                <CreditCard className={paymentMethod === 'stripe' ? 'text-blue-600' : 'text-gray-600'} size={24} />
+                <div className="text-left flex-1">
+                  <div className="font-bold text-gray-900">Credit/Debit Card</div>
+                  <div className="text-xs text-gray-500">Visa, Mastercard, Amex</div>
+                </div>
+                {paymentMethod === 'stripe' && (
+                  <div className="w-5 h-5 rounded-full bg-blue-600 flex items-center justify-center">
+                    <div className="w-2 h-2 rounded-full bg-white"></div>
+                  </div>
+                )}
+              </button>
+
+              {/* Orange Money */}
+              <button
+                onClick={() => setPaymentMethod('orange')}
+                className={`w-full p-4 rounded-xl border-2 transition flex items-center gap-3 ${
+                  paymentMethod === 'orange'
+                    ? 'border-orange-600 bg-orange-50'
+                    : 'border-gray-300 hover:border-orange-400'
+                }`}
+              >
+                <Smartphone className={paymentMethod === 'orange' ? 'text-orange-600' : 'text-gray-600'} size={24} />
+                <div className="text-left flex-1">
+                  <div className="font-bold text-gray-900">Orange Money</div>
+                  <div className="text-xs text-gray-500">Pay with your Orange Money account</div>
+                </div>
+                {paymentMethod === 'orange' && (
+                  <div className="w-5 h-5 rounded-full bg-orange-600 flex items-center justify-center">
+                    <div className="w-2 h-2 rounded-full bg-white"></div>
+                  </div>
+                )}
+              </button>
+
+              {/* MTN Money */}
+              <button
+                onClick={() => setPaymentMethod('mtn')}
+                className={`w-full p-4 rounded-xl border-2 transition flex items-center gap-3 ${
+                  paymentMethod === 'mtn'
+                    ? 'border-yellow-600 bg-yellow-50'
+                    : 'border-gray-300 hover:border-yellow-400'
+                }`}
+              >
+                <Smartphone className={paymentMethod === 'mtn' ? 'text-yellow-600' : 'text-gray-600'} size={24} />
+                <div className="text-left flex-1">
+                  <div className="font-bold text-gray-900">MTN Mobile Money</div>
+                  <div className="text-xs text-gray-500">Pay with your MTN account</div>
+                </div>
+                {paymentMethod === 'mtn' && (
+                  <div className="w-5 h-5 rounded-full bg-yellow-600 flex items-center justify-center">
+                    <div className="w-2 h-2 rounded-full bg-white"></div>
+                  </div>
+                )}
+              </button>
+
+              {/* Moov Money */}
+              <button
+                onClick={() => setPaymentMethod('moov')}
+                className={`w-full p-4 rounded-xl border-2 transition flex items-center gap-3 ${
+                  paymentMethod === 'moov'
+                    ? 'border-blue-600 bg-blue-50'
+                    : 'border-gray-300 hover:border-blue-400'
+                }`}
+              >
+                <Smartphone className={paymentMethod === 'moov' ? 'text-blue-600' : 'text-gray-600'} size={24} />
+                <div className="text-left flex-1">
+                  <div className="font-bold text-gray-900">Moov Money</div>
+                  <div className="text-xs text-gray-500">Pay with your Moov account</div>
+                </div>
+                {paymentMethod === 'moov' && (
+                  <div className="w-5 h-5 rounded-full bg-blue-600 flex items-center justify-center">
+                    <div className="w-2 h-2 rounded-full bg-white"></div>
+                  </div>
+                )}
+              </button>
+            </div>
           </div>
 
-          {/* Divider */}
-          <div className="relative my-6">
-            <div className="absolute inset-0 flex items-center">
-              <div className="w-full border-t border-gray-300"></div>
+          {/* Payment Form Based on Selected Method */}
+          {paymentMethod === 'stripe' && (
+            <div>
+              <button
+                onClick={handleCheckout}
+                disabled={loading}
+                className={`w-full py-4 rounded-xl font-bold text-lg transition shadow-lg ${
+                  loading
+                    ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                    : 'bg-gradient-to-r from-blue-600 to-cyan-600 text-white hover:shadow-xl hover:scale-[1.02]'
+                }`}
+              >
+                {loading ? (
+                  <span className="flex items-center justify-center gap-2">
+                    <div className="w-5 h-5 border-3 border-white border-t-transparent rounded-full animate-spin"></div>
+                    Processing...
+                  </span>
+                ) : (
+                  `💳 Pay $${rental.pricing?.totalPrice?.toFixed(2)}`
+                )}
+              </button>
             </div>
-            <div className="relative flex justify-center text-sm">
-              <span className="px-4 bg-white text-gray-500">Or pay with card</span>
-            </div>
-          </div>
+          )}
 
-          {/* OPTION 2: Inline Card Form */}
-          <div>
-            <div className="mb-4">
-              <label className="block text-sm font-bold text-gray-700 mb-3">
-                💳 Card Information
+          {/* Mobile Money Phone Number Input */}
+          {(paymentMethod === 'orange' || paymentMethod === 'mtn' || paymentMethod === 'moov') && (
+            <div>
+              <label className="block text-sm font-bold text-gray-700 mb-2">
+                📱 Phone Number
               </label>
-              <div className="border-2 border-gray-300 rounded-xl p-4 bg-white focus-within:border-blue-500 transition">
-                <CardElement
-                  options={CARD_ELEMENT_OPTIONS}
-                  onChange={(e) => {
-                    setCardComplete(e.complete);
-                    if (e.error) {
-                      setError(e.error.message);
-                    } else {
-                      setError('');
-                    }
-                  }}
-                />
-              </div>
-              <p className="text-xs text-gray-500 mt-2">
-                🔒 Secured by Stripe • Never stored on our servers
-              </p>
+              <input
+                type="tel"
+                value={phoneNumber}
+                onChange={(e) => setPhoneNumber(e.target.value)}
+                placeholder="+243 XXX XXX XXX"
+                className="w-full px-4 py-3 border-2 border-gray-300 rounded-xl focus:border-blue-500 focus:outline-none mb-4"
+              />
+              
+              <button
+                onClick={handlePayment}
+                disabled={loading || !phoneNumber}
+                className={`w-full py-4 rounded-xl font-bold text-lg transition shadow-lg ${
+                  loading || !phoneNumber
+                    ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                    : paymentMethod === 'orange'
+                    ? 'bg-gradient-to-r from-orange-500 to-orange-600 text-white hover:shadow-xl hover:scale-[1.02]'
+                    : paymentMethod === 'mtn'
+                    ? 'bg-gradient-to-r from-yellow-500 to-yellow-600 text-white hover:shadow-xl hover:scale-[1.02]'
+                    : 'bg-gradient-to-r from-blue-500 to-blue-600 text-white hover:shadow-xl hover:scale-[1.02]'
+                }`}
+              >
+                {loading ? (
+                  <span className="flex items-center justify-center gap-2">
+                    <div className="w-5 h-5 border-3 border-white border-t-transparent rounded-full animate-spin"></div>
+                    Processing...
+                  </span>
+                ) : (
+                  `📱 Pay $${rental.pricing?.totalPrice?.toFixed(2)}`
+                )}
+              </button>
             </div>
-
-            {/* Test Card Info */}
-            <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 mb-4">
-              <p className="text-xs font-bold text-amber-900 mb-1">🧪 Test Card</p>
-              <div className="grid grid-cols-2 gap-2 text-xs text-amber-800">
-                <div>
-                  <span className="font-semibold">Number:</span>
-                  <p className="font-mono">4242 4242 4242 4242</p>
-                </div>
-                <div>
-                  <span className="font-semibold">Expiry:</span>
-                  <p>Any future date</p>
-                </div>
-                <div>
-                  <span className="font-semibold">CVC:</span>
-                  <p>Any 3 digits</p>
-                </div>
-                <div>
-                  <span className="font-semibold">ZIP:</span>
-                  <p>Any 5 digits</p>
-                </div>
-              </div>
-            </div>
-
-            <button
-              onClick={handleInlinePayment}
-              disabled={loading || !stripe || !cardComplete}
-              className={`w-full py-4 rounded-xl font-bold text-lg transition ${
-                loading || !stripe || !cardComplete
-                  ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                  : 'bg-gradient-to-r from-emerald-500 to-teal-600 text-white hover:shadow-lg'
-              }`}
-            >
-              {loading ? (
-                <span className="flex items-center justify-center gap-2">
-                  <div className="w-5 h-5 border-3 border-white border-t-transparent rounded-full animate-spin"></div>
-                  Processing...
-                </span>
-              ) : (
-                `Pay $${rental.pricing?.totalPrice?.toFixed(2)}`
-              )}
-            </button>
-          </div>
+          )}
 
           {/* Security Notice */}
           <div className="mt-6 p-4 bg-blue-50 rounded-lg border border-blue-100">

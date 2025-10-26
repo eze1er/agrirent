@@ -6,6 +6,7 @@ const cors = require("cors");
 const session = require("express-session");
 const passport = require("passport");
 const stripe = require("stripe");
+const adminRoutes = require('./routes/admin');
 
 const app = express();
 
@@ -68,7 +69,7 @@ app.use("/api/rentals", require("./routes/rentals"));
 app.use("/api/notifications", require("./routes/notifications"));
 app.use("/api/upload", require("./routes/upload"));
 app.use("/api/payments", require("./routes/paymentRoutes"));
-
+app.use('/api/admin', adminRoutes);
 // Health check
 app.get("/", (req, res) => {
   res.json({
