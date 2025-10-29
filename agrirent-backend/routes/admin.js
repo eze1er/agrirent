@@ -30,6 +30,7 @@ router.get('/dashboard/overview', protect, isAdmin, async (req, res) => {
       activeRentals,
       pendingRentals,
       completedRentals,
+      finishedRentals,
       totalRevenue,
       escrowBalance
     ] = await Promise.all([
@@ -39,6 +40,7 @@ router.get('/dashboard/overview', protect, isAdmin, async (req, res) => {
       Rental.countDocuments({ status: 'active' }),
       Rental.countDocuments({ status: 'pending' }),
       Rental.countDocuments({ status: 'completed' }),
+      Rental.countDocuments({ status: 'finished' }),
       Payment.aggregate([
         { $match: { status: 'completed' } },
         { $group: { _id: null, total: { $sum: '$amount' } } }
@@ -66,7 +68,8 @@ router.get('/dashboard/overview', protect, isAdmin, async (req, res) => {
           total: totalRentals,
           active: activeRentals,
           pending: pendingRentals,
-          completed: completedRentals
+          completed: completedRentals,
+          finished: finishedRentals
         },
         revenue: {
           total: totalRevenue[0]?.total || 0,

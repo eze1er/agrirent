@@ -225,26 +225,32 @@ router.post("/", protect, async (req, res) => {
         .json({ success: false, message: "Invalid rental type" });
     }
 
-    rentalData.pricing = pricing;
-    const rental = await Rental.create(rentalData);
+rentalData.pricing = pricing;
+const rental = await Rental.create(rentalData);
 
-    // ✅ UPDATE MACHINE STATUS to 'pending' when rental is created
-    machine.availability = 'pending';
-    await machine.save();
+// ✅ UPDATE MACHINE STATUS to 'pending' when rental is created
+machine.availability = 'pending';
+await machine.save();
+console.log(`✅ Machine ${machine._id} status updated to: pending`);
 
-    const populatedRental = await Rental.findById(rental._id)
-      .populate(
-        "machineId",
-        "name images pricePerDay pricePerHectare category pricingType rating"
-      )
-      .populate("renterId", "firstName lastName email")
-      .populate("ownerId", "firstName lastName email");
+// ✅ RE-FETCH the machine to get the updated availability
+const updatedMachine = await Machine.findById(machine._id);
 
-    res.status(201).json({
-      success: true,
-      data: populatedRental,
-      message: "Rental request sent successfully",
-    });
+const populatedRental = await Rental.findById(rental._id)
+  .populate("renterId", "firstName lastName email")
+  .populate("ownerId", "firstName lastName email");
+
+// ✅ Manually attach the updated machine (not just populate)
+const response = {
+  ...populatedRental.toObject(),
+  machineId: updatedMachine.toObject()
+};
+
+res.status(201).json({
+  success: true,
+  data: response,
+  message: "Rental request sent successfully",
+});
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }
@@ -315,307 +321,331 @@ router.patch("/:id/status", protect, async (req, res) => {
       });
     }
 
-    // Define valid status transitions
-    const validTransitions = {
-      pending: ["approved", "rejected"],
-      approved: ["completed"],
-      active: ["completed"],
-    };
 
-    const allowedNextStatuses = validTransitions[rental.status] || [];
-    if (!allowedNextStatuses.includes(status)) {
-      return res.status(400).json({
-        success: false,
-        message: `Cannot change status from "${rental.status}" to "${status}"`,
-      });
-    }
+// Define valid status transitions
+const validTransitions = {
+  pending: ["approved", "rejected", "cancelled"],
+  approved: ["active", "cancelled"],
+  active: ["completed", "disputed"],
+  completed: ["released", "disputed"],
+  released: ["closed"],
+  closed: [],
+  cancelled: [],
+  rejected: [],
+  disputed: ["closed"]
+};
 
-    if (status === "approved") {
-      rental.status = "approved";
+const allowedNextStatuses = validTransitions[rental.status] || [];
+if (!allowedNextStatuses.includes(status)) {
+  return res.status(400).json({
+    success: false,
+    message: `Cannot change status from "${rental.status}" to "${status}"`,
+  });
+}
 
-      // ✅ UPDATE MACHINE STATUS to 'rented' when approved
-      const machine = await Machine.findById(rental.machineId._id);
-      machine.availability = "rented";
-      await machine.save();
+// ✅ UPDATE STATUS FIRST (before any additional logic)
+rental.status = status;
 
-      // Create notification
-      await createNotification(
-        rental.renterId._id,
-        "rental_accepted",
-        "Rental Request Approved",
-        `Your rental request for ${rental.machineId.name} has been approved!`,
-        rental._id,
-        "Rental"
-      );
+// ✅ THEN handle specific status logic
+if (status === "approved") {
+    rental.approvedAt = new Date();  // ✅ Add timestamp
+  rental.approvedBy = req.user.id;  // ✅ Track who approved
+  // Update machine status to 'rented' when approved
+  const machine = await Machine.findById(rental.machineId._id);
+    if (machine) {
+    machine.availability = "rented";
+    await machine.save();
+    console.log(`✅ Machine ${machine._id} status updated to: rented`);
+  }
+  await rental.save();
+  console.log(`✅ Rental ${rental._id} status saved as: approved`);
 
-      // Send approval email
-      const emailSubject = "✅ Your Rental Request Has Been Approved!";
-      const emailHtml = `
-        <!DOCTYPE html>
-        <html>
-        <head>
-          <style>
-            body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
-            .container { max-width: 600px; margin: 0 auto; padding: 20px; }
-            .header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 30px; text-align: center; border-radius: 10px 10px 0 0; }
-            .content { background: #f9f9f9; padding: 30px; border-radius: 0 0 10px 10px; }
-            .button { display: inline-block; background: #10b981; color: white; padding: 12px 30px; text-decoration: none; border-radius: 5px; margin: 20px 0; }
-            .info-box { background: white; padding: 20px; border-left: 4px solid #10b981; margin: 20px 0; border-radius: 5px; }
-            .info-row { display: flex; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid #eee; }
-            .label { font-weight: bold; color: #666; }
-            .value { color: #333; }
-            .footer { text-align: center; padding: 20px; color: #666; font-size: 12px; }
-          </style>
-        </head>
-        <body>
-          <div class="container">
-            <div class="header">
-              <h1>🎉 Booking Approved!</h1>
+  // Create notification
+  await createNotification(
+    rental.renterId._id,
+    "rental_accepted",
+    "Rental Request Approved",
+    `Your rental request for ${rental.machineId.name} has been approved!`,
+    rental._id,
+    "Rental"
+  );
+
+  // Send approval email
+  const emailSubject = "✅ Your Rental Request Has Been Approved!";
+  const emailHtml = `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <style>
+        body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+        .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+        .header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 30px; text-align: center; border-radius: 10px 10px 0 0; }
+        .content { background: #f9f9f9; padding: 30px; border-radius: 0 0 10px 10px; }
+        .button { display: inline-block; background: #10b981; color: white; padding: 12px 30px; text-decoration: none; border-radius: 5px; margin: 20px 0; }
+        .info-box { background: white; padding: 20px; border-left: 4px solid #10b981; margin: 20px 0; border-radius: 5px; }
+        .info-row { display: flex; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid #eee; }
+        .label { font-weight: bold; color: #666; }
+        .value { color: #333; }
+        .footer { text-align: center; padding: 20px; color: #666; font-size: 12px; }
+      </style>
+    </head>
+    <body>
+      <div class="container">
+        <div class="header">
+          <h1>🎉 Booking Approved!</h1>
+        </div>
+        <div class="content">
+          <p>Hi ${rental.renterId.firstName},</p>
+          
+          <p>Great news! Your rental request has been <strong style="color: #10b981;">APPROVED</strong> by the owner.</p>
+          
+          <div class="info-box">
+            <h3 style="margin-top: 0; color: #667eea;">Booking Details</h3>
+            
+            <div class="info-row">
+              <span class="label">Machine:</span>
+              <span class="value">${rental.machineId.name}</span>
             </div>
-            <div class="content">
-              <p>Hi ${rental.renterId.firstName},</p>
-              
-              <p>Great news! Your rental request has been <strong style="color: #10b981;">APPROVED</strong> by the owner.</p>
-              
-              <div class="info-box">
-                <h3 style="margin-top: 0; color: #667eea;">Booking Details</h3>
-                
-                <div class="info-row">
-                  <span class="label">Machine:</span>
-                  <span class="value">${rental.machineId.name}</span>
-                </div>
-                
-                ${
-                  rental.rentalType === "daily"
-                    ? `
-                  <div class="info-row">
-                    <span class="label">Start Date:</span>
-                    <span class="value">${new Date(
-                      rental.startDate
-                    ).toLocaleDateString()}</span>
-                  </div>
-                  <div class="info-row">
-                    <span class="label">End Date:</span>
-                    <span class="value">${new Date(
-                      rental.endDate
-                    ).toLocaleDateString()}</span>
-                  </div>
-                  <div class="info-row">
-                    <span class="label">Duration:</span>
-                    <span class="value">${
-                      rental.pricing.numberOfDays
-                    } days</span>
-                  </div>
-                `
-                    : `
-                  <div class="info-row">
-                    <span class="label">Work Date:</span>
-                    <span class="value">${new Date(
-                      rental.workDate
-                    ).toLocaleDateString()}</span>
-                  </div>
-                  <div class="info-row">
-                    <span class="label">Hectares:</span>
-                    <span class="value">${
-                      rental.pricing.numberOfHectares
-                    } Ha</span>
-                  </div>
-                  <div class="info-row">
-                    <span class="label">Location:</span>
-                    <span class="value">${rental.fieldLocation}</span>
-                  </div>
-                `
-                }
-                
-                <div class="info-row" style="border-bottom: none; margin-top: 10px; padding-top: 10px; border-top: 2px solid #10b981;">
-                  <span class="label" style="font-size: 18px;">Total Amount:</span>
-                  <span class="value" style="font-size: 20px; color: #10b981; font-weight: bold;">$${rental.pricing.totalPrice.toFixed(
-                    2
-                  )}</span>
-                </div>
-              </div>
-
-              <p><strong>Next Step:</strong> Please proceed with payment to secure your booking.</p>
-
-              <p>If you have any questions, please contact the owner:</p>
-              <p><strong>${rental.ownerId.firstName} ${
-        rental.ownerId.lastName
-      }</strong><br>
-              Email: ${rental.ownerId.email}</p>
-              
-              <p>Thank you for using AgriRent!</p>
-            </div>
-            <div class="footer">
-              <p>© ${new Date().getFullYear()} AgriRent. All rights reserved.</p>
-            </div>
-          </div>
-        </body>
-        </html>
-      `;
-
-      try {
-        await sendEmail(rental.renterId.email, emailSubject, emailHtml);
-        console.log("✅ Approval email sent successfully");
-      } catch (emailError) {
-        console.error("❌ Failed to send approval email:", emailError);
-      }
-
-      // Send SMS if phone exists
-      if (rental.renterId.phone) {
-        try {
-          const smsMessage =
-            rental.rentalType === "daily"
-              ? `🎉 AgriRent: Your rental request for ${
-                  rental.machineId.name
-                } has been APPROVED! Dates: ${new Date(
+            
+            ${
+              rental.rentalType === "daily"
+                ? `
+              <div class="info-row">
+                <span class="label">Start Date:</span>
+                <span class="value">${new Date(
                   rental.startDate
-                ).toLocaleDateString()} - ${new Date(
+                ).toLocaleDateString()}</span>
+              </div>
+              <div class="info-row">
+                <span class="label">End Date:</span>
+                <span class="value">${new Date(
                   rental.endDate
-                ).toLocaleDateString()}. Total: $${rental.pricing.totalPrice.toFixed(
-                  2
-                )}. Please proceed with payment.`
-              : `🎉 AgriRent: Your rental request for ${
-                  rental.machineId.name
-                } has been APPROVED! Work date: ${new Date(
+                ).toLocaleDateString()}</span>
+              </div>
+              <div class="info-row">
+                <span class="label">Duration:</span>
+                <span class="value">${
+                  rental.pricing.numberOfDays
+                } days</span>
+              </div>
+            `
+                : `
+              <div class="info-row">
+                <span class="label">Work Date:</span>
+                <span class="value">${new Date(
                   rental.workDate
-                ).toLocaleDateString()}, ${
+                ).toLocaleDateString()}</span>
+              </div>
+              <div class="info-row">
+                <span class="label">Hectares:</span>
+                <span class="value">${
                   rental.pricing.numberOfHectares
-                } Ha. Total: $${rental.pricing.totalPrice.toFixed(2)}. Please proceed with payment.`;
-
-          await twilioClient.messages.create({
-            body: smsMessage,
-            from: process.env.TWILIO_PHONE_NUMBER,
-            to: rental.renterId.phone,
-          });
-
-        } catch (smsError) {
-          console.error("❌ SMS sending failed:", smsError);
-        }
-      }
-    } else if (status === "rejected") {
-      rental.status = "rejected";
-      rental.rejectionReason = rejectionReason;
-
-      // ✅ UPDATE MACHINE STATUS back to 'available' when rejected
-      const machine = await Machine.findById(rental.machineId._id);
-      machine.availability = "available";
-      await machine.save();
-
-      // Create notification
-      await createNotification(
-        rental.renterId._id,
-        "rental_rejected",
-        "Rental Request Declined",
-        `Your rental request for ${rental.machineId.name} was declined. Reason: ${rejectionReason}`,
-        rental._id,
-        "Rental"
-      );
-
-      // Send rejection email with reason
-      const emailSubject = "❌ Rental Request Update";
-      const emailHtml = `
-        <!DOCTYPE html>
-        <html>
-        <head>
-          <style>
-            body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
-            .container { max-width: 600px; margin: 0 auto; padding: 20px; }
-            .header { background: linear-gradient(135deg, #f87171 0%, #ef4444 100%); color: white; padding: 30px; text-align: center; border-radius: 10px 10px 0 0; }
-            .content { background: #f9f9f9; padding: 30px; border-radius: 0 0 10px 10px; }
-            .button { display: inline-block; background: #3b82f6; color: white; padding: 12px 30px; text-decoration: none; border-radius: 5px; margin: 20px 0; }
-            .reason-box { background: #fee2e2; border-left: 4px solid #ef4444; padding: 15px; margin: 20px 0; border-radius: 5px; }
-            .footer { text-align: center; padding: 20px; color: #666; font-size: 12px; }
-          </style>
-        </head>
-        <body>
-          <div class="container">
-            <div class="header">
-              <h1>Rental Request Update</h1>
-            </div>
-            <div class="content">
-              <p>Hi ${rental.renterId.firstName},</p>
-              
-              <p>Unfortunately, your rental request for <strong>${
-                rental.machineId.name
-              }</strong> has been declined by the owner.</p>
-              
-              <div class="reason-box">
-                <h4 style="margin-top: 0; color: #991b1b;">📝 Reason for Decline:</h4>
-                <p style="margin: 0;">${rejectionReason}</p>
+                } Ha</span>
               </div>
-              
-              <p>Don't worry! There are many other great machines available on AgriRent.</p>
-
-              <div style="text-align: center; margin: 30px 0;">
-                <a href="${
-                  process.env.FRONTEND_URL || "http://localhost:5173"
-                }" class="button">Browse Other Machines</a>
+              <div class="info-row">
+                <span class="label">Location:</span>
+                <span class="value">${rental.fieldLocation}</span>
               </div>
-              
-              <p>Thank you for using AgriRent!</p>
-            </div>
-            <div class="footer">
-              <p>© ${new Date().getFullYear()} AgriRent. All rights reserved.</p>
+            `
+            }
+            
+            <div class="info-row" style="border-bottom: none; margin-top: 10px; padding-top: 10px; border-top: 2px solid #10b981;">
+              <span class="label" style="font-size: 18px;">Total Amount:</span>
+              <span class="value" style="font-size: 20px; color: #10b981; font-weight: bold;">$${rental.pricing.totalPrice.toFixed(
+                2
+              )}</span>
             </div>
           </div>
-        </body>
-        </html>
-      `;
 
-      try {
-        await sendEmail(rental.renterId.email, emailSubject, emailHtml);
-        console.log("✅ Rejection email sent successfully");
-      } catch (emailError) {
-        console.error("❌ Failed to send rejection email:", emailError);
-      }
+          <p><strong>Next Step:</strong> Please proceed with payment to secure your booking.</p>
 
-      // Send SMS if phone exists
-      if (
-        rental.renterId.phone &&
-        process.env.TWILIO_ACCOUNT_SID &&
-        process.env.TWILIO_AUTH_TOKEN &&
-        process.env.TWILIO_PHONE_NUMBER
-      ) {
-        try {
-          const smsBody = `AgriRent: Your rental request for ${
-            rental.machineId.name
-          } was declined. Reason: ${rejectionReason.substring(0, 100)}${
-            rejectionReason.length > 100 ? "..." : ""
-          }`;
+          <p>If you have any questions, please contact the owner:</p>
+          <p><strong>${rental.ownerId.firstName} ${
+    rental.ownerId.lastName
+  }</strong><br>
+          Email: ${rental.ownerId.email}</p>
+          
+          <p>Thank you for using AgriRent!</p>
+        </div>
+        <div class="footer">
+          <p>© ${new Date().getFullYear()} AgriRent. All rights reserved.</p>
+        </div>
+      </div>
+    </body>
+    </html>
+  `;
 
-          await twilioClient.messages.create({
-            body: smsBody,
-            from: process.env.TWILIO_PHONE_NUMBER,
-            to: rental.renterId.phone,
-          });
+  try {
+    await sendEmail(rental.renterId.email, emailSubject, emailHtml);
+    console.log("✅ Approval email sent successfully");
+  } catch (emailError) {
+    console.error("❌ Failed to send approval email:", emailError);
+  }
 
-        } catch (smsError) {
-          console.error("❌ SMS sending failed:", smsError.message);
-        }
-      }
+  // Send SMS if phone exists
+  if (rental.renterId.phone) {
+    try {
+      const smsMessage =
+        rental.rentalType === "daily"
+          ? `🎉 AgriRent: Your rental request for ${
+              rental.machineId.name
+            } has been APPROVED! Dates: ${new Date(
+              rental.startDate
+            ).toLocaleDateString()} - ${new Date(
+              rental.endDate
+            ).toLocaleDateString()}. Total: $${rental.pricing.totalPrice.toFixed(
+              2
+            )}. Please proceed with payment.`
+          : `🎉 AgriRent: Your rental request for ${
+              rental.machineId.name
+            } has been APPROVED! Work date: ${new Date(
+              rental.workDate
+            ).toLocaleDateString()}, ${
+              rental.pricing.numberOfHectares
+            } Ha. Total: $${rental.pricing.totalPrice.toFixed(2)}. Please proceed with payment.`;
+
+      await twilioClient.messages.create({
+        body: smsMessage,
+        from: process.env.TWILIO_PHONE_NUMBER,
+        to: rental.renterId.phone,
+      });
+      console.log("✅ Approval SMS sent successfully");
+    } catch (smsError) {
+      console.error("❌ SMS sending failed:", smsError);
     }
+  }
+} else if (status === "rejected") {
+  // Store rejection reason
+  if (rejectionReason) {
+    rental.rejectionReason = rejectionReason;
+    rental.rejectedAt = new Date();
+    rental.rejectedBy = req.user.id;
+  }
 
-    await rental.save();
+  // Update machine status back to 'available' when rejected
+  const machine = await Machine.findById(rental.machineId._id);
+  if (machine) {    machine.availability = "available";
+    await machine.save();
+    console.log(`✅ Machine ${machine._id} status updated to: available`)};
 
-    const updatedRental = await Rental.findById(rental._id)
-      .populate(
-        "machineId",
-        "name images pricePerDay pricePerHectare category rating"
-      )
-      .populate("renterId", "firstName lastName email")
-      .populate("ownerId", "firstName lastName email");
+  await rental.save();
+  console.log(`✅ Rental ${rental._id} status saved as: rejected`);
 
-    res.json({
-      success: true,
-      data: updatedRental,
-      message: `Rental ${status} successfully. Notifications sent.`,
-    });
-  } catch (error) {
+  // Create notification
+  await createNotification(
+    rental.renterId._id,
+    "rental_rejected",
+    "Rental Request Declined",
+    `Your rental request for ${rental.machineId.name} was declined. Reason: ${rejectionReason}`,
+    rental._id,
+    "Rental"
+  );
+
+  // Send rejection email with reason
+  const emailSubject = "❌ Rental Request Update";
+  const emailHtml = `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <style>
+        body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+        .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+        .header { background: linear-gradient(135deg, #f87171 0%, #ef4444 100%); color: white; padding: 30px; text-align: center; border-radius: 10px 10px 0 0; }
+        .content { background: #f9f9f9; padding: 30px; border-radius: 0 0 10px 10px; }
+        .button { display: inline-block; background: #3b82f6; color: white; padding: 12px 30px; text-decoration: none; border-radius: 5px; margin: 20px 0; }
+        .reason-box { background: #fee2e2; border-left: 4px solid #ef4444; padding: 15px; margin: 20px 0; border-radius: 5px; }
+        .footer { text-align: center; padding: 20px; color: #666; font-size: 12px; }
+      </style>
+    </head>
+    <body>
+      <div class="container">
+        <div class="header">
+          <h1>Rental Request Update</h1>
+        </div>
+        <div class="content">
+          <p>Hi ${rental.renterId.firstName},</p>
+          
+          <p>Unfortunately, your rental request for <strong>${
+            rental.machineId.name
+          }</strong> has been declined by the owner.</p>
+          
+          <div class="reason-box">
+            <h4 style="margin-top: 0; color: #991b1b;">📝 Reason for Decline:</h4>
+            <p style="margin: 0;">${rejectionReason}</p>
+          </div>
+          
+          <p>Don't worry! There are many other great machines available on AgriRent.</p>
+
+          <div style="text-align: center; margin: 30px 0;">
+            <a href="${
+              process.env.FRONTEND_URL || "http://localhost:5173"
+            }" class="button">Browse Other Machines</a>
+          </div>
+          
+          <p>Thank you for using AgriRent!</p>
+        </div>
+        <div class="footer">
+          <p>© ${new Date().getFullYear()} AgriRent. All rights reserved.</p>
+        </div>
+      </div>
+    </body>
+    </html>
+  `;
+
+  try {
+    await sendEmail(rental.renterId.email, emailSubject, emailHtml);
+    console.log("✅ Rejection email sent successfully");
+  } catch (emailError) {
+    console.error("❌ Failed to send rejection email:", emailError);
+  }
+
+  // Send SMS if phone exists
+  if (
+    rental.renterId.phone &&
+    process.env.TWILIO_ACCOUNT_SID &&
+    process.env.TWILIO_AUTH_TOKEN &&
+    process.env.TWILIO_PHONE_NUMBER
+  ) {
+    try {
+      const smsBody = `AgriRent: Your rental request for ${
+        rental.machineId.name
+      } was declined. Reason: ${rejectionReason.substring(0, 100)}${
+        rejectionReason.length > 100 ? "..." : ""
+      }`;
+
+      await twilioClient.messages.create({
+        body: smsBody,
+        from: process.env.TWILIO_PHONE_NUMBER,
+        to: rental.renterId.phone,
+      });
+    } catch (smsError) {
+      console.error("❌ SMS sending failed:", smsError.message);
+    }
+  }
+}
+
+// ✅ SAVE THE RENTAL (status already updated above)
+await rental.save();
+
+const updatedRental = await Rental.findById(rental._id)
+  .populate(
+    "machineId",
+    "name images pricePerDay pricePerHectare category rating"
+  )
+  .populate("renterId", "firstName lastName email")
+  .populate("ownerId", "firstName lastName email");
+console.log(`✅ Final rental status in database: ${updatedRental.status}`);
+
+res.json({
+  success: true,
+  data: updatedRental,
+  message: `Rental ${status} successfully. Notifications sent.`,
+});
+   } catch (error) {
     console.error("Error updating rental status:", error);
     res.status(500).json({ success: false, message: error.message });
   }
-});
-
+}); 
 // Cancel rental
 router.patch("/:id/cancel", protect, async (req, res) => {
   try {
@@ -655,7 +685,8 @@ router.patch("/:id/cancel", protect, async (req, res) => {
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }
-});
+}
+);
 
 // Complete rental
 // ADD THIS TO routes/rentals.js - Replace the /complete route
@@ -1063,5 +1094,96 @@ router.get("/machine/:machineId/reviews", async (req, res) => {
     });
   }
 });
+
+// Add this to routes/rentals.js - REVIEWS ENDPOINT
+
+// GET reviews for a machine
+router.get('/rentals/machine/:machineId/reviews', async (req, res) => {
+  try {
+    const rentals = await Rental.find({
+      machineId: req.params.machineId,
+      isReviewed: true,
+      'review.rating': { $exists: true }
+    })
+    .populate('renterId', 'firstName lastName')
+    .sort({ 'review.createdAt': -1 });
+
+    const reviews = rentals.map(r => ({
+      rating: r.review?.rating,
+      comment: r.review?.comment,
+      createdAt: r.review?.createdAt,
+      renterName: `${r.renterId?.firstName} ${r.renterId?.lastName}`
+    }));
+
+    console.log(`✅ Found ${reviews.length} reviews for machine ${req.params.machineId}`);
+
+    res.json({
+      success: true,
+      data: reviews
+    });
+  } catch (error) {
+    console.error('❌ Fetch reviews error:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message
+    });
+  }
+});
+
+// OWNER: REJECT RENTAL
+router.post('/:id/reject', protect, async (req, res) => {
+  try {
+    const { rejectionReason } = req.body;
+    
+    if (!rejectionReason || rejectionReason.length < 20) {
+      return res.status(400).json({
+        success: false,
+        message: 'Rejection reason required (minimum 20 characters)'
+      });
+    }
+    
+    const rental = await Rental.findById(req.params.id)
+      .populate('machineId renterId');
+    
+    if (!rental) {
+      return res.status(404).json({ success: false, message: 'Rental not found' });
+    }
+    
+    if (rental.ownerId.toString() !== req.user.id) {
+      return res.status(403).json({ success: false, message: 'Not authorized' });
+    }
+    
+    if (rental.status !== 'pending') {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Can only reject pending rentals' 
+      });
+    }
+    
+    rental.status = 'rejected';
+    rental.rejectedAt = new Date();
+    rental.rejectedBy = req.user.id;
+    rental.rejectionReason = rejectionReason;
+    await rental.save();
+    
+    // Make machine available again
+    const Machine = require('../models/Machine');
+    await Machine.findByIdAndUpdate(rental.machineId._id, {
+      availability: 'available'
+    });
+    
+    // TODO: Send notification to renter
+    
+    res.json({
+      success: true,
+      message: 'Rental rejected',
+      data: rental
+    });
+  } catch (error) {
+    console.error('Reject error:', error);
+    res.status(500).json({ success: false, message: error.message });
+  };
+}
+); 
 
 module.exports = router;

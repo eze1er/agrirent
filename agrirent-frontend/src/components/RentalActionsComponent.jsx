@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import api from '../services/api';
+import './RentalActionsComponent.css';
 // import RentalActionsComponent from '../components/RentalActionsComponent';
 
 const RentalActionsComponent = ({ rental, currentUser, onUpdate }) => {
@@ -169,10 +170,8 @@ const RentalActionsComponent = ({ rental, currentUser, onUpdate }) => {
         </div>
       )}
 
-      <style jsx>{`
-        .rental-actions-container {
-          margin: 20px 0;
-        }
+      {/* <style jsx>{`
+ 
 
         .action-card {
           padding: 20px;
@@ -318,7 +317,7 @@ const RentalActionsComponent = ({ rental, currentUser, onUpdate }) => {
           gap: 10px;
           justify-content: flex-end;
         }
-      `}</style>
+      `}</style> */}
     </div>
   );
 };

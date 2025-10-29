@@ -52,7 +52,7 @@ const paymentSchema = new mongoose.Schema({
   status: {
     type: String,
     required: true,
-    enum: ['pending', 'processing', 'completed', 'failed', 'refunded', 'cancelled'],
+    enum: ['pending', 'processing', 'completed', 'finished', 'failed', 'refunded', 'cancelled'],
     default: 'pending',
   },
   
@@ -139,7 +139,7 @@ const paymentSchema = new mongoose.Schema({
     amount: Number,              // Amount paid to owner (after fees)
     status: {
       type: String,
-      enum: ['pending', 'processing', 'completed', 'failed'],
+      enum: ['pending', 'processing', 'completed', 'failed', 'finished'],
       default: 'pending',
     },
     payoutMethod: String,

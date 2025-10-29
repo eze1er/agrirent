@@ -202,26 +202,35 @@ export default function Dashboard({ user: currentUser, onLogout }) {
     }
   };
 
-  const handleBookMachine = async (bookingData) => {
-    try {
-      const response = await rentalAPI.create({
-        machineId: bookingMachine._id,
-        ...bookingData,
-      });
-      if (response.data.success) {
-        alert(
-          "✅ Booking request sent successfully! The owner will review your request."
-        );
-        await fetchRentals();
-        await fetchMachines(); // ✅ Refresh machines to update availability
-        setShowBookingModal(false);
-        setBookingMachine(null);
-        setCurrentView("machines"); // ✅ Return to machines view
-      }
-    } catch (error) {
-      throw error;
+const handleBookMachine = async (bookingData) => {
+  try {
+    const response = await rentalAPI.create({
+      machineId: bookingMachine._id,
+      ...bookingData,
+    });
+    if (response.data.success) {
+      alert(
+        "✅ Booking request sent successfully! The owner will review your request."
+      );
+      
+      // ✅ Close modal first
+      setShowBookingModal(false);
+      setBookingMachine(null);
+      
+      // ✅ Add small delay to ensure backend has updated
+      await new Promise(resolve => setTimeout(resolve, 500));
+      
+      // ✅ Then refresh data
+      await fetchRentals();
+      await fetchMachines();
+      
+      // ✅ Navigate to machines view
+      setCurrentView("machines");
     }
-  };
+  } catch (error) {
+    throw error;
+  }
+};
 
   const handlePaymentSuccess = async (paymentData) => {
     console.log("💰 Payment success callback:", paymentData);
@@ -691,209 +700,198 @@ export default function Dashboard({ user: currentUser, onLogout }) {
   };
 
   // ============== MACHINES SCREEN ==============
-const MachinesScreen = () => {
-  const [locationFilter, setLocationFilter] = useState("");
-  const [categories, setCategories] = useState(["All"]);
+  const MachinesScreen = () => {
+    const [locationFilter, setLocationFilter] = useState("");
+    const [categories, setCategories] = useState(["All"]);
 
-  useEffect(() => {
-    if (machines && machines.length > 0) {
-      const uniqueCategories = [...new Set(machines.map(m => m.category))];
-      const sortedCategories = uniqueCategories
-        .filter(cat => cat && typeof cat === 'string')
-        .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
-      setCategories(["All", ...sortedCategories]);
+    useEffect(() => {
+      if (machines && machines.length > 0) {
+        const uniqueCategories = [...new Set(machines.map((m) => m.category))];
+        const sortedCategories = uniqueCategories
+          .filter((cat) => cat && typeof cat === "string")
+          .sort((a, b) =>
+            a.localeCompare(b, undefined, { sensitivity: "base" })
+          );
+        setCategories(["All", ...sortedCategories]);
+      }
+    }, [machines]);
+
+    const filteredMachines = machines.filter((m) => {
+      if (selectedFilter !== "All" && m.category !== selectedFilter)
+        return false;
+      if (locationFilter.trim()) {
+        const locationText = `${m.address?.city || ""} ${
+          m.address?.commune || ""
+        } ${m.address?.quartier || ""} ${
+          m.address?.province || ""
+        }`.toLowerCase();
+        if (!locationText.includes(locationFilter.toLowerCase().trim()))
+          return false;
+      }
+      return true;
+    });
+
+    if (loadingMachines) {
+      return (
+        <div className="p-4 flex items-center justify-center h-64">
+          <div className="text-center">
+            <div className="w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+            <p className="text-gray-600">Loading machines...</p>
+          </div>
+        </div>
+      );
     }
-  }, [machines]);
 
-  const filteredMachines = machines.filter((m) => {
-    if (selectedFilter !== "All" && m.category !== selectedFilter) return false;
-    if (locationFilter.trim()) {
-      const locationText = `${m.address?.city || ''} ${m.address?.commune || ''} ${m.address?.quartier || ''} ${m.address?.province || ''}`.toLowerCase();
-      if (!locationText.includes(locationFilter.toLowerCase().trim())) return false;
-    }
-    return true;
-  });
-
-  if (loadingMachines) {
     return (
-      <div className="p-4 flex items-center justify-center h-64">
-        <div className="text-center">
-          <div className="w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-          <p className="text-gray-600">Loading machines...</p>
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div className="p-4">
-      <div className="flex justify-between items-center mb-4">
-        <h1 className="text-2xl font-bold bg-gradient-to-r from-blue-600 to-cyan-600 bg-clip-text text-transparent">
-          Available Machines
-        </h1>
-        {isOwner && (
-          <button
-            onClick={() => setShowAddMachineForm(true)}
-            className="bg-gradient-to-r from-emerald-500 to-teal-500 text-white p-3 rounded-xl shadow-lg hover:shadow-xl transition"
-          >
-            <Plus size={20} />
-          </button>
-        )}
-      </div>
-
-      {/* Category Filter Buttons */}
-      <div className="bg-white rounded-2xl p-3 mb-4 shadow-md flex gap-2 overflow-x-auto">
-        {categories.map((filter) => (
-          <button
-            key={filter}
-            onClick={() => setSelectedFilter(filter)}
-            className={`px-5 py-2 rounded-xl text-sm font-semibold whitespace-nowrap transition capitalize ${
-              selectedFilter === filter
-                ? "bg-gradient-to-r from-blue-600 to-cyan-600 text-white shadow-lg"
-                : "bg-gray-100 text-gray-700"
-            }`}
-          >
-            {filter === "All" ? "All" : `${filter}s`}
-          </button>
-        ))}
-      </div>
-
-      {/* Location Search */}
-      <div className="mb-4">
-        <div className="relative">
-          <input
-            type="text"
-            placeholder="🔍 Search by city, commune, or quartier..."
-            value={locationFilter}
-            onChange={(e) => setLocationFilter(e.target.value)}
-            className="w-full px-4 py-3 pl-12 border-2 border-gray-200 rounded-xl focus:border-blue-500 focus:outline-none"
-          />
-          <span className="absolute left-4 top-1/2 -translate-y-1/2 text-2xl">📍</span>
-          {locationFilter && (
-            <button
-              onClick={() => setLocationFilter("")}
-              className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
-            >
-              ✕
-            </button>
-          )}
-        </div>
-      </div>
-
-      {/* Machine List */}
-      {filteredMachines.length === 0 ? (
-        <div className="bg-white rounded-2xl p-8 text-center shadow-lg">
-          <Tractor size={48} className="mx-auto text-gray-400 mb-3" />
-          <p className="text-gray-600">No machines found</p>
+      <div className="p-4">
+        <div className="flex justify-between items-center mb-4">
+          <h1 className="text-2xl font-bold bg-gradient-to-r from-blue-600 to-cyan-600 bg-clip-text text-transparent">
+            Available Machines
+          </h1>
           {isOwner && (
             <button
               onClick={() => setShowAddMachineForm(true)}
-              className="mt-4 px-6 py-2 bg-gradient-to-r from-blue-600 to-cyan-600 text-white rounded-xl font-semibold"
+              className="bg-gradient-to-r from-emerald-500 to-teal-500 text-white p-3 rounded-xl shadow-lg hover:shadow-xl transition"
             >
-              Add Your First Machine
+              <Plus size={20} />
             </button>
           )}
         </div>
-      ) : (
-        <div className="space-y-4">
-          {filteredMachines.map((machine) => (
-            <div
-              key={machine._id}
-              onClick={() => {
-                setSelectedMachine(machine);
-                setCurrentView("machineDetail");
-              }}
-              className="bg-white rounded-2xl shadow-lg overflow-hidden cursor-pointer hover:shadow-2xl transition hover:scale-[1.02]"
+
+        {/* Category Filter Buttons */}
+        <div className="bg-white rounded-2xl p-3 mb-4 shadow-md flex gap-2 overflow-x-auto">
+          {categories.map((filter) => (
+            <button
+              key={filter}
+              onClick={() => setSelectedFilter(filter)}
+              className={`px-5 py-2 rounded-xl text-sm font-semibold whitespace-nowrap transition capitalize ${
+                selectedFilter === filter
+                  ? "bg-gradient-to-r from-blue-600 to-cyan-600 text-white shadow-lg"
+                  : "bg-gray-100 text-gray-700"
+              }`}
             >
-              <div className="relative">
-                <img
-                  src={
-                    machine.images?.[0] ||
-                    "https://images.unsplash.com/photo-1625246333195-78d9c38ad449?w=400"
-                  }
-                  alt={machine.name}
-                  className="w-full h-48 object-cover"
-                />
-                <span
-                  className={`absolute top-3 right-3 px-4 py-2 rounded-xl text-xs font-bold shadow-lg ${
-                    machine.availability === "available"
-                      ? "bg-emerald-500 text-white"
-                      : machine.availability === "pending"
-                      ? "bg-amber-500 text-white"
-                      : machine.availability === "rented"
-                      ? "bg-blue-500 text-white"
-                      : "bg-rose-500 text-white"
-                  }`}
-                >
-                  {machine.availability === "available" && "✅ Available"}
-                  {machine.availability === "pending" && "⏳ Pending"}
-                  {machine.availability === "rented" && "🔒 Rented"}
-                  {machine.availability === "unavailable" && "❌ Unavailable"}
-                </span>
-              </div>
-              <div className="p-4">
-                <h3 className="text-lg font-bold text-gray-800">
-                  {machine.name}
-                </h3>
-                {/* LOCATION */}
-                <div className="bg-blue-50 border-2 border-blue-200 rounded-lg p-3 my-3">
-                  <div className="flex items-start gap-2">
-                    <span className="text-blue-600 text-xl mt-0.5">📍</span>
-                    <div className="flex-1">
-                      <p className="text-lg font-bold text-blue-900 leading-tight">
-                        {machine.address?.city || "Location N/A"}
-                        {machine.address?.commune &&
-                          `, ${machine.address.commune}`}
-                      </p>
-                      {machine.address?.quartier && (
-                        <p className="text-sm font-semibold text-blue-700 mt-0.5">
-                          Quartier: {machine.address.quartier}
+              {filter === "All" ? "All" : `${filter}s`}
+            </button>
+          ))}
+        </div>
+
+        {/* Location Search */}
+        <div className="mb-4">
+          <div className="relative">
+            <input
+              type="text"
+              placeholder="🔍 Search by city, commune, or quartier..."
+              value={locationFilter}
+              onChange={(e) => setLocationFilter(e.target.value)}
+              className="w-full px-4 py-3 pl-12 border-2 border-gray-200 rounded-xl focus:border-blue-500 focus:outline-none"
+            />
+            <span className="absolute left-4 top-1/2 -translate-y-1/2 text-2xl">
+              📍
+            </span>
+            {locationFilter && (
+              <button
+                onClick={() => setLocationFilter("")}
+                className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+              >
+                ✕
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Machine List */}
+        {filteredMachines.length === 0 ? (
+          <div className="bg-white rounded-2xl p-8 text-center shadow-lg">
+            <Tractor size={48} className="mx-auto text-gray-400 mb-3" />
+            <p className="text-gray-600">No machines found</p>
+            {isOwner && (
+              <button
+                onClick={() => setShowAddMachineForm(true)}
+                className="mt-4 px-6 py-2 bg-gradient-to-r from-blue-600 to-cyan-600 text-white rounded-xl font-semibold"
+              >
+                Add Your First Machine
+              </button>
+            )}
+          </div>
+        ) : (
+          <div className="space-y-4">
+            {filteredMachines.map((machine) => (
+              <div
+                key={machine._id}
+                onClick={() => {
+                  setSelectedMachine(machine);
+                  setCurrentView("machineDetail");
+                }}
+                className="bg-white rounded-2xl shadow-lg overflow-hidden cursor-pointer hover:shadow-2xl transition hover:scale-[1.02]"
+              >
+                <div className="relative">
+                  <img
+                    src={
+                      machine.images?.[0] ||
+                      "https://images.unsplash.com/photo-1625246333195-78d9c38ad449?w=400"
+                    }
+                    alt={machine.name}
+                    className="w-full h-48 object-cover"
+                  />
+                  <span
+                    className={`absolute top-3 right-3 px-4 py-2 rounded-xl text-xs font-bold shadow-lg ${
+                      machine.availability === "available"
+                        ? "bg-emerald-500 text-white"
+                        : machine.availability === "pending"
+                        ? "bg-amber-500 text-white"
+                        : machine.availability === "rented"
+                        ? "bg-blue-500 text-white"
+                        : "bg-rose-500 text-white"
+                    }`}
+                  >
+                    {machine.availability === "available" && "✅ Available"}
+                    {machine.availability === "pending" && "⏳ Pending"}
+                    {machine.availability === "rented" && "🔒 Rented"}
+                    {machine.availability === "unavailable" && "❌ Unavailable"}
+                  </span>
+                </div>
+                <div className="p-4">
+                  <h3 className="text-lg font-bold text-gray-800">
+                    {machine.name}
+                  </h3>
+                  {/* LOCATION */}
+                  <div className="bg-blue-50 border-2 border-blue-200 rounded-lg p-3 my-3">
+                    <div className="flex items-start gap-2">
+                      <span className="text-blue-600 text-xl mt-0.5">📍</span>
+                      <div className="flex-1">
+                        <p className="text-lg font-bold text-blue-900 leading-tight">
+                          {machine.address?.city || "Location N/A"}
+                          {machine.address?.commune &&
+                            `, ${machine.address.commune}`}
                         </p>
-                      )}
-                      <p className="text-xs text-blue-600 font-medium mt-1">
-                        {machine.address?.province || "Province N/A"}
-                      </p>
+                        {machine.address?.quartier && (
+                          <p className="text-sm font-semibold text-blue-700 mt-0.5">
+                            Quartier: {machine.address.quartier}
+                          </p>
+                        )}
+                        <p className="text-xs text-blue-600 font-medium mt-1">
+                          {machine.address?.province || "Province N/A"}
+                        </p>
+                      </div>
                     </div>
                   </div>
-                </div>
-                <p className="text-sm text-gray-500 mt-1 capitalize">
-                  {machine.category} • {machine.brand}
-                </p>
-                <div className="flex items-center gap-1 mt-2">
-                  <Star size={16} className="text-amber-400 fill-amber-400" />
-                  <span className="text-sm font-semibold">
-                    {(machine.rating?.average || 0).toFixed(1)}
-                  </span>
-                  {machine.rating?.count > 0 && (
-                    <span className="text-xs text-gray-500">
-                      ({machine.rating.count} review
-                      {machine.rating.count !== 1 ? "s" : ""})
+                  <p className="text-sm text-gray-500 mt-1 capitalize">
+                    {machine.category} • {machine.brand}
+                  </p>
+                  <div className="flex items-center gap-1 mt-2">
+                    <Star size={16} className="text-amber-400 fill-amber-400" />
+                    <span className="text-sm font-semibold">
+                      {(machine.rating?.average || 0).toFixed(1)}
                     </span>
-                  )}
-                </div>
-                <div className="mt-4">
-                  {machine.pricingType === "daily" && (
-                    <div className="flex justify-between items-center">
-                      <span className="text-2xl font-bold bg-gradient-to-r from-blue-600 to-cyan-600 bg-clip-text text-transparent">
-                        ${machine.pricePerDay}/day
+                    {machine.rating?.count > 0 && (
+                      <span className="text-xs text-gray-500">
+                        ({machine.rating.count} review
+                        {machine.rating.count !== 1 ? "s" : ""})
                       </span>
-                      <span className="text-sm text-gray-600 font-medium">
-                        {machine.specifications?.horsepower || 0} HP
-                      </span>
-                    </div>
-                  )}
-                  {machine.pricingType === "per_hectare" && (
-                    <div className="flex justify-between items-center">
-                      <span className="text-2xl font-bold bg-gradient-to-r from-emerald-600 to-teal-600 bg-clip-text text-transparent">
-                        ${machine.pricePerHectare}/Ha
-                      </span>
-                      <span className="text-sm text-gray-600 font-medium">
-                        Min {machine.minimumHectares} Ha
-                      </span>
-                    </div>
-                  )}
-                  {machine.pricingType === "both" && (
-                    <div className="space-y-1">
+                    )}
+                  </div>
+                  <div className="mt-4">
+                    {machine.pricingType === "daily" && (
                       <div className="flex justify-between items-center">
                         <span className="text-2xl font-bold bg-gradient-to-r from-blue-600 to-cyan-600 bg-clip-text text-transparent">
                           ${machine.pricePerDay}/day
@@ -902,21 +900,42 @@ const MachinesScreen = () => {
                           {machine.specifications?.horsepower || 0} HP
                         </span>
                       </div>
-                      <div className="text-sm text-gray-600 italic">
-                        or ${machine.pricePerHectare}/hectare (min{" "}
-                        {machine.minimumHectares} Ha)
+                    )}
+                    {machine.pricingType === "per_hectare" && (
+                      <div className="flex justify-between items-center">
+                        <span className="text-2xl font-bold bg-gradient-to-r from-emerald-600 to-teal-600 bg-clip-text text-transparent">
+                          ${machine.pricePerHectare}/Ha
+                        </span>
+                        <span className="text-sm text-gray-600 font-medium">
+                          Min {machine.minimumHectares} Ha
+                        </span>
                       </div>
-                    </div>
-                  )}
+                    )}
+                    {machine.pricingType === "both" && (
+                      <div className="space-y-1">
+                        <div className="flex justify-between items-center">
+                          <span className="text-2xl font-bold bg-gradient-to-r from-blue-600 to-cyan-600 bg-clip-text text-transparent">
+                            ${machine.pricePerDay}/day
+                          </span>
+                          <span className="text-sm text-gray-600 font-medium">
+                            {machine.specifications?.horsepower || 0} HP
+                          </span>
+                        </div>
+                        <div className="text-sm text-gray-600 italic">
+                          or ${machine.pricePerHectare}/hectare (min{" "}
+                          {machine.minimumHectares} Ha)
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-};
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  };
 
   // ============== MACHINE DETAIL SCREEN ==============
   const MachineDetailScreen = () => {
@@ -1165,7 +1184,7 @@ const MachinesScreen = () => {
                     </div>
                     <span
                       className={`px-4 py-2 rounded-xl text-xs font-bold capitalize ${
-                        rental.status === "pending"
+                        rental.status === "booking"
                           ? "bg-amber-100 text-amber-800"
                           : rental.status === "approved"
                           ? "bg-blue-100 text-blue-800"
@@ -1596,7 +1615,7 @@ const MachinesScreen = () => {
                   </div>
                   <span
                     className={`px-4 py-2 rounded-xl text-xs font-bold capitalize ${
-                      rental.status === "pending"
+                      rental.status === "booking"
                         ? "bg-amber-100 text-amber-800"
                         : rental.status === "approved"
                         ? "bg-emerald-100 text-emerald-800"
@@ -1640,6 +1659,7 @@ const MachinesScreen = () => {
                 </p>
 
                 {/* Show rejection reason if rejected */}
+                {/* Show rejection reason if rejected */}
                 {rental.status === "rejected" && rental.rejectionReason && (
                   <div className="mt-4 bg-rose-50 border-l-4 border-rose-500 p-3 rounded">
                     <h4 className="font-semibold text-rose-800 text-sm mb-1">
@@ -1651,7 +1671,7 @@ const MachinesScreen = () => {
                   </div>
                 )}
 
-                {/* Approve/Reject for pending */}
+                {/* ✅ APPROVE/REJECT BUTTONS - For PENDING status */}
                 {rental.status === "pending" && (
                   <div className="flex gap-2 mt-4">
                     <button
@@ -1667,6 +1687,31 @@ const MachinesScreen = () => {
                       ❌ Reject
                     </button>
                   </div>
+                )}
+
+                {/* ✅ COMPLETE BUTTON - Only for ACTIVE rentals (after payment) */}
+                {rental.status === "active" && (
+                  <button
+                    onClick={async () => {
+                      if (!window.confirm("Mark this rental as completed?"))
+                        return;
+                      try {
+                        await rentalAPI.complete(rental._id);
+                        alert(
+                          "✅ Job marked as completed! Waiting for renter to confirm."
+                        );
+                        fetchRequests();
+                      } catch (err) {
+                        alert(
+                          err.response?.data?.message ||
+                            "Failed to complete rental"
+                        );
+                      }
+                    }}
+                    className="mt-3 w-full py-2 bg-gradient-to-r from-purple-500 to-pink-500 text-white rounded-xl font-semibold text-sm"
+                  >
+                    ✅ Mark Job as Completed
+                  </button>
                 )}
 
                 {/* Complete for approved/active */}
@@ -2264,410 +2309,480 @@ const MachinesScreen = () => {
     );
   };
 
-// ============== ADMIN DASHBOARD SCREEN ==============
-const AdminDashboardScreen = () => {
-  const [stats, setStats] = useState(null);
-  const [allRentals, setAllRentals] = useState([]);
-  const [allUsers, setAllUsers] = useState([]);
-  const [loadingStats, setLoadingStats] = useState(true);
-  const [activeTab, setActiveTab] = useState('overview'); // overview, rentals, users
-  const [searchTerm, setSearchTerm] = useState('');
-  const [statusFilter, setStatusFilter] = useState('all');
+  // ============== ADMIN DASHBOARD SCREEN ==============
+  const AdminDashboardScreen = () => {
+    const [stats, setStats] = useState(null);
+    const [allRentals, setAllRentals] = useState([]);
+    const [allUsers, setAllUsers] = useState([]);
+    const [loadingStats, setLoadingStats] = useState(true);
+    const [activeTab, setActiveTab] = useState("overview"); // overview, rentals, users
+    const [searchTerm, setSearchTerm] = useState("");
+    const [statusFilter, setStatusFilter] = useState("all");
 
-  useEffect(() => {
-    if (currentView === 'adminDashboard') {
-      fetchAdminData();
-    }
-  }, [currentView]);
+    useEffect(() => {
+      if (currentView === "adminDashboard") {
+        fetchAdminData();
+      }
+    }, [currentView]);
 
-  const fetchAdminData = async () => {
-    setLoadingStats(true);
-    try {
-      const token = localStorage.getItem('token');
-      
-      // Fetch overview stats
-      const statsRes = await fetch('http://localhost:3001/api/admin/dashboard/overview', {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-      const statsData = await statsRes.json();
-      if (statsData.success) setStats(statsData.data);
+    const fetchAdminData = async () => {
+      setLoadingStats(true);
+      try {
+        const token = localStorage.getItem("token");
 
-      // Fetch all rentals
-      const rentalsRes = await fetch('http://localhost:3001/api/admin/rentals/all', {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-      const rentalsData = await rentalsRes.json();
-      if (rentalsData.success) setAllRentals(rentalsData.data.rentals);
+        // Fetch overview stats
+        const statsRes = await fetch(
+          "http://localhost:3001/api/admin/dashboard/overview",
+          {
+            headers: { Authorization: `Bearer ${token}` },
+          }
+        );
+        const statsData = await statsRes.json();
+        if (statsData.success) setStats(statsData.data);
 
-      // Fetch all users
-      const usersRes = await fetch('http://localhost:3001/api/admin/users/all', {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-      const usersData = await usersRes.json();
-      if (usersData.success) setAllUsers(usersData.data.users);
+        // Fetch all rentals
+        const rentalsRes = await fetch(
+          "http://localhost:3001/api/admin/rentals/all",
+          {
+            headers: { Authorization: `Bearer ${token}` },
+          }
+        );
+        const rentalsData = await rentalsRes.json();
+        if (rentalsData.success) setAllRentals(rentalsData.data.rentals);
 
-    } catch (error) {
-      console.error('Error fetching admin data:', error);
-    } finally {
-      setLoadingStats(false);
-    }
-  };
+        // Fetch all users
+        const usersRes = await fetch(
+          "http://localhost:3001/api/admin/users/all",
+          {
+            headers: { Authorization: `Bearer ${token}` },
+          }
+        );
+        const usersData = await usersRes.json();
+        if (usersData.success) setAllUsers(usersData.data.users);
+      } catch (error) {
+        console.error("Error fetching admin data:", error);
+      } finally {
+        setLoadingStats(false);
+      }
+    };
 
-  const exportToCSV = async () => {
-    try {
-      const token = localStorage.getItem('token');
-      const response = await fetch(
-        `http://localhost:3001/api/admin/export/rentals?format=csv&status=${statusFilter}`,
-        { headers: { 'Authorization': `Bearer ${token}` } }
+    const exportToCSV = async () => {
+      try {
+        const token = localStorage.getItem("token");
+        const response = await fetch(
+          `http://localhost:3001/api/admin/export/rentals?format=csv&status=${statusFilter}`,
+          { headers: { Authorization: `Bearer ${token}` } }
+        );
+        const blob = await response.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `agrirent-rentals-${Date.now()}.csv`;
+        a.click();
+      } catch (error) {
+        console.error("Export error:", error);
+        alert("Failed to export data");
+      }
+    };
+
+    const filteredRentals = allRentals.filter((rental) => {
+      const matchesStatus =
+        statusFilter === "all" || rental.status === statusFilter;
+      const matchesSearch =
+        !searchTerm ||
+        rental.renterId?.firstName
+          ?.toLowerCase()
+          .includes(searchTerm.toLowerCase()) ||
+        rental.renterId?.lastName
+          ?.toLowerCase()
+          .includes(searchTerm.toLowerCase()) ||
+        rental.ownerId?.firstName
+          ?.toLowerCase()
+          .includes(searchTerm.toLowerCase()) ||
+        rental.ownerId?.lastName
+          ?.toLowerCase()
+          .includes(searchTerm.toLowerCase()) ||
+        rental.machineId?.name
+          ?.toLowerCase()
+          .includes(searchTerm.toLowerCase());
+
+      return matchesStatus && matchesSearch;
+    });
+
+    const filteredUsers = allUsers.filter((user) => {
+      if (!searchTerm) return true;
+      return (
+        user.firstName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        user.lastName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        user.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        user.phoneNumber?.includes(searchTerm)
       );
-      const blob = await response.blob();
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `agrirent-rentals-${Date.now()}.csv`;
-      a.click();
-    } catch (error) {
-      console.error('Export error:', error);
-      alert('Failed to export data');
+    });
+
+    if (loadingStats) {
+      return (
+        <div className="p-4">
+          <BackButton onClick={() => setCurrentView("profile")} />
+          <div className="flex items-center justify-center h-64">
+            <div className="text-center">
+              <div className="w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-2"></div>
+              <p className="text-gray-600">Loading admin data...</p>
+            </div>
+          </div>
+        </div>
+      );
     }
-  };
 
-  const filteredRentals = allRentals.filter(rental => {
-    const matchesStatus = statusFilter === 'all' || rental.status === statusFilter;
-    const matchesSearch = !searchTerm || 
-      rental.renterId?.firstName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      rental.renterId?.lastName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      rental.ownerId?.firstName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      rental.ownerId?.lastName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      rental.machineId?.name?.toLowerCase().includes(searchTerm.toLowerCase());
-    
-    return matchesStatus && matchesSearch;
-  });
-
-  const filteredUsers = allUsers.filter(user => {
-    if (!searchTerm) return true;
-    return user.firstName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-           user.lastName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-           user.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-           user.phoneNumber?.includes(searchTerm);
-  });
-
-  if (loadingStats) {
     return (
       <div className="p-4">
-        <BackButton onClick={() => setCurrentView('profile')} />
-        <div className="flex items-center justify-center h-64">
-          <div className="text-center">
-            <div className="w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-2"></div>
-            <p className="text-gray-600">Loading admin data...</p>
-          </div>
+        <BackButton
+          onClick={() => setCurrentView("profile")}
+          label="Back to Profile"
+        />
+
+        {/* Header */}
+        <div className="mb-6">
+          <h2 className="text-3xl font-bold bg-gradient-to-r from-purple-600 to-pink-600 bg-clip-text text-transparent">
+            Admin Dashboard
+          </h2>
+          <p className="text-gray-600 text-sm">Manage all rentals and users</p>
         </div>
-      </div>
-    );
-  }
 
-  return (
-    <div className="p-4">
-      <BackButton onClick={() => setCurrentView('profile')} label="Back to Profile" />
-      
-      {/* Header */}
-      <div className="mb-6">
-        <h2 className="text-3xl font-bold bg-gradient-to-r from-purple-600 to-pink-600 bg-clip-text text-transparent">
-          Admin Dashboard
-        </h2>
-        <p className="text-gray-600 text-sm">Manage all rentals and users</p>
-      </div>
+        {/* Tabs */}
+        <div className="flex gap-2 mb-6 overflow-x-auto">
+          <button
+            onClick={() => setActiveTab("overview")}
+            className={`px-4 py-2 rounded-xl font-semibold whitespace-nowrap transition ${
+              activeTab === "overview"
+                ? "bg-purple-600 text-white"
+                : "bg-white text-gray-700"
+            }`}
+          >
+            Overview
+          </button>
+          <button
+            onClick={() => setActiveTab("rentals")}
+            className={`px-4 py-2 rounded-xl font-semibold whitespace-nowrap transition ${
+              activeTab === "rentals"
+                ? "bg-purple-600 text-white"
+                : "bg-white text-gray-700"
+            }`}
+          >
+            All Rentals ({allRentals.length})
+          </button>
+          <button
+            onClick={() => setActiveTab("users")}
+            className={`px-4 py-2 rounded-xl font-semibold whitespace-nowrap transition ${
+              activeTab === "users"
+                ? "bg-purple-600 text-white"
+                : "bg-white text-gray-700"
+            }`}
+          >
+            Users ({allUsers.length})
+          </button>
+        </div>
 
-      {/* Tabs */}
-      <div className="flex gap-2 mb-6 overflow-x-auto">
-        <button
-          onClick={() => setActiveTab('overview')}
-          className={`px-4 py-2 rounded-xl font-semibold whitespace-nowrap transition ${
-            activeTab === 'overview'
-              ? 'bg-purple-600 text-white'
-              : 'bg-white text-gray-700'
-          }`}
-        >
-          Overview
-        </button>
-        <button
-          onClick={() => setActiveTab('rentals')}
-          className={`px-4 py-2 rounded-xl font-semibold whitespace-nowrap transition ${
-            activeTab === 'rentals'
-              ? 'bg-purple-600 text-white'
-              : 'bg-white text-gray-700'
-          }`}
-        >
-          All Rentals ({allRentals.length})
-        </button>
-        <button
-          onClick={() => setActiveTab('users')}
-          className={`px-4 py-2 rounded-xl font-semibold whitespace-nowrap transition ${
-            activeTab === 'users'
-              ? 'bg-purple-600 text-white'
-              : 'bg-white text-gray-700'
-          }`}
-        >
-          Users ({allUsers.length})
-        </button>
-      </div>
+        {/* Overview Tab */}
+        {activeTab === "overview" && stats && (
+          <div className="space-y-4">
+            {/* Stats Grid */}
+            <div className="grid grid-cols-2 gap-4">
+              <div className="bg-gradient-to-br from-blue-500 to-cyan-500 rounded-2xl p-4 text-white shadow-lg">
+                <p className="text-sm opacity-90 mb-1">Total Users</p>
+                <p className="text-3xl font-bold">{stats.users?.total || 0}</p>
+                <p className="text-xs opacity-75 mt-1">
+                  {stats.users?.owners || 0} owners, {stats.users?.renters || 0}{" "}
+                  renters
+                </p>
+              </div>
+              <div className="bg-gradient-to-br from-green-500 to-emerald-500 rounded-2xl p-4 text-white shadow-lg">
+                <p className="text-sm opacity-90 mb-1">Machines</p>
+                <p className="text-3xl font-bold">
+                  {stats.machines?.total || 0}
+                </p>
+                <p className="text-xs opacity-75 mt-1">
+                  {stats.machines?.available || 0} available
+                </p>
+              </div>
+              <div className="bg-gradient-to-br from-purple-500 to-pink-500 rounded-2xl p-4 text-white shadow-lg">
+                <p className="text-sm opacity-90 mb-1">Active Rentals</p>
+                <p className="text-3xl font-bold">
+                  {stats.rentals?.active || 0}
+                </p>
+                <p className="text-xs opacity-75 mt-1">
+                  {stats.rentals?.pending || 0} pending
+                </p>
+              </div>
+              <div className="bg-gradient-to-br from-amber-500 to-orange-500 rounded-2xl p-4 text-white shadow-lg">
+                <p className="text-sm opacity-90 mb-1">Revenue</p>
+                <p className="text-2xl font-bold">
+                  ${stats.revenue?.total?.toFixed(2) || "0.00"}
+                </p>
+                <p className="text-xs opacity-75 mt-1">
+                  ${stats.revenue?.escrow?.toFixed(2) || "0.00"} in escrow
+                </p>
+              </div>
+            </div>
 
-      {/* Overview Tab */}
-      {activeTab === 'overview' && stats && (
-        <div className="space-y-4">
-          {/* Stats Grid */}
-          <div className="grid grid-cols-2 gap-4">
-            <div className="bg-gradient-to-br from-blue-500 to-cyan-500 rounded-2xl p-4 text-white shadow-lg">
-              <p className="text-sm opacity-90 mb-1">Total Users</p>
-              <p className="text-3xl font-bold">{stats.users?.total || 0}</p>
-              <p className="text-xs opacity-75 mt-1">
-                {stats.users?.owners || 0} owners, {stats.users?.renters || 0} renters
-              </p>
-            </div>
-            <div className="bg-gradient-to-br from-green-500 to-emerald-500 rounded-2xl p-4 text-white shadow-lg">
-              <p className="text-sm opacity-90 mb-1">Machines</p>
-              <p className="text-3xl font-bold">{stats.machines?.total || 0}</p>
-              <p className="text-xs opacity-75 mt-1">
-                {stats.machines?.available || 0} available
-              </p>
-            </div>
-            <div className="bg-gradient-to-br from-purple-500 to-pink-500 rounded-2xl p-4 text-white shadow-lg">
-              <p className="text-sm opacity-90 mb-1">Active Rentals</p>
-              <p className="text-3xl font-bold">{stats.rentals?.active || 0}</p>
-              <p className="text-xs opacity-75 mt-1">
-                {stats.rentals?.pending || 0} pending
-              </p>
-            </div>
-            <div className="bg-gradient-to-br from-amber-500 to-orange-500 rounded-2xl p-4 text-white shadow-lg">
-              <p className="text-sm opacity-90 mb-1">Revenue</p>
-              <p className="text-2xl font-bold">${stats.revenue?.total?.toFixed(2) || '0.00'}</p>
-              <p className="text-xs opacity-75 mt-1">
-                ${stats.revenue?.escrow?.toFixed(2) || '0.00'} in escrow
-              </p>
+            {/* Quick Actions */}
+            <div className="bg-white rounded-2xl p-4 shadow-sm">
+              <h3 className="font-bold text-gray-900 mb-3">Quick Actions</h3>
+              <div className="space-y-2">
+                <button
+                  onClick={() => setActiveTab("rentals")}
+                  className="w-full flex items-center justify-between p-3 bg-blue-50 hover:bg-blue-100 rounded-xl transition"
+                >
+                  <span className="font-semibold text-blue-900">
+                    View All Rentals
+                  </span>
+                  <span className="text-blue-600">→</span>
+                </button>
+                <button
+                  onClick={() => setActiveTab("users")}
+                  className="w-full flex items-center justify-between p-3 bg-purple-50 hover:bg-purple-100 rounded-xl transition"
+                >
+                  <span className="font-semibold text-purple-900">
+                    Manage Users
+                  </span>
+                  <span className="text-purple-600">→</span>
+                </button>
+                <button
+                  onClick={exportToCSV}
+                  className="w-full flex items-center justify-between p-3 bg-green-50 hover:bg-green-100 rounded-xl transition"
+                >
+                  <span className="font-semibold text-green-900">
+                    Export Data (CSV)
+                  </span>
+                  <span className="text-green-600">📥</span>
+                </button>
+              </div>
             </div>
           </div>
+        )}
 
-          {/* Quick Actions */}
-          <div className="bg-white rounded-2xl p-4 shadow-sm">
-            <h3 className="font-bold text-gray-900 mb-3">Quick Actions</h3>
-            <div className="space-y-2">
-              <button
-                onClick={() => setActiveTab('rentals')}
-                className="w-full flex items-center justify-between p-3 bg-blue-50 hover:bg-blue-100 rounded-xl transition"
-              >
-                <span className="font-semibold text-blue-900">View All Rentals</span>
-                <span className="text-blue-600">→</span>
-              </button>
-              <button
-                onClick={() => setActiveTab('users')}
-                className="w-full flex items-center justify-between p-3 bg-purple-50 hover:bg-purple-100 rounded-xl transition"
-              >
-                <span className="font-semibold text-purple-900">Manage Users</span>
-                <span className="text-purple-600">→</span>
-              </button>
+        {/* Rentals Tab */}
+        {activeTab === "rentals" && (
+          <div className="space-y-4">
+            {/* Search and Filters */}
+            <div className="bg-white rounded-2xl p-4 shadow-sm space-y-3">
+              <input
+                type="text"
+                placeholder="Search rentals..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="w-full px-4 py-2 border-2 border-gray-200 rounded-xl focus:border-purple-500 focus:outline-none"
+              />
+              <div className="flex gap-2 overflow-x-auto">
+                {[
+                  "all",
+                  "pending",
+                  "approved",
+                  "active",
+                  "completed",
+                  "cancelled",
+                ].map((status) => (
+                  <button
+                    key={status}
+                    onClick={() => setStatusFilter(status)}
+                    className={`px-4 py-2 rounded-xl font-semibold whitespace-nowrap transition ${
+                      statusFilter === status
+                        ? "bg-purple-600 text-white"
+                        : "bg-gray-100 text-gray-700"
+                    }`}
+                  >
+                    {status === "all"
+                      ? "All"
+                      : status.charAt(0).toUpperCase() + status.slice(1)}
+                  </button>
+                ))}
+              </div>
               <button
                 onClick={exportToCSV}
-                className="w-full flex items-center justify-between p-3 bg-green-50 hover:bg-green-100 rounded-xl transition"
+                className="w-full px-4 py-2 bg-green-600 text-white rounded-xl font-semibold"
               >
-                <span className="font-semibold text-green-900">Export Data (CSV)</span>
-                <span className="text-green-600">📥</span>
+                📥 Export to CSV
               </button>
             </div>
-          </div>
-        </div>
-      )}
 
-      {/* Rentals Tab */}
-      {activeTab === 'rentals' && (
-        <div className="space-y-4">
-          {/* Search and Filters */}
-          <div className="bg-white rounded-2xl p-4 shadow-sm space-y-3">
-            <input
-              type="text"
-              placeholder="Search rentals..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full px-4 py-2 border-2 border-gray-200 rounded-xl focus:border-purple-500 focus:outline-none"
-            />
-            <div className="flex gap-2 overflow-x-auto">
-              {['all', 'pending', 'approved', 'active', 'completed', 'cancelled'].map(status => (
-                <button
-                  key={status}
-                  onClick={() => setStatusFilter(status)}
-                  className={`px-4 py-2 rounded-xl font-semibold whitespace-nowrap transition ${
-                    statusFilter === status
-                      ? 'bg-purple-600 text-white'
-                      : 'bg-gray-100 text-gray-700'
-                  }`}
-                >
-                  {status === 'all' ? 'All' : status.charAt(0).toUpperCase() + status.slice(1)}
-                </button>
-              ))}
-            </div>
-            <button
-              onClick={exportToCSV}
-              className="w-full px-4 py-2 bg-green-600 text-white rounded-xl font-semibold"
-            >
-              📥 Export to CSV
-            </button>
-          </div>
-
-          {/* Rentals List */}
-          <div className="space-y-3">
-            {filteredRentals.length === 0 ? (
-              <div className="bg-white rounded-2xl p-8 text-center text-gray-500">
-                No rentals found
-              </div>
-            ) : (
-              filteredRentals.map(rental => (
-                <div key={rental._id} className="bg-white rounded-2xl p-4 shadow-sm">
-                  {/* Machine Info */}
-                  <div className="flex justify-between items-start mb-3">
-                    <div>
-                      <h3 className="font-bold text-gray-900">{rental.machineId?.name}</h3>
-                      <p className="text-sm text-gray-500">{rental.machineId?.category}</p>
-                    </div>
-                    <span className={`px-3 py-1 rounded-full text-xs font-bold ${
-                      rental.status === 'active' ? 'bg-green-100 text-green-800' :
-                      rental.status === 'pending' ? 'bg-amber-100 text-amber-800' :
-                      rental.status === 'completed' ? 'bg-blue-100 text-blue-800' :
-                      'bg-gray-100 text-gray-800'
-                    }`}>
-                      {rental.status}
-                    </span>
-                  </div>
-
-                  {/* Contact Info Grid */}
-                  <div className="grid grid-cols-2 gap-3 text-sm border-t pt-3">
-                    {/* Renter */}
-                    <div>
-                      <p className="font-semibold text-gray-700 mb-1">🙋 Renter:</p>
-                      <p className="text-gray-900 font-medium">
-                        {rental.renterId?.firstName} {rental.renterId?.lastName}
-                      </p>
-                      <a 
-                        href={`mailto:${rental.renterId?.email}`}
-                        className="text-blue-600 text-xs block truncate"
-                      >
-                        📧 {rental.renterId?.email}
-                      </a>
-                      <a 
-                        href={`tel:${rental.renterId?.phoneNumber}`}
-                        className="text-green-600 text-xs block"
-                      >
-                        📱 {rental.renterId?.phoneNumber || 'N/A'}
-                      </a>
-                    </div>
-
-                    {/* Owner */}
-                    <div>
-                      <p className="font-semibold text-gray-700 mb-1">👤 Owner:</p>
-                      <p className="text-gray-900 font-medium">
-                        {rental.ownerId?.firstName} {rental.ownerId?.lastName}
-                      </p>
-                      <a 
-                        href={`mailto:${rental.ownerId?.email}`}
-                        className="text-blue-600 text-xs block truncate"
-                      >
-                        📧 {rental.ownerId?.email}
-                      </a>
-                      <a 
-                        href={`tel:${rental.ownerId?.phoneNumber}`}
-                        className="text-green-600 text-xs block"
-                      >
-                        📱 {rental.ownerId?.phoneNumber || 'N/A'}
-                      </a>
-                    </div>
-                  </div>
-
-                  {/* Amount and Date */}
-                  <div className="flex justify-between items-center mt-3 pt-3 border-t">
-                    <span className="text-xl font-bold text-purple-600">
-                      ${rental.pricing?.totalPrice?.toFixed(2)}
-                    </span>
-                    <span className="text-xs text-gray-500">
-                      {new Date(rental.createdAt).toLocaleDateString()}
-                    </span>
-                  </div>
+            {/* Rentals List */}
+            <div className="space-y-3">
+              {filteredRentals.length === 0 ? (
+                <div className="bg-white rounded-2xl p-8 text-center text-gray-500">
+                  No rentals found
                 </div>
-              ))
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* Users Tab */}
-      {activeTab === 'users' && (
-        <div className="space-y-4">
-          {/* Search */}
-          <div className="bg-white rounded-2xl p-4 shadow-sm">
-            <input
-              type="text"
-              placeholder="Search users by name, email, or phone..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full px-4 py-2 border-2 border-gray-200 rounded-xl focus:border-purple-500 focus:outline-none"
-            />
-          </div>
-
-          {/* Users List */}
-          <div className="space-y-3">
-            {filteredUsers.length === 0 ? (
-              <div className="bg-white rounded-2xl p-8 text-center text-gray-500">
-                No users found
-              </div>
-            ) : (
-              filteredUsers.map(user => (
-                <div key={user._id} className="bg-white rounded-2xl p-4 shadow-sm">
-                  <div className="flex items-start gap-3">
-                    {/* Avatar */}
-                    <div className="w-12 h-12 bg-gradient-to-br from-purple-500 to-pink-500 rounded-full flex items-center justify-center text-white font-bold text-lg flex-shrink-0">
-                      {user.firstName?.[0]}{user.lastName?.[0]}
-                    </div>
-
-                    {/* User Info */}
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 mb-1">
+              ) : (
+                filteredRentals.map((rental) => (
+                  <div
+                    key={rental._id}
+                    className="bg-white rounded-2xl p-4 shadow-sm"
+                  >
+                    {/* Machine Info */}
+                    <div className="flex justify-between items-start mb-3">
+                      <div>
                         <h3 className="font-bold text-gray-900">
-                          {user.firstName} {user.lastName}
+                          {rental.machineId?.name}
                         </h3>
-                        <span className="px-2 py-1 bg-blue-100 text-blue-800 text-xs font-bold rounded">
-                          {user.role}
-                        </span>
+                        <p className="text-sm text-gray-500">
+                          {rental.machineId?.category}
+                        </p>
                       </div>
-                      <a 
-                        href={`mailto:${user.email}`}
-                        className="text-blue-600 text-sm block truncate"
+                      <span
+                        className={`px-3 py-1 rounded-full text-xs font-bold ${
+                          rental.status === "active"
+                            ? "bg-green-100 text-green-800"
+                            : rental.status === "pending"
+                            ? "bg-amber-100 text-amber-800"
+                            : rental.status === "completed"
+                            ? "bg-blue-100 text-blue-800"
+                            : "bg-gray-100 text-gray-800"
+                        }`}
                       >
-                        📧 {user.email}
-                      </a>
-                      {user.phoneNumber && (
-                        <a 
-                          href={`tel:${user.phoneNumber}`}
-                          className="text-green-600 text-sm block"
-                        >
-                          📱 {user.phoneNumber}
-                        </a>
-                      )}
+                        {rental.status}
+                      </span>
+                    </div>
 
-                      {/* User Stats */}
-                      {user.stats && (
-                        <div className="flex gap-4 mt-2 text-xs text-gray-600">
-                          <span>📦 {user.stats.totalRentalsAsRenter} rentals</span>
-                          <span>🚜 {user.stats.activeMachines} machines</span>
-                        </div>
-                      )}
+                    {/* Contact Info Grid */}
+                    <div className="grid grid-cols-2 gap-3 text-sm border-t pt-3">
+                      {/* Renter */}
+                      <div>
+                        <p className="font-semibold text-gray-700 mb-1">
+                          🙋 Renter:
+                        </p>
+                        <p className="text-gray-900 font-medium">
+                          {rental.renterId?.firstName}{" "}
+                          {rental.renterId?.lastName}
+                        </p>
+                        <a
+                          href={`mailto:${rental.renterId?.email}`}
+                          className="text-blue-600 text-xs block truncate"
+                        >
+                          📧 {rental.renterId?.email}
+                        </a>
+                        <a
+                          href={`tel:${rental.renterId?.phoneNumber}`}
+                          className="text-green-600 text-xs block"
+                        >
+                          📱 {rental.renterId?.phoneNumber || "N/A"}
+                        </a>
+                      </div>
+
+                      {/* Owner */}
+                      <div>
+                        <p className="font-semibold text-gray-700 mb-1">
+                          👤 Owner:
+                        </p>
+                        <p className="text-gray-900 font-medium">
+                          {rental.ownerId?.firstName} {rental.ownerId?.lastName}
+                        </p>
+                        <a
+                          href={`mailto:${rental.ownerId?.email}`}
+                          className="text-blue-600 text-xs block truncate"
+                        >
+                          📧 {rental.ownerId?.email}
+                        </a>
+                        <a
+                          href={`tel:${rental.ownerId?.phoneNumber}`}
+                          className="text-green-600 text-xs block"
+                        >
+                          📱 {rental.ownerId?.phoneNumber || "N/A"}
+                        </a>
+                      </div>
+                    </div>
+
+                    {/* Amount and Date */}
+                    <div className="flex justify-between items-center mt-3 pt-3 border-t">
+                      <span className="text-xl font-bold text-purple-600">
+                        ${rental.pricing?.totalPrice?.toFixed(2)}
+                      </span>
+                      <span className="text-xs text-gray-500">
+                        {new Date(rental.createdAt).toLocaleDateString()}
+                      </span>
                     </div>
                   </div>
-                </div>
-              ))
-            )}
+                ))
+              )}
+            </div>
           </div>
-        </div>
-      )}
-    </div>
-  );
-};
+        )}
+
+        {/* Users Tab */}
+        {activeTab === "users" && (
+          <div className="space-y-4">
+            {/* Search */}
+            <div className="bg-white rounded-2xl p-4 shadow-sm">
+              <input
+                type="text"
+                placeholder="Search users by name, email, or phone..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="w-full px-4 py-2 border-2 border-gray-200 rounded-xl focus:border-purple-500 focus:outline-none"
+              />
+            </div>
+
+            {/* Users List */}
+            <div className="space-y-3">
+              {filteredUsers.length === 0 ? (
+                <div className="bg-white rounded-2xl p-8 text-center text-gray-500">
+                  No users found
+                </div>
+              ) : (
+                filteredUsers.map((user) => (
+                  <div
+                    key={user._id}
+                    className="bg-white rounded-2xl p-4 shadow-sm"
+                  >
+                    <div className="flex items-start gap-3">
+                      {/* Avatar */}
+                      <div className="w-12 h-12 bg-gradient-to-br from-purple-500 to-pink-500 rounded-full flex items-center justify-center text-white font-bold text-lg flex-shrink-0">
+                        {user.firstName?.[0]}
+                        {user.lastName?.[0]}
+                      </div>
+
+                      {/* User Info */}
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-1">
+                          <h3 className="font-bold text-gray-900">
+                            {user.firstName} {user.lastName}
+                          </h3>
+                          <span className="px-2 py-1 bg-blue-100 text-blue-800 text-xs font-bold rounded">
+                            {user.role}
+                          </span>
+                        </div>
+                        <a
+                          href={`mailto:${user.email}`}
+                          className="text-blue-600 text-sm block truncate"
+                        >
+                          📧 {user.email}
+                        </a>
+                        {user.phoneNumber && (
+                          <a
+                            href={`tel:${user.phoneNumber}`}
+                            className="text-green-600 text-sm block"
+                          >
+                            📱 {user.phoneNumber}
+                          </a>
+                        )}
+
+                        {/* User Stats */}
+                        {user.stats && (
+                          <div className="flex gap-4 mt-2 text-xs text-gray-600">
+                            <span>
+                              📦 {user.stats.totalRentalsAsRenter} rentals
+                            </span>
+                            <span>🚜 {user.stats.activeMachines} machines</span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  };
   // ============== EDIT MACHINE FORM ==============
   const EditMachineForm = () => {
     const [formData, setFormData] = useState({

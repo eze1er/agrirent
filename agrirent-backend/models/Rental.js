@@ -1,366 +1,338 @@
-// ✅ /agrirent-backend/models/Rental.js - FINAL VERSION WITH ESCROW
+// models/Rental.js - UPDATED WITH COMPLETE WORKFLOW
+
 const mongoose = require('mongoose');
 
 const rentalSchema = new mongoose.Schema({
-  machineId: { 
-    type: mongoose.Schema.Types.ObjectId, 
-    ref: 'Machine', 
-    required: true 
-  },
-  renterId: { 
-    type: mongoose.Schema.Types.ObjectId, 
-    ref: 'User', 
-    required: true 
-  },
-  ownerId: { 
-    type: mongoose.Schema.Types.ObjectId, 
-    ref: 'User', 
-    required: true 
-  },
-  
-  rentalType: {
-    type: String,
-    enum: ['daily', 'per_hectare'],
+  // ============================================
+  // CORE RENTAL INFO
+  // ============================================
+  machineId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Machine',
     required: true
   },
   
-  // Daily rental fields
-  startDate: {
-    type: Date,
-    required: function() { return this.rentalType === 'daily'; }
-  },
-  endDate: {
-    type: Date,
-    required: function() { return this.rentalType === 'daily'; }
+  renterId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    required: true
   },
   
-  // Per-hectare rental fields
-  hectares: {
-    type: Number,
-    required: function() { return this.rentalType === 'per_hectare'; }
+  ownerId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    required: true
   },
-  workDate: {
+  
+  startDate: {
     type: Date,
-    required: function() { return this.rentalType === 'per_hectare'; }
+    required: false
   },
-  fieldLocation: {
-    type: String,
-    required: function() { return this.rentalType === 'per_hectare'; }
+  
+  endDate: {
+    type: Date,
+    required: false
   },
-
-  // Rental status (business workflow)
+  
+  // ============================================
+  // STATUS (Complete workflow)
+  // ============================================
   status: {
     type: String,
     enum: [
-      'pending',      // Awaiting owner approval
-      'approved',     // Approved, waiting for payment
-      'rejected',     // Owner rejected
-      'active',       // Payment received, service in progress
-      'completed',    // Service completed
-      'disputed',     // Under dispute
-      'cancelled'     // Cancelled
+      'booking',    // Deprecated - use 'pending'
+      'pending',    // Waiting for owner approval ⏳
+      'approved',   // Owner approved, waiting for payment 💳
+      'rejected',   // Owner rejected ❌
+      'active',     // Paid, job in progress 🚜
+      'completed',  // Owner finished job ✅
+      'released',   // Renter confirmed, ready for admin 🎯
+      'disputed',   // Renter disputed ⚠️
+      'closed',     // Final state - payment released 🔒
+      'cancelled'   // Cancelled before payment 🚫
     ],
     default: 'pending',
     required: true
   },
-
-  rejectionReason: {
-    type: String,
-    validate: {
-      validator: function(value) {
-        if (this.status === 'rejected') {
-          return value && value.trim().length >= 10;
-        }
-        return true;
-      },
-      message: 'Rejection reason must be at least 10 characters'
+  
+  // ============================================
+  // PRICING
+  // ============================================
+  pricing: {
+    totalPrice: {
+      type: Number,
+      required: true
+    },
+    dailyRate: Number,
+    duration: Number,
+    currency: {
+      type: String,
+      default: 'USD'
     }
   },
-
-  pricing: {
-    pricePerDay: Number,
-    pricePerHectare: Number,
-    numberOfDays: Number,
-    numberOfHectares: Number,
-    subtotal: { type: Number, required: true },
-    serviceFee: { type: Number, required: true },
-    totalPrice: { type: Number, required: true }
-  },
-
-  // 💳 Unified Payment & Escrow Handling
+  
+  // ============================================
+  // PAYMENT
+  // ============================================
   payment: {
     status: {
       type: String,
-      enum: ['pending', 'held_in_escrow', 'completed', 'refunded', 'cancelled'],
-      default: 'pending',
-      required: true
+      enum: ['pending', 'held_in_escrow', 'completed', 'refunded', 'failed', 'disputed'],
+      default: 'pending'
     },
-    transactionId: {
-      type: String,
-      unique: true,
-      sparse: true // allows multiple nulls
-    },
-    method: String, // e.g., 'gcash', 'bank_transfer', 'credit_card'
     amount: Number,
+    transactionId: String,
+    method: {
+      type: String,
+      enum: ['stripe', 'orange_money', 'mtn_momo', 'moov', 'other']
+    },
     paidAt: Date,
-  },
-
-  // 🕒 Escrow & Workflow Timeline
-  escrowTimeline: {
-    paidAt: Date,              // When renter paid
-    heldAt: Date,              // Funds in escrow
-    renterConfirmedAt: Date,   // Renter confirms job done
-    adminVerifiedAt: Date,     // Optional admin verification
-    releasedAt: Date,          // Funds released to owner
-    disputedAt: Date,          // Dispute initiated
-    resolvedAt: Date,          // Dispute resolved
-  },
-
-  // ✅ Completion Confirmations
-  confirmations: {
-    renterConfirmed: { type: Boolean, default: false },
-    renterConfirmedAt: Date,
-    renterConfirmationNote: String,
-    
-    adminVerified: { type: Boolean, default: false },
-    adminVerifiedAt: Date,
-    adminVerifiedBy: {
+    platformFee: Number,
+    ownerPayout: Number,
+    releasedAt: Date,
+    releasedBy: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'User'
     },
-    adminNote: String,
+    adminNote: String
   },
-
-  // ⭐ Review System
-  review: {
-    rating: {
-      type: Number,
-      min: 1,
-      max: 5,
-      validate: {
-        validator: function(v) {
-          // Only enforce if either rating or comment exists
-          const hasReview = this.review?.comment || typeof v === 'number';
-          return !hasReview || (v >= 1 && v <= 5);
-        },
-        message: 'Rating must be between 1 and 5 if provided'
-      }
-    },
-    comment: {
-      type: String,
-      maxlength: 500
-    },
-    createdAt: {
-      type: Date,
-      default: Date.now
-    }
+  
+  // ============================================
+  // APPROVAL (pending → approved/rejected)
+  // ============================================
+  approvedAt: Date,
+  approvedBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User'
   },
-  isReviewed: {
+  
+  // ============================================
+  // REJECTION (pending → rejected)
+  // ============================================
+  rejectedAt: Date,
+  rejectedBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User'
+  },
+  rejectionReason: {
+    type: String,
+    minlength: [20, 'Rejection reason must be at least 20 characters']
+  },
+  
+  // ============================================
+  // OWNER COMPLETION (active → completed)
+  // ============================================
+  ownerConfirmedCompletion: {
     type: Boolean,
     default: false
   },
-
-  // 📅 Final timestamps
-  completedAt: Date,
+  ownerConfirmationNote: {
+    type: String,
+    trim: true,
+    minlength: [10, 'Completion note must be at least 10 characters']
+  },
+  ownerConfirmedAt: Date,
+  
+  // ============================================
+  // RENTER CONFIRMATION (completed → released)
+  // ============================================
+  renterConfirmedCompletion: {
+    type: Boolean,
+    default: false
+  },
+  renterConfirmationNote: {
+    type: String,
+    trim: true,
+    minlength: [10, 'Confirmation note must be at least 10 characters']
+  },
+  renterConfirmedAt: Date,
+  
+  // ============================================
+  // CANCELLATION
+  // ============================================
   cancelledAt: Date,
-
-}, {
-  timestamps: true // adds createdAt and updatedAt
-});
-
-// ============== INDEXES ==============
-rentalSchema.index({ renterId: 1, createdAt: -1 });
-rentalSchema.index({ ownerId: 1, createdAt: -1 });
-rentalSchema.index({ machineId: 1 });
-rentalSchema.index({ status: 1 });
-rentalSchema.index({ 'payment.status': 1 });
-
-// ============== VIRTUALS ==============
-rentalSchema.virtual('isPaymentSecured').get(function() {
-  return this.payment?.status === 'held_in_escrow';
-});
-
-rentalSchema.virtual('canBeReviewed').get(function() {
-  return this.status === 'completed' && 
-         this.payment?.status === 'completed' && 
-         !this.isReviewed;
-});
-
-rentalSchema.virtual('isPendingRenterConfirmation').get(function() {
-  return this.status === 'completed' && 
-         this.payment?.status === 'held_in_escrow' && 
-         !this.renterConfirmedCompletion;
-});
-
-// ============== METHODS ==============
-
-// Mark rental as completed (owner)
-rentalSchema.methods.markCompleted = async function() {
-  this.status = 'completed';
-  this.completedAt = new Date();
-  return await this.save();
-};
-
-// Confirm completion (renter)
-rentalSchema.methods.confirmCompletion = async function(note) {
-  this.renterConfirmedCompletion = true;
-  this.renterConfirmedAt = new Date();
-  this.renterConfirmationNote = note;
-  return await this.save();
-};
-
-// Add review
-rentalSchema.methods.addReview = async function(rating, comment) {
-  if (this.status !== 'completed') {
-    throw new Error('Cannot review incomplete rental');
-  }
+  cancelledBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User'
+  },
+  cancellationReason: String,
   
-  if (this.payment?.status !== 'completed') {
-    throw new Error('Cannot review until payment is completed');
-  }
-
-  this.review = {
-    rating,
-    comment,
-    createdAt: new Date()
-  };
-  this.isReviewed = true;
+  // ============================================
+  // DISPUTE (completed → disputed)
+  // ============================================
+  disputedAt: Date,
+  disputedBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User'
+  },
+  disputeReason: {
+    type: String,
+    minlength: [50, 'Dispute reason must be at least 50 characters']
+  },
+  disputeResolution: String,
+  disputeResolvedAt: Date,
+  disputeResolvedBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User'
+  },
   
-  return await this.save();
-};
-
-// Update review
-rentalSchema.methods.updateReview = async function(rating, comment) {
-  if (!this.isReviewed) {
-    throw new Error('No existing review to update');
-  }
-
-  this.review.rating = rating;
-  this.review.comment = comment;
+  // ============================================
+  // DELIVERY/LOCATION
+  // ============================================
+  deliveryAddress: {
+    street: String,
+    city: String,
+    state: String,
+    zipCode: String,
+    country: String,
+    coordinates: {
+      latitude: Number,
+      longitude: Number
+    }
+  },
   
-  return await this.save();
-};
-
-// Cancel rental
-rentalSchema.methods.cancel = async function() {
-  if (['completed', 'cancelled'].includes(this.status)) {
-    throw new Error('Cannot cancel completed or already cancelled rental');
-  }
-
-  this.status = 'cancelled';
-  this.cancelledAt = new Date();
-  return await this.save();
-};
-
-// ============== STATIC METHODS ==============
-
-// Get active rentals for a machine
-rentalSchema.statics.getActiveRentalsForMachine = async function(machineId) {
-  return await this.find({
-    machineId,
-    status: { $in: ['approved', 'active', 'completed'] }
-  }).sort({ startDate: 1 });
-};
-
-// Get rentals needing confirmation
-rentalSchema.statics.getPendingConfirmations = async function(renterId) {
-  return await this.find({
-    renterId,
-    status: 'completed',
-    'payment.status': 'held_in_escrow',
-    renterConfirmedCompletion: false
-  }).populate('machineId ownerId');
-};
-
-// Get owner's completed rentals
-rentalSchema.statics.getOwnerCompletedRentals = async function(ownerId) {
-  return await this.find({
-    ownerId,
-    status: 'completed',
-    'payment.status': 'completed'
-  }).populate('machineId renterId');
-};
-
-// Get rental statistics
-rentalSchema.statics.getRentalStats = async function(userId) {
-  const stats = await this.aggregate([
-    {
-      $match: {
-        $or: [
-          { renterId: mongoose.Types.ObjectId(userId) },
-          { ownerId: mongoose.Types.ObjectId(userId) }
-        ]
-      }
+  // ============================================
+  // REVIEWS (after closed)
+  // ============================================
+  renterReview: {
+    rating: {
+      type: Number,
+      min: 1,
+      max: 5
     },
+    comment: String,
+    createdAt: Date
+  },
+  
+  ownerReview: {
+    rating: {
+      type: Number,
+      min: 1,
+      max: 5
+    },
+    comment: String,
+    createdAt: Date
+  },
+  
+  // ============================================
+  // NOTES & METADATA
+  // ============================================
+  notes: String,
+  adminNotes: String,
+  
+}, {
+  timestamps: true
+});
+
+// ============================================
+// INDEXES
+// ============================================
+rentalSchema.index({ status: 1 });
+rentalSchema.index({ renterId: 1 });
+rentalSchema.index({ ownerId: 1 });
+rentalSchema.index({ machineId: 1 });
+rentalSchema.index({ 'payment.status': 1 });
+rentalSchema.index({ createdAt: -1 });
+
+// ============================================
+// VALID STATE TRANSITIONS
+// ============================================
+const validTransitions = {
+  'booking': ['pending'],
+  'pending': ['approved', 'rejected', 'cancelled'],
+  'approved': ['active', 'cancelled'],
+  'active': ['completed', 'disputed'],
+  'completed': ['released', 'disputed'],
+  'released': ['closed'],
+  'disputed': ['closed'],
+  'rejected': [],  // Terminal
+  'closed': [],    // Terminal
+  'cancelled': []  // Terminal
+};
+
+rentalSchema.methods.canTransitionTo = function(newStatus) {
+  const allowed = validTransitions[this.status] || [];
+  return allowed.includes(newStatus);
+};
+
+// ============================================
+// VIRTUALS
+// ============================================
+rentalSchema.virtual('bothConfirmed').get(function() {
+  return this.ownerConfirmedCompletion && this.renterConfirmedCompletion;
+});
+
+rentalSchema.virtual('isReadyForRelease').get(function() {
+  return this.status === 'released' && this.bothConfirmed;
+});
+
+rentalSchema.virtual('durationDays').get(function() {
+  if (!this.startDate || !this.endDate) return 0;
+  return Math.ceil((this.endDate - this.startDate) / (1000 * 60 * 60 * 24));
+});
+
+// ============================================
+// PRE-SAVE: Validate status transitions
+// ============================================
+rentalSchema.pre('save', function(next) {
+  if (this.isModified('status') && !this.isNew) {
+    const oldStatus = this._original?.status || 'pending';
+    
+    if (oldStatus !== this.status) {
+      if (!this.canTransitionTo(this.status)) {
+        const allowed = validTransitions[oldStatus] || [];
+        return next(new Error(
+          `Invalid status transition: ${oldStatus} → ${this.status}. ` +
+          `Allowed: ${allowed.join(', ')}`
+        ));
+      }
+    }
+  }
+  
+  next();
+});
+
+// ============================================
+// METHODS
+// ============================================
+rentalSchema.methods.calculateSplit = function() {
+  const total = this.pricing.totalPrice;
+  const platformFee = total * 0.10;
+  const ownerPayout = total - platformFee;
+  
+  return {
+    total,
+    platformFee,
+    ownerPayout,
+    platformPercentage: 10,
+    ownerPercentage: 90
+  };
+};
+
+// ============================================
+// STATIC METHODS
+// ============================================
+rentalSchema.statics.getStatusStats = async function() {
+  const stats = await this.aggregate([
     {
       $group: {
         _id: '$status',
         count: { $sum: 1 },
-        totalRevenue: { $sum: '$pricing.totalPrice' }
+        totalValue: { $sum: '$pricing.totalPrice' }
       }
     }
   ]);
-
-  return stats;
+  
+  return stats.reduce((acc, stat) => {
+    acc[stat._id] = {
+      count: stat.count,
+      totalValue: stat.totalValue
+    };
+    return acc;
+  }, {});
 };
 
-// ============== MIDDLEWARE ==============
-
-// Pre-save validation
-rentalSchema.pre('save', function(next) {
-  // Ensure dates are valid for daily rentals
-  if (this.rentalType === 'daily') {
-    if (this.endDate <= this.startDate) {
-      return next(new Error('End date must be after start date'));
-    }
-  }
-
-  // Ensure hectares is positive for per-hectare rentals
-  if (this.rentalType === 'per_hectare' && this.hectares <= 0) {
-    return next(new Error('Hectares must be greater than 0'));
-  }
-
-  // Auto-set completedAt when status changes to completed
-  if (this.isModified('status') && this.status === 'completed' && !this.completedAt) {
-    this.completedAt = new Date();
-  }
-
-  next();
-});
-
-// Post-save hook to update machine rating when review is added/updated
-rentalSchema.post('save', async function(doc, next) {
-  if (doc.isReviewed && doc.review?.rating) {
-    try {
-      const Machine = mongoose.model('Machine');
-      const machine = await Machine.findById(doc.machineId);
-      
-      if (machine) {
-        // Get all reviews for this machine
-        const Rental = mongoose.model('Rental');
-        const reviews = await Rental.find({
-          machineId: doc.machineId,
-          isReviewed: true,
-          'review.rating': { $exists: true }
-        });
-
-        if (reviews.length > 0) {
-          const totalRating = reviews.reduce((sum, r) => sum + r.review.rating, 0);
-          const averageRating = totalRating / reviews.length;
-
-          machine.rating = {
-            average: Math.round(averageRating * 10) / 10, // Round to 1 decimal
-            count: reviews.length
-          };
-
-          await machine.save();
-        }
-      }
-    } catch (error) {
-      console.error('Error updating machine rating:', error);
-    }
-  }
-  next();
-});
+rentalSchema.set('toObject', { virtuals: true });
+rentalSchema.set('toJSON', { virtuals: true });
 
 module.exports = mongoose.model('Rental', rentalSchema);

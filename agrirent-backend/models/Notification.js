@@ -14,7 +14,8 @@ const notificationSchema = new mongoose.Schema({
       'rental_rejected', 
       'rental_starting', 
       'rental_ending', 
-      'rental_completed', 
+      'rental_completed',
+      'rental_finished', 
       'payment_received', 
       'review_received', 
       'machine_available'

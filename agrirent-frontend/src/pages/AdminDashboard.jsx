@@ -637,14 +637,17 @@ function UserCard({ user }) {
 
 // Status Badge Component
 function StatusBadge({ status }) {
-  const styles = {
-    pending: 'bg-amber-100 text-amber-800',
-    approved: 'bg-blue-100 text-blue-800',
-    active: 'bg-green-100 text-green-800',
-    completed: 'bg-gray-100 text-gray-800',
-    cancelled: 'bg-red-100 text-red-800',
-    disputed: 'bg-orange-100 text-orange-800'
-  };
+const styles = {
+  pending: 'bg-yellow-100 text-yellow-800 border-yellow-300',
+  approved: 'bg-blue-100 text-blue-800 border-blue-300',
+  rejected: 'bg-red-100 text-red-800 border-red-300',
+  active: 'bg-green-100 text-green-800 border-green-300',
+  completed: 'bg-purple-100 text-purple-800 border-purple-300',
+  released: 'bg-cyan-100 text-cyan-800 border-cyan-300',
+  disputed: 'bg-orange-100 text-orange-800 border-orange-300',
+  closed: 'bg-gray-100 text-gray-800 border-gray-300',
+  cancelled: 'bg-gray-100 text-gray-600 border-gray-300'
+};
 
   return (
     <span className={`px-3 py-1 rounded-full text-xs font-semibold ${styles[status] || 'bg-gray-100 text-gray-800'}`}>

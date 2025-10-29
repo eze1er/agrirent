@@ -59,19 +59,30 @@ export default function BookingModal({ machine, onClose, onBook }) {
         throw new Error('Field location is required for per-hectare rentals');
       }
 
-      // ✅ BUILD BOOKING DATA CORRECTLY
+      // ✅ BUILD BOOKING DATA CORRECTLY WITH PRICING
       let bookingData = {
-        rentalType: rentalType, // Send exactly as is: 'daily' or 'per_hectare'
+        rentalType: rentalType,
+        totalPrice: pricing.total,  // ✅ Backend needs this
+        pricing: {                   // ✅ Backend also needs this object
+          totalPrice: pricing.total,
+          subtotal: pricing.subtotal,
+          serviceFee: pricing.serviceFee,
+          currency: 'USD'
+        }
       };
 
       if (rentalType === 'daily') {
         bookingData.startDate = startDate;
         bookingData.endDate = endDate;
+        bookingData.pricing.numberOfDays = pricing.days;
+        bookingData.pricing.pricePerDay = machine.pricePerDay;
         console.log('📅 Daily rental:', startDate, 'to', endDate);
       } else if (rentalType === 'per_hectare') {
         bookingData.hectares = parseFloat(hectares);
-        bookingData.workDate = startDate; // Backend expects 'workDate'
+        bookingData.workDate = startDate;
         bookingData.fieldLocation = fieldLocation.trim();
+        bookingData.pricing.numberOfHectares = pricing.hectares;
+        bookingData.pricing.pricePerHectare = machine.pricePerHectare;
         console.log('🌾 Per hectare:', hectares, 'Ha on', startDate, 'at', fieldLocation);
       }
 
