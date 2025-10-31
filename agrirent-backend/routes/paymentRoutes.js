@@ -1836,7 +1836,9 @@ router.post(
       const { rentalId } = req.params;
       const { adminNote } = req.body;
 
-      console.log(`🔍 Admin attempting to release payment for rental: ${rentalId}`);
+      console.log(
+        `🔍 Admin attempting to release payment for rental: ${rentalId}`
+      );
 
       // Validation
       if (!adminNote || adminNote.length < 10) {
@@ -2233,6 +2235,7 @@ router.post("/rentals/:rentalId/owner-confirm", protect, async (req, res) => {
     rental.ownerConfirmationNote = confirmationNote.trim();
     rental.ownerConfirmedAt = new Date();
     rental.status = "completed";
+    rental.completedAt = new Date();
 
     await rental.save();
 
@@ -2276,15 +2279,27 @@ router.post("/rentals/:rentalId/owner-confirm", protect, async (req, res) => {
 // ============================================
 // RENTER: CONFIRM COMPLETION
 // ============================================
+// ============================================
+// RENTER: CONFIRM COMPLETION WITH RATING
+// ============================================
 router.post("/rentals/:rentalId/renter-confirm", protect, async (req, res) => {
   try {
     const { rentalId } = req.params;
-    const { confirmationNote } = req.body;
+    const { confirmationNote, rating, reviewComment } = req.body; // ✅ Destructure rating here
 
+    // Validate confirmation note
     if (!confirmationNote || confirmationNote.trim().length < 10) {
       return res.status(400).json({
         success: false,
         message: "Detailed confirmation note required (minimum 10 characters)",
+      });
+    }
+
+    // ✅ Validate rating (REQUIRED)
+    if (!rating || rating < 1 || rating > 5) {
+      return res.status(400).json({
+        success: false,
+        message: "Rating is required (1-5 stars)",
       });
     }
 
@@ -2334,13 +2349,50 @@ router.post("/rentals/:rentalId/renter-confirm", protect, async (req, res) => {
       });
     }
 
-    // Update rental with renter confirmation
+    // ✅ Update rental with renter confirmation AND review
     rental.renterConfirmedCompletion = true;
     rental.renterConfirmationNote = confirmationNote.trim();
     rental.renterConfirmedAt = new Date();
     rental.status = "released"; // Ready for admin to release payment
 
+    // ✅ Add review to rental
+    rental.renterReview = {
+      rating: Number(rating), // ✅ Ensure it's a number
+      comment: reviewComment?.trim() || confirmationNote.trim(),
+      createdAt: new Date(),
+    };
+
     await rental.save();
+
+    // ✅ Update machine's average rating
+    const Machine = require("../models/Machine");
+    const machine = await Machine.findById(rental.machineId._id);
+    
+    if (machine) {
+      // Get all completed rentals with reviews for this machine
+      const reviewedRentals = await Rental.find({
+        machineId: machine._id,
+        status: { $in: ["released", "closed"] },
+        "renterReview.rating": { $exists: true, $ne: null },
+      });
+
+      if (reviewedRentals.length > 0) {
+        const totalRating = reviewedRentals.reduce(
+          (sum, r) => sum + (r.renterReview?.rating || 0),
+          0
+        );
+        const reviewCount = reviewedRentals.length;
+        const averageRating = totalRating / reviewCount;
+
+        machine.rating = {
+          average: Math.round(averageRating * 10) / 10,
+          count: reviewCount,
+        };
+        
+        await machine.save();
+        console.log(`✅ Machine rating updated: ${machine.rating.average} (${machine.rating.count} reviews)`);
+      }
+    }
 
     // Update Payment model
     const payment = await Payment.findOne({ rentalId });
@@ -2349,25 +2401,28 @@ router.post("/rentals/:rentalId/renter-confirm", protect, async (req, res) => {
       payment.metadata.renterConfirmed = true;
       payment.metadata.renterConfirmationNote = confirmationNote.trim();
       payment.metadata.renterConfirmedAt = new Date();
+      payment.metadata.rating = Number(rating);
+      payment.metadata.reviewComment = reviewComment?.trim() || confirmationNote.trim();
       await payment.save();
     }
 
-    // Send SMS to owner
+    // ✅ Send SMS to owner (NOW rating is in scope)
     if (rental.ownerId?.phoneNumber && sendNotificationSMS) {
       try {
-        const message = `AgriRent: Renter confirmed completion for "${rental.machineId?.name}". Payment will be released soon.`;
+        const stars = '⭐'.repeat(Number(rating));
+        const message = `AgriRent: ${rental.renterId.firstName} confirmed completion and rated ${stars} (${rating}/5) for "${rental.machineId?.name}". Payment will be released soon.`;
         await sendNotificationSMS(rental.ownerId.phoneNumber, message);
+        console.log(`✅ SMS sent to owner`);
       } catch (smsError) {
         console.error("⚠️ SMS error:", smsError);
       }
     }
 
-    console.log(`✅ Renter confirmed completion for rental ${rentalId}`);
+    console.log(`✅ Renter confirmed completion for rental ${rentalId} with ${rating}⭐ rating`);
 
     res.json({
       success: true,
-      message:
-        "Completion confirmed! Both parties confirmed. Admin will release payment.",
+      message: `Completion confirmed with ${rating}⭐ rating! Both parties confirmed. Admin will release payment.`,
       data: { rental },
     });
   } catch (error) {

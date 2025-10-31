@@ -1204,29 +1204,36 @@ export default function Dashboard({ user: currentUser, onLogout }) {
                   </div>
 
                   {/* Rental Details */}
-                  {rental.rentalType === "daily" ? (
-                    <>
-                      <p className="text-sm text-gray-600">
-                        Start: {new Date(rental.startDate).toLocaleDateString()}
-                      </p>
-                      <p className="text-sm text-gray-600">
-                        End: {new Date(rental.endDate).toLocaleDateString()}
-                      </p>
-                    </>
-                  ) : (
-                    <>
-                      <p className="text-sm text-gray-600">
-                        Work Date:{" "}
-                        {new Date(rental.workDate).toLocaleDateString()}
-                      </p>
-                      <p className="text-sm text-gray-600">
-                        Hectares: {rental.pricing?.numberOfHectares} Ha
-                      </p>
-                      <p className="text-sm text-gray-600">
-                        Location: {rental.fieldLocation}
-                      </p>
-                    </>
-                  )}
+{/* Show dates based on rental type */}
+{rental.rentalType === "daily" ? (
+  <>
+    <p className="text-sm text-gray-600">
+      Start: {rental.startDate ? new Date(rental.startDate).toLocaleDateString() : 'N/A'}
+    </p>
+    <p className="text-sm text-gray-600">
+      End: {rental.endDate ? new Date(rental.endDate).toLocaleDateString() : 'N/A'}
+    </p>
+    <p className="text-sm text-gray-600">
+      Days: {rental.pricing?.numberOfDays || 0}
+    </p>
+  </>
+) : (
+  <>
+    <p className="text-sm text-gray-600">
+      Work Date: {rental.workDate 
+        ? new Date(rental.workDate).toLocaleDateString() 
+        : rental.startDate 
+        ? new Date(rental.startDate).toLocaleDateString() 
+        : 'N/A'}
+    </p>
+    <p className="text-sm text-gray-600">
+      Hectares: {rental.pricing?.numberOfHectares || 0} Ha
+    </p>
+    <p className="text-sm text-gray-600">
+      Location: {rental.fieldLocation || 'N/A'}
+    </p>
+  </>
+)}
                   <p className="text-lg font-bold mt-2 bg-gradient-to-r from-blue-600 to-cyan-600 bg-clip-text text-transparent">
                     ${rental.pricing?.totalPrice?.toFixed(2) || 0}
                   </p>

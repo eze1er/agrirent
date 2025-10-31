@@ -24,7 +24,11 @@ const rentalSchema = new mongoose.Schema(
       ref: "User",
       required: true,
     },
-
+    rentalType: {
+      type: String,
+      enum: ["daily", "per_hectare"],
+      default: "daily",
+    },
     startDate: {
       type: Date,
       required: false,
@@ -70,6 +74,9 @@ const rentalSchema = new mongoose.Schema(
       },
       dailyRate: Number,
       duration: Number,
+      numberOfDays: Number, 
+      numberOfHectares: Number, 
+      pricePerHectare: Number, 
       currency: {
         type: String,
         default: "USD",
