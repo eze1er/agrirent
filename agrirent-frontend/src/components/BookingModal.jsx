@@ -1,316 +1,355 @@
 import { useState } from 'react';
-import { Calendar, DollarSign, X, MapPin } from 'lucide-react';
+import { X } from 'lucide-react';
 
 export default function BookingModal({ machine, onClose, onBook }) {
   const [rentalType, setRentalType] = useState(
-    machine.pricingType === 'both' ? 'daily' : machine.pricingType
+    machine.pricingType === "daily" ? "daily" : 
+    machine.pricingType === "per_hectare" ? "per_hectare" : 
+    "daily"
   );
-  const [startDate, setStartDate] = useState('');
-  const [endDate, setEndDate] = useState('');
-  const [hectares, setHectares] = useState(machine.minimumHectares || 1);
-  const [fieldLocation, setFieldLocation] = useState('');
+  
+  const [formData, setFormData] = useState({
+    startDate: "",
+    endDate: "",
+    hectares: "",
+    workDate: "",
+    fieldLocation: "",  // ✅ Required for BOTH types
+  });
+
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
+  const [error, setError] = useState("");
 
-  const calculatePricing = () => {
-    if (rentalType === 'daily' || rentalType === 'per_day') {
-      if (!startDate || !endDate) return null;
-
-      const start = new Date(startDate);
-      const end = new Date(endDate);
-      const days = Math.ceil((end - start) / (1000 * 60 * 60 * 24));
-
-      if (days <= 0) return null;
-
-      const subtotal = days * machine.pricePerDay;
-      const serviceFee = subtotal * 0.1;
-      const total = subtotal + serviceFee;
-
-      return { days, subtotal, serviceFee, total, type: 'daily' };
-    } else {
-      if (!hectares || hectares < (machine.minimumHectares || 1)) return null;
-
-      const subtotal = hectares * machine.pricePerHectare;
-      const serviceFee = subtotal * 0.1;
-      const total = subtotal + serviceFee;
-
-      return { hectares, subtotal, serviceFee, total, type: 'per_hectare' };
-    }
-  };
-
-  const pricing = calculatePricing();
-
-  // ✅ FIXED: Complete rewrite of handleSubmit
   const handleSubmit = async (e) => {
     e.preventDefault();
-    setError('');
+    setError("");
     setLoading(true);
 
-    console.log('🎯 Form submitted');
-    console.log('📦 Rental type:', rentalType);
-
     try {
-      // Validation
-      if (!pricing) {
-        throw new Error(rentalType === 'daily' ? 'Please select valid dates' : 'Please enter valid hectares');
-      }
-
-      if (rentalType === 'per_hectare' && !fieldLocation.trim()) {
-        throw new Error('Field location is required for per-hectare rentals');
-      }
-
-      // ✅ BUILD BOOKING DATA CORRECTLY WITH PRICING
-      let bookingData = {
-        rentalType: rentalType,
-        totalPrice: pricing.total,  // ✅ Backend needs this
-        pricing: {                   // ✅ Backend also needs this object
-          totalPrice: pricing.total,
-          subtotal: pricing.subtotal,
-          serviceFee: pricing.serviceFee,
-          currency: 'USD'
-        }
+      const bookingData = {
+        rentalType,
       };
 
-      if (rentalType === 'daily') {
-        bookingData.startDate = startDate;
-        bookingData.endDate = endDate;
-        bookingData.pricing.numberOfDays = pricing.days;
-        bookingData.pricing.pricePerDay = machine.pricePerDay;
-        console.log('📅 Daily rental:', startDate, 'to', endDate);
-      } else if (rentalType === 'per_hectare') {
-        bookingData.hectares = parseFloat(hectares);
-        bookingData.workDate = startDate;
-        bookingData.fieldLocation = fieldLocation.trim();
-        bookingData.pricing.numberOfHectares = pricing.hectares;
-        bookingData.pricing.pricePerHectare = machine.pricePerHectare;
-        console.log('🌾 Per hectare:', hectares, 'Ha on', startDate, 'at', fieldLocation);
+      // ✅ DAILY RENTAL - Include field location
+      if (rentalType === "daily") {
+        if (!formData.startDate || !formData.endDate) {
+          setError("Please select start and end dates");
+          setLoading(false);
+          return;
+        }
+        if (!formData.fieldLocation || !formData.fieldLocation.trim()) {
+          setError("Field location is required");
+          setLoading(false);
+          return;
+        }
+        bookingData.startDate = formData.startDate;
+        bookingData.endDate = formData.endDate;
+        bookingData.fieldLocation = formData.fieldLocation.trim();  // ✅ Added
+      } 
+      // ✅ PER HECTARE - Include field location
+      else if (rentalType === "per_hectare") {
+        if (!formData.hectares || !formData.workDate || !formData.fieldLocation) {
+          setError("Please fill in all fields");
+          setLoading(false);
+          return;
+        }
+        bookingData.hectares = parseFloat(formData.hectares);
+        bookingData.workDate = formData.workDate;
+        bookingData.fieldLocation = formData.fieldLocation.trim();  // ✅ Added
       }
 
-      console.log('📤 Sending booking data:', bookingData);
-      
-      // ✅ CALL THE PARENT HANDLER
       await onBook(bookingData);
-      
-      console.log('✅ Booking successful!');
-      
-      // Close modal on success
       onClose();
     } catch (err) {
-      console.error('❌ Booking error:', err);
-      setError(err.response?.data?.message || err.message || 'Failed to create booking');
+      console.error("Booking error:", err);
+      setError(err.response?.data?.message || "Failed to create booking");
+    } finally {
       setLoading(false);
     }
   };
 
-  const today = new Date().toISOString().split('T')[0];
+  const calculatePrice = () => {
+    if (rentalType === "daily" && formData.startDate && formData.endDate) {
+      const start = new Date(formData.startDate);
+      const end = new Date(formData.endDate);
+      const days = Math.ceil((end - start) / (1000 * 60 * 60 * 24));
+      if (days > 0) {
+        const subtotal = days * machine.pricePerDay;
+        const serviceFee = subtotal * 0.1;
+        return {
+          days,
+          subtotal,
+          serviceFee,
+          total: subtotal + serviceFee,
+        };
+      }
+    } else if (rentalType === "per_hectare" && formData.hectares) {
+      const hectares = parseFloat(formData.hectares);
+      if (hectares >= (machine.minimumHectares || 1)) {
+        const subtotal = hectares * machine.pricePerHectare;
+        const serviceFee = subtotal * 0.1;
+        return {
+          hectares,
+          subtotal,
+          serviceFee,
+          total: subtotal + serviceFee,
+        };
+      }
+    }
+    return null;
+  };
+
+  const priceBreakdown = calculatePrice();
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
-      <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl max-h-[90vh] overflow-y-auto">
-        <div className="flex justify-between items-center mb-4">
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-2xl max-w-md w-full max-h-[90vh] overflow-y-auto shadow-2xl">
+        <div className="sticky top-0 bg-white border-b px-6 py-4 flex justify-between items-center">
           <h2 className="text-2xl font-bold bg-gradient-to-r from-blue-600 to-cyan-600 bg-clip-text text-transparent">
             Book {machine.name}
           </h2>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
+          <button
+            onClick={onClose}
+            className="text-gray-400 hover:text-gray-600 transition p-1 hover:bg-gray-100 rounded-full"
+          >
             <X size={24} />
           </button>
         </div>
 
-        {error && (
-          <div className="bg-red-100 border border-red-300 text-red-700 px-4 py-3 rounded-xl mb-4 text-sm">
-            ❌ {error}
-          </div>
-        )}
-
-        <form onSubmit={handleSubmit} className="space-y-4">
-          {/* Rental Type Selector */}
-          {machine.pricingType === 'both' && (
-            <div className="bg-gradient-to-br from-blue-50 to-cyan-50 rounded-xl p-4 space-y-3">
-              <label className="block text-sm font-semibold mb-2">Rental Type</label>
-              
-              <label className="flex items-center gap-3 cursor-pointer p-3 bg-white rounded-lg border-2 transition hover:border-blue-300">
-                <input
-                  type="radio"
-                  value="daily"
-                  checked={rentalType === 'daily'}
-                  onChange={(e) => setRentalType(e.target.value)}
-                  className="w-5 h-5 text-blue-600"
-                />
-                <div className="flex-1">
-                  <div className="font-semibold">Daily Rental</div>
-                  <div className="text-sm text-gray-600">${machine.pricePerDay}/day</div>
-                </div>
+        <div className="p-6">
+          {/* Rental Type Selection */}
+          {machine.pricingType === "both" && (
+            <div className="mb-6">
+              <label className="block text-sm font-semibold mb-2 text-gray-700">
+                Rental Type *
               </label>
+              <div className="grid grid-cols-2 gap-3">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setRentalType("daily");
+                    setFormData({ 
+                      startDate: "", 
+                      endDate: "", 
+                      hectares: "", 
+                      workDate: "", 
+                      fieldLocation: formData.fieldLocation
+                    });
+                  }}
+                  className={`p-4 rounded-xl border-2 font-semibold transition ${
+                    rentalType === "daily"
+                      ? "bg-blue-50 border-blue-500 text-blue-700 shadow-sm"
+                      : "border-gray-200 text-gray-700 hover:border-blue-300"
+                  }`}
+                >
+                  <div className="text-2xl mb-1">📅</div>
+                  <div>Daily Rental</div>
+                  <div className="text-xs text-gray-500 mt-1">${machine.pricePerDay}/day</div>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setRentalType("per_hectare");
+                    setFormData({ 
+                      startDate: "", 
+                      endDate: "", 
+                      hectares: "", 
+                      workDate: "", 
+                      fieldLocation: formData.fieldLocation
+                    });
+                  }}
+                  className={`p-4 rounded-xl border-2 font-semibold transition ${
+                    rentalType === "per_hectare"
+                      ? "bg-emerald-50 border-emerald-500 text-emerald-700 shadow-sm"
+                      : "border-gray-200 text-gray-700 hover:border-emerald-300"
+                  }`}
+                >
+                  <div className="text-2xl mb-1">🌾</div>
+                  <div>Per Hectare</div>
+                  <div className="text-xs text-gray-500 mt-1">${machine.pricePerHectare}/Ha</div>
+                </button>
+              </div>
+            </div>
+          )}
 
-              <label className="flex items-center gap-3 cursor-pointer p-3 bg-white rounded-lg border-2 transition hover:border-emerald-300">
-                <input
-                  type="radio"
-                  value="per_hectare"
-                  checked={rentalType === 'per_hectare'}
-                  onChange={(e) => setRentalType(e.target.value)}
-                  className="w-5 h-5 text-emerald-600"
-                />
-                <div className="flex-1">
-                  <div className="font-semibold">Per Hectare</div>
-                  <div className="text-sm text-gray-600">
-                    ${machine.pricePerHectare}/Ha (min {machine.minimumHectares} Ha)
+          {error && (
+            <div className="mb-4 p-3 bg-rose-50 border border-rose-200 text-rose-700 rounded-xl text-sm flex items-start gap-2">
+              <span className="text-lg">⚠️</span>
+              <span>{error}</span>
+            </div>
+          )}
+
+          <form onSubmit={handleSubmit} className="space-y-4">
+            {/* DAILY RENTAL FIELDS */}
+            {rentalType === "daily" && (
+              <>
+                <div>
+                  <label className="block text-sm font-semibold mb-2 text-gray-700">
+                    Start Date *
+                  </label>
+                  <input
+                    type="date"
+                    value={formData.startDate}
+                    onChange={(e) =>
+                      setFormData({ ...formData, startDate: e.target.value })
+                    }
+                    min={new Date().toISOString().split("T")[0]}
+                    required
+                    className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-blue-500 focus:outline-none transition"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-semibold mb-2 text-gray-700">
+                    End Date *
+                  </label>
+                  <input
+                    type="date"
+                    value={formData.endDate}
+                    onChange={(e) =>
+                      setFormData({ ...formData, endDate: e.target.value })
+                    }
+                    min={formData.startDate || new Date().toISOString().split("T")[0]}
+                    required
+                    className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-blue-500 focus:outline-none transition"
+                  />
+                </div>
+              </>
+            )}
+
+            {/* PER HECTARE FIELDS */}
+            {rentalType === "per_hectare" && (
+              <>
+                <div>
+                  <label className="block text-sm font-semibold mb-2 text-gray-700">
+                    Number of Hectares *
+                  </label>
+                  <input
+                    type="number"
+                    step="0.1"
+                    min={machine.minimumHectares || 1}
+                    value={formData.hectares}
+                    onChange={(e) =>
+                      setFormData({ ...formData, hectares: e.target.value })
+                    }
+                    placeholder={`Minimum ${machine.minimumHectares || 1} Ha`}
+                    required
+                    className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-emerald-500 focus:outline-none transition"
+                  />
+                  <small className="text-gray-500 text-xs mt-1 block">
+                    Minimum: {machine.minimumHectares || 1} hectares
+                  </small>
+                </div>
+                <div>
+                  <label className="block text-sm font-semibold mb-2 text-gray-700">
+                    Work Date *
+                  </label>
+                  <input
+                    type="date"
+                    value={formData.workDate}
+                    onChange={(e) =>
+                      setFormData({ ...formData, workDate: e.target.value })
+                    }
+                    min={new Date().toISOString().split("T")[0]}
+                    required
+                    className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-emerald-500 focus:outline-none transition"
+                  />
+                </div>
+              </>
+            )}
+
+            {/* ✅ FIELD LOCATION - SHOWN FOR BOTH TYPES */}
+            <div>
+              <label className="block text-sm font-semibold mb-2 text-gray-700">
+                {rentalType === "daily" ? "Delivery/Field Location *" : "Field Location *"}
+              </label>
+              <input
+                type="text"
+                value={formData.fieldLocation}
+                onChange={(e) =>
+                  setFormData({ ...formData, fieldLocation: e.target.value })
+                }
+                placeholder="e.g., Kinshasa, Limete, Kingabwa"
+                required
+                className={`w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:outline-none transition ${
+                  rentalType === "daily" ? "focus:border-blue-500" : "focus:border-emerald-500"
+                }`}
+              />
+              <small className="text-gray-500 text-xs mt-1 block">
+                {rentalType === "daily" 
+                  ? "Where should the machine be delivered?" 
+                  : "Where will the work be performed?"}
+              </small>
+            </div>
+
+            {/* PRICE BREAKDOWN */}
+            {priceBreakdown && (
+              <div className="bg-gradient-to-br from-blue-50 to-cyan-50 rounded-xl p-4 border-2 border-blue-200">
+                <h3 className="font-bold text-gray-800 mb-3 flex items-center gap-2">
+                  <span className="text-lg">💰</span>
+                  Price Breakdown
+                </h3>
+                <div className="space-y-2 text-sm">
+                  {rentalType === "daily" && (
+                    <div className="flex justify-between">
+                      <span className="text-gray-600">
+                        {priceBreakdown.days} day{priceBreakdown.days !== 1 ? "s" : ""} × ${machine.pricePerDay}
+                      </span>
+                      <span className="font-semibold text-gray-900">
+                        ${priceBreakdown.subtotal.toFixed(2)}
+                      </span>
+                    </div>
+                  )}
+                  {rentalType === "per_hectare" && (
+                    <div className="flex justify-between">
+                      <span className="text-gray-600">
+                        {priceBreakdown.hectares} Ha × ${machine.pricePerHectare}
+                      </span>
+                      <span className="font-semibold text-gray-900">
+                        ${priceBreakdown.subtotal.toFixed(2)}
+                      </span>
+                    </div>
+                  )}
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">Service Fee (10%)</span>
+                    <span className="font-semibold text-gray-900">
+                      ${priceBreakdown.serviceFee.toFixed(2)}
+                    </span>
+                  </div>
+                  <div className="flex justify-between pt-2 border-t-2 border-blue-300">
+                    <span className="font-bold text-gray-800">Total Amount</span>
+                    <span className="font-bold text-blue-600 text-xl">
+                      ${priceBreakdown.total.toFixed(2)}
+                    </span>
                   </div>
                 </div>
-              </label>
+              </div>
+            )}
+
+            {/* SUBMIT BUTTONS */}
+            <div className="flex gap-3 pt-4">
+              <button
+                type="button"
+                onClick={onClose}
+                className="flex-1 px-6 py-3 border-2 border-gray-300 rounded-xl hover:bg-gray-50 font-semibold text-gray-700 transition"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={loading || !priceBreakdown}
+                className="flex-1 px-6 py-3 bg-gradient-to-r from-blue-600 to-cyan-600 text-white rounded-xl font-semibold disabled:opacity-50 disabled:cursor-not-allowed hover:shadow-lg transition"
+              >
+                {loading ? (
+                  <span className="flex items-center justify-center gap-2">
+                    <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></span>
+                    Booking...
+                  </span>
+                ) : (
+                  "Confirm Booking"
+                )}
+              </button>
             </div>
-          )}
-
-          {/* Daily Rental Dates */}
-          {(rentalType === 'daily' || rentalType === 'per_day') && (
-            <>
-              <div>
-                <label className="block text-sm font-semibold mb-2">Start Date</label>
-                <div className="relative">
-                  <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={20} />
-                  <input
-                    type="date"
-                    value={startDate}
-                    onChange={(e) => setStartDate(e.target.value)}
-                    min={today}
-                    required
-                    className="w-full border-2 border-gray-200 rounded-xl pl-11 pr-4 py-3 focus:border-blue-500 focus:outline-none"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-sm font-semibold mb-2">End Date</label>
-                <div className="relative">
-                  <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={20} />
-                  <input
-                    type="date"
-                    value={endDate}
-                    onChange={(e) => setEndDate(e.target.value)}
-                    min={startDate || today}
-                    required
-                    className="w-full border-2 border-gray-200 rounded-xl pl-11 pr-4 py-3 focus:border-blue-500 focus:outline-none"
-                  />
-                </div>
-              </div>
-            </>
-          )}
-
-          {/* Per Hectare Inputs */}
-          {rentalType === 'per_hectare' && (
-            <>
-              <div>
-                <label className="block text-sm font-semibold mb-2">Work Date</label>
-                <div className="relative">
-                  <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={20} />
-                  <input
-                    type="date"
-                    value={startDate}
-                    onChange={(e) => setStartDate(e.target.value)}
-                    min={today}
-                    required
-                    className="w-full border-2 border-gray-200 rounded-xl pl-11 pr-4 py-3 focus:border-emerald-500 focus:outline-none"
-                  />
-                </div>
-                <p className="text-xs text-gray-500 mt-1">Service will be completed on this date</p>
-              </div>
-
-              <div>
-                <label className="block text-sm font-semibold mb-2">
-                  Hectares (minimum {machine.minimumHectares} Ha)
-                </label>
-                <input
-                  type="number"
-                  value={hectares}
-                  onChange={(e) => setHectares(e.target.value)}
-                  min={machine.minimumHectares || 1}
-                  step="0.1"
-                  required
-                  className="w-full border-2 border-gray-200 rounded-xl px-4 py-3 focus:border-emerald-500 focus:outline-none"
-                  placeholder={`Min ${machine.minimumHectares || 1} hectares`}
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-semibold mb-2">
-                  Field Location *
-                </label>
-                <div className="relative">
-                  <MapPin className="absolute left-3 top-3 text-gray-400" size={20} />
-                  <textarea
-                    value={fieldLocation}
-                    onChange={(e) => setFieldLocation(e.target.value)}
-                    required
-                    rows="3"
-                    className="w-full border-2 border-gray-200 rounded-xl pl-11 pr-4 py-3 focus:border-emerald-500 focus:outline-none resize-none"
-                    placeholder="Enter the address or description of the field location"
-                  />
-                </div>
-                <p className="text-xs text-gray-500 mt-1">
-                  Provide the exact location where the service will be performed
-                </p>
-              </div>
-            </>
-          )}
-
-          {/* Pricing Summary */}
-          {pricing && (
-            <div className={`rounded-xl p-4 space-y-2 ${
-              rentalType === 'per_hectare' ? 'bg-emerald-50' : 'bg-blue-50'
-            }`}>
-              <div className="flex justify-between text-sm">
-                <span>
-                  {pricing.type === 'daily' 
-                    ? `$${machine.pricePerDay} × ${pricing.days} days`
-                    : `$${machine.pricePerHectare} × ${pricing.hectares} Ha`
-                  }
-                </span>
-                <span>${pricing.subtotal.toFixed(2)}</span>
-              </div>
-              <div className="flex justify-between text-sm">
-                <span>Service Fee (10%)</span>
-                <span>${pricing.serviceFee.toFixed(2)}</span>
-              </div>
-              <div className={`border-t pt-2 flex justify-between font-bold text-lg ${
-                rentalType === 'per_hectare' ? 'border-emerald-200' : 'border-blue-200'
-              }`}>
-                <span>Total</span>
-                <span className={rentalType === 'per_hectare' ? 'text-emerald-600' : 'text-blue-600'}>
-                  ${pricing.total.toFixed(2)}
-                </span>
-              </div>
-            </div>
-          )}
-
-          {/* Action Buttons */}
-          <div className="flex gap-3 mt-6">
-            <button
-              type="button"
-              onClick={onClose}
-              disabled={loading}
-              className="flex-1 bg-gray-200 text-gray-700 py-3 rounded-xl font-semibold hover:bg-gray-300 transition disabled:opacity-50"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={loading || !pricing}
-              className={`flex-1 text-white py-3 rounded-xl font-semibold disabled:opacity-50 hover:shadow-lg transition ${
-                rentalType === 'per_hectare'
-                  ? 'bg-gradient-to-r from-emerald-600 to-teal-600'
-                  : 'bg-gradient-to-r from-blue-600 to-cyan-600'
-              }`}
-            >
-              {loading ? (
-                <span className="flex items-center justify-center gap-2">
-                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                  Booking...
-                </span>
-              ) : (
-                'Confirm Booking'
-              )}
-            </button>
-          </div>
-        </form>
+          </form>
+        </div>
       </div>
     </div>
   );

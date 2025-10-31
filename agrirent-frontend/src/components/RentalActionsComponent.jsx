@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
-import api from '../services/api';
+import { paymentAPI } from '../services/api';
 import './RentalActionsComponent.css';
-// import RentalActionsComponent from '../components/RentalActionsComponent';
 
 const RentalActionsComponent = ({ rental, currentUser, onUpdate }) => {
   const [loading, setLoading] = useState(false);
@@ -9,19 +8,21 @@ const RentalActionsComponent = ({ rental, currentUser, onUpdate }) => {
   const [note, setNote] = useState('');
   const [actionType, setActionType] = useState(''); // 'complete' or 'confirm'
 
-  const isOwner = currentUser?.id === rental.ownerId?._id;
-  const isRenter = currentUser?.id === rental.renterId?._id;
+  const isOwner = currentUser?.id === rental.ownerId?._id || currentUser?.id === rental.ownerId;
+  const isRenter = currentUser?.id === rental.renterId?._id || currentUser?.id === rental.renterId;
   const isAdmin = currentUser?.role === 'admin';
 
   // Owner marks job as complete
-  const handleMarkComplete = async () => {
+  const handleMarkComplete = () => {
     setActionType('complete');
+    setNote('');
     setShowNoteModal(true);
   };
 
   // Renter confirms completion
-  const handleConfirmCompletion = async () => {
+  const handleConfirmCompletion = () => {
     setActionType('confirm');
+    setNote('');
     setShowNoteModal(true);
   };
 
@@ -35,24 +36,32 @@ const RentalActionsComponent = ({ rental, currentUser, onUpdate }) => {
     setLoading(true);
     try {
       if (actionType === 'complete') {
-        // Owner marks as complete
-        await api.post(`/payments/owner/mark-complete/${rental._id}`, {
-          completionNote: note
+        // ✅ Owner marks as complete
+        const response = await paymentAPI.ownerConfirm(rental._id, {
+          confirmationNote: note.trim()
         });
-        alert('Job marked as complete! Waiting for renter confirmation.');
+        
+        if (response.data.success) {
+          alert('✅ Job marked as complete! Renter has been notified to confirm.');
+          setShowNoteModal(false);
+          setNote('');
+          if (onUpdate) onUpdate();
+        }
       } else if (actionType === 'confirm') {
-        // Renter confirms completion
-        await api.post(`/payments/confirm-completion/${rental._id}`, {
-          confirmationNote: note
+        // ✅ Renter confirms completion
+        const response = await paymentAPI.renterConfirm(rental._id, {
+          confirmationNote: note.trim()
         });
-        alert('Completion confirmed! Payment will be released by admin within 24-48 hours.');
+        
+        if (response.data.success) {
+          alert('✅ Completion confirmed! Both parties confirmed. Admin will release payment.');
+          setShowNoteModal(false);
+          setNote('');
+          if (onUpdate) onUpdate();
+        }
       }
-      
-      setShowNoteModal(false);
-      setNote('');
-      if (onUpdate) onUpdate(); // Refresh rental data
     } catch (error) {
-      console.error('Action error:', error);
+      console.error('❌ Action error:', error);
       alert(error.response?.data?.message || 'Action failed');
     } finally {
       setLoading(false);
@@ -61,75 +70,138 @@ const RentalActionsComponent = ({ rental, currentUser, onUpdate }) => {
 
   return (
     <div className="rental-actions-container">
-      {/* OWNER: Mark as Complete Button */}
-      {isOwner && rental.status === 'active' && rental.payment?.status === 'held_in_escrow' && (
+      {/* ========================================
+          OWNER: Mark Job as Complete
+          ======================================== */}
+      {isOwner && 
+       rental.status === 'active' && 
+       rental.payment?.status === 'held_in_escrow' && 
+       !rental.ownerConfirmedCompletion && (
         <div className="action-card owner-action">
           <h3>🔧 Job Status</h3>
-          <p>The rental is currently active. Once you've completed the work:</p>
+          <p>The rental is currently active and paid. Once you've completed the work:</p>
           <button 
             onClick={handleMarkComplete}
             className="btn-primary"
             disabled={loading}
           >
-            ✅ Mark Job as Complete
+            ✅ Mark Job as Completed
           </button>
         </div>
       )}
 
-      {/* RENTER: Confirm Completion Button */}
-      {isRenter && rental.status === 'completed' && !rental.confirmations?.renterConfirmed && (
+      {/* ========================================
+          RENTER: Confirm Completion
+          ======================================== */}
+      {isRenter && 
+       rental.status === 'completed' && 
+       rental.payment?.status === 'held_in_escrow' &&
+       rental.ownerConfirmedCompletion &&
+       !rental.renterConfirmedCompletion && (
         <div className="action-card renter-action">
           <h3>✅ Confirm Completion</h3>
-          <p>The owner has marked this job as complete.</p>
-          <p><strong>Owner's note:</strong> {rental.confirmations?.ownerCompletionNote || 'No note provided'}</p>
-          <p>Please confirm that the work was completed satisfactorily to release payment.</p>
+          <p>The owner has marked this job as <strong>completed</strong>.</p>
+          {rental.ownerConfirmedAt && (
+            <p className="highlight-box">
+              📋 <strong>Completed on:</strong> {new Date(rental.ownerConfirmedAt).toLocaleDateString()}
+            </p>
+          )}
+          {rental.ownerConfirmationNote && (
+            <div className="info-box">
+              📝 <strong>Owner's note:</strong> {rental.ownerConfirmationNote}
+            </div>
+          )}
+          <p>Please confirm that the work was completed satisfactorily to release payment to the owner.</p>
           <button 
             onClick={handleConfirmCompletion}
             className="btn-success"
             disabled={loading}
           >
-            👍 Confirm & Release Payment
+            👍 Confirm Job Completion
           </button>
         </div>
       )}
 
-      {/* WAITING STATES */}
-      {isOwner && rental.status === 'completed' && !rental.confirmations?.renterConfirmed && (
+      {/* ========================================
+          WAITING STATES
+          ======================================== */}
+      
+      {/* Owner confirmed, waiting for renter */}
+      {isOwner && 
+       rental.status === 'completed' && 
+       rental.ownerConfirmedCompletion && 
+       !rental.renterConfirmedCompletion && (
         <div className="action-card waiting-state">
-          <h3>⏳ Waiting for Renter</h3>
-          <p>You've marked the job as complete. Waiting for renter confirmation to release payment.</p>
+          <h3>⏳ Waiting for Renter Confirmation</h3>
+          <p>You've marked the job as completed on {rental.ownerConfirmedAt ? new Date(rental.ownerConfirmedAt).toLocaleDateString() : 'today'}.</p>
+          <p>The renter will confirm completion, then payment will be released to you.</p>
+          {rental.ownerConfirmationNote && (
+            <div className="info-box">
+              📝 <strong>Your note:</strong> {rental.ownerConfirmationNote}
+            </div>
+          )}
+          <div className="info-box">
+            💰 <strong>Amount to receive:</strong> ${rental.pricing?.totalPrice?.toFixed(2)}
+          </div>
         </div>
       )}
 
-      {isRenter && rental.confirmations?.renterConfirmed && !rental.confirmations?.adminVerified && (
+      {/* Both confirmed, waiting for admin */}
+      {rental.ownerConfirmedCompletion && 
+       rental.renterConfirmedCompletion && 
+       rental.payment?.status === 'held_in_escrow' &&
+       (isOwner || isRenter) && (
         <div className="action-card waiting-state">
-          <h3>⏳ Payment Processing</h3>
-          <p>You've confirmed completion. Admin will release payment within 24-48 hours.</p>
-          <p><strong>Amount:</strong> ${rental.payment?.amount?.toFixed(2)}</p>
+          <h3>🎉 Both Parties Confirmed!</h3>
+          <p>Both you and the {isOwner ? 'renter' : 'owner'} have confirmed completion.</p>
+          <p>Admin will review and release payment within 24-48 hours.</p>
+          <div className="info-box">
+            💰 <strong>Amount:</strong> ${rental.pricing?.totalPrice?.toFixed(2)}<br/>
+            ✅ <strong>Owner confirmed:</strong> {rental.ownerConfirmedAt ? new Date(rental.ownerConfirmedAt).toLocaleDateString() : 'Yes'}<br/>
+            ✅ <strong>Renter confirmed:</strong> {rental.renterConfirmedAt ? new Date(rental.renterConfirmedAt).toLocaleDateString() : 'Yes'}
+          </div>
         </div>
       )}
 
-      {/* ADMIN: Can see all pending releases */}
-      {isAdmin && rental.confirmations?.renterConfirmed && !rental.confirmations?.adminVerified && (
+      {/* ========================================
+          ADMIN VIEW
+          ======================================== */}
+      {isAdmin && 
+       rental.ownerConfirmedCompletion && 
+       rental.renterConfirmedCompletion && 
+       rental.payment?.status === 'held_in_escrow' && (
         <div className="action-card admin-action">
           <h3>🔐 Admin Action Required</h3>
           <p>Both parties have confirmed. Ready to release payment.</p>
-          <a href="/admin/payments" className="btn-admin">
+          <div className="info-box">
+            💰 <strong>Amount:</strong> ${rental.pricing?.totalPrice?.toFixed(2)}<br/>
+            ✅ <strong>Owner confirmed:</strong> {rental.ownerConfirmedAt ? new Date(rental.ownerConfirmedAt).toLocaleDateString() : 'Yes'}<br/>
+            ✅ <strong>Renter confirmed:</strong> {rental.renterConfirmedAt ? new Date(rental.renterConfirmedAt).toLocaleDateString() : 'Yes'}
+          </div>
+          <a href="/admin/escrow" className="btn-admin">
             Go to Admin Dashboard
           </a>
         </div>
       )}
 
-      {/* COMPLETED STATE */}
-      {rental.payment?.status === 'completed' && rental.confirmations?.adminVerified && (
+      {/* ========================================
+          COMPLETED STATE
+          ======================================== */}
+      {(rental.status === 'closed' || rental.payment?.status === 'completed') && (
         <div className="action-card completed-state">
-          <h3>✅ Rental Completed</h3>
-          <p>Payment has been released to the owner.</p>
-          <p><strong>Completed on:</strong> {new Date(rental.confirmations.adminVerifiedAt).toLocaleDateString()}</p>
+          <h3>✅ Rental Completed Successfully</h3>
+          <p>This rental has been completed and payment has been released.</p>
+          <div className="info-box">
+            💰 <strong>Total Amount:</strong> ${rental.pricing?.totalPrice?.toFixed(2)}<br/>
+            📅 <strong>Completed:</strong> {rental.completedAt ? new Date(rental.completedAt).toLocaleDateString() : 'N/A'}<br/>
+            💳 <strong>Payment Released:</strong> {rental.payment?.releasedAt ? new Date(rental.payment.releasedAt).toLocaleDateString() : 'Yes'}
+          </div>
         </div>
       )}
 
-      {/* MODAL FOR NOTES */}
+      {/* ========================================
+          MODAL FOR NOTES
+          ======================================== */}
       {showNoteModal && (
         <div className="modal-overlay" onClick={() => !loading && setShowNoteModal(false)}>
           <div className="modal-content" onClick={(e) => e.stopPropagation()}>
@@ -145,14 +217,21 @@ const RentalActionsComponent = ({ rental, currentUser, onUpdate }) => {
             <textarea
               value={note}
               onChange={(e) => setNote(e.target.value)}
-              placeholder="Enter your note here (minimum 10 characters)..."
+              placeholder="Example: Job completed successfully. Machine worked perfectly and was returned in good condition. Service was professional and on time."
               rows="5"
               className="modal-textarea"
               disabled={loading}
+              maxLength={500}
             />
+            <small style={{ color: '#666', display: 'block', marginTop: '-10px', marginBottom: '15px' }}>
+              {note.trim().length}/500 characters (minimum 10 required)
+            </small>
             <div className="modal-actions">
               <button 
-                onClick={() => setShowNoteModal(false)}
+                onClick={() => {
+                  setShowNoteModal(false);
+                  setNote('');
+                }}
                 className="btn-secondary"
                 disabled={loading}
               >
@@ -163,161 +242,12 @@ const RentalActionsComponent = ({ rental, currentUser, onUpdate }) => {
                 className="btn-primary"
                 disabled={loading || note.trim().length < 10}
               >
-                {loading ? 'Submitting...' : 'Submit'}
+                {loading ? 'Submitting...' : actionType === 'complete' ? '✅ Mark Complete' : '✅ Confirm'}
               </button>
             </div>
           </div>
         </div>
       )}
-
-      {/* <style jsx>{`
- 
-
-        .action-card {
-          padding: 20px;
-          border-radius: 8px;
-          margin-bottom: 15px;
-          border: 2px solid;
-        }
-
-        .owner-action {
-          background: #f0f9ff;
-          border-color: #3b82f6;
-        }
-
-        .renter-action {
-          background: #f0fdf4;
-          border-color: #22c55e;
-        }
-
-        .admin-action {
-          background: #fef3c7;
-          border-color: #f59e0b;
-        }
-
-        .waiting-state {
-          background: #f3f4f6;
-          border-color: #9ca3af;
-        }
-
-        .completed-state {
-          background: #ecfdf5;
-          border-color: #10b981;
-        }
-
-        .action-card h3 {
-          margin: 0 0 10px 0;
-          font-size: 18px;
-        }
-
-        .action-card p {
-          margin: 5px 0;
-        }
-
-        .btn-primary,
-        .btn-success,
-        .btn-admin,
-        .btn-secondary {
-          padding: 12px 24px;
-          border: none;
-          border-radius: 6px;
-          font-weight: 600;
-          cursor: pointer;
-          margin-top: 10px;
-          transition: all 0.3s;
-        }
-
-        .btn-primary {
-          background: #3b82f6;
-          color: white;
-        }
-
-        .btn-primary:hover {
-          background: #2563eb;
-        }
-
-        .btn-success {
-          background: #22c55e;
-          color: white;
-        }
-
-        .btn-success:hover {
-          background: #16a34a;
-        }
-
-        .btn-admin {
-          background: #f59e0b;
-          color: white;
-          text-decoration: none;
-          display: inline-block;
-        }
-
-        .btn-admin:hover {
-          background: #d97706;
-        }
-
-        .btn-secondary {
-          background: #6b7280;
-          color: white;
-        }
-
-        .btn-secondary:hover {
-          background: #4b5563;
-        }
-
-        button:disabled {
-          opacity: 0.5;
-          cursor: not-allowed;
-        }
-
-        .modal-overlay {
-          position: fixed;
-          top: 0;
-          left: 0;
-          right: 0;
-          bottom: 0;
-          background: rgba(0, 0, 0, 0.5);
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          z-index: 1000;
-        }
-
-        .modal-content {
-          background: white;
-          padding: 30px;
-          border-radius: 12px;
-          max-width: 500px;
-          width: 90%;
-          box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
-        }
-
-        .modal-content h3 {
-          margin: 0 0 15px 0;
-        }
-
-        .modal-textarea {
-          width: 100%;
-          padding: 12px;
-          border: 2px solid #e5e7eb;
-          border-radius: 6px;
-          font-family: inherit;
-          font-size: 14px;
-          margin: 15px 0;
-          resize: vertical;
-        }
-
-        .modal-textarea:focus {
-          outline: none;
-          border-color: #3b82f6;
-        }
-
-        .modal-actions {
-          display: flex;
-          gap: 10px;
-          justify-content: flex-end;
-        }
-      `}</style> */}
     </div>
   );
 };

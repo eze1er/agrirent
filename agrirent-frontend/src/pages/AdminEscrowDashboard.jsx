@@ -22,9 +22,27 @@ import {
   UserCheck
 } from 'lucide-react';
 
+// Helper function to safely format currency
+const formatCurrency = (value) => {
+  const num = parseFloat(value);
+  return isNaN(num) ? '0.00' : num.toFixed(2);
+};
 export default function AdminEscrowDashboard({ user, onLogout }) {
+    const formatCurrency = (value) => {
+    const num = parseFloat(value);
+    return isNaN(num) ? '0.00' : num.toFixed(2);
+  };
   const navigate = useNavigate();
-  const [escrowData, setEscrowData] = useState(null);
+  const [escrowData, setEscrowData] = useState({
+  totalInEscrow: 0,
+  pendingApproval: 0,
+  completedPayments: 0,
+  disputedPayments: 0,
+  totalRevenue: 0,
+  platformFees: 0,
+  ownerPayouts: 0,
+  rentals: []
+});
   const [rentals, setRentals] = useState([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState('pending');
@@ -52,35 +70,49 @@ const fetchEscrowData = async () => {
   try {
     const token = localStorage.getItem('token');
     
-    // ✅ CHANGED: Fetch from payment admin endpoint
     const response = await fetch(`${API_BASE}/payments/admin/pending-payments`, {
       headers: { 'Authorization': `Bearer ${token}` }
     });
     
     const data = await response.json();
-    console.log('📊 Escrow data:', data); // Debug log
+    console.log('📊 Raw API response:', data);
     
     if (data.success) {
-      // The data is already formatted by the backend
-      setRentals(data.data || []);
-      const stats = calculateStats(data.data || []);
+      const rentalData = data.data || [];
+      console.log('📋 Rentals received:', rentalData.length);
+      console.log('📋 First rental:', rentalData[0]);
+      
+      setRentals(rentalData);
+      
+      const stats = calculateStats(rentalData);
+      console.log('📊 Calculated stats:', stats);
+      
       setEscrowData(stats);
     } else {
       console.error('❌ API returned error:', data.message);
       setRentals([]);
-      setEscrowData(calculateStats([]));
+      setEscrowData({
+        totalInEscrow: 0,
+        pendingApproval: 0,
+        completedPayments: 0,
+        disputedPayments: 0,
+        totalRevenue: 0,
+        platformFees: 0,
+        ownerPayouts: 0,
+        rentals: []
+      });
     }
   } catch (error) {
     console.error('❌ Fetch error:', error);
     alert('Failed to load escrow data. Please refresh the page.');
-    setRentals([]);
-    setEscrowData(calculateStats([]));
   } finally {
     setLoading(false);
   }
 };
 
 const calculateStats = (rentals) => {
+  console.log('🔍 calculateStats called with rentals:', rentals);
+  
   const stats = {
     totalInEscrow: 0,
     pendingApproval: 0,
@@ -92,40 +124,62 @@ const calculateStats = (rentals) => {
     rentals: rentals
   };
 
-  rentals.forEach(rental => {
-    const amount = rental.pricing?.totalPrice || rental.payment?.amount || 0;
+  if (!rentals || !Array.isArray(rentals)) {
+    console.error('❌ rentals is not an array:', rentals);
+    return stats;
+  }
+
+  console.log(`📊 Processing ${rentals.length} rentals...`);
+
+  rentals.forEach((rental, index) => {
+    console.log(`\n--- Rental ${index + 1} ---`);
+    console.log('ID:', rental._id);
+    console.log('Status:', rental.status);
+    console.log('Payment:', rental.payment);
+    
+    const amount = Number(rental.pricing?.totalPrice || rental.payment?.amount || 0);
     const platformFee = amount * 0.10;
     const ownerPayout = amount - platformFee;
 
-    // In escrow (not yet released)
+    console.log('Amount:', amount);
+    console.log('Payment Status:', rental.payment?.status);
+
+    // ✅ Count payments in escrow
     if (rental.payment?.status === 'held_in_escrow') {
+      console.log('✅ Adding to escrow:', amount);
       stats.totalInEscrow += amount;
       
-      // Both confirmed = ready for admin
-      if (rental.renterConfirmedCompletion && rental.ownerConfirmedCompletion) {
+      // Both confirmed?
+      if (rental.ownerConfirmedCompletion && rental.renterConfirmedCompletion) {
+        console.log('✅ Both confirmed - pending admin approval');
         stats.pendingApproval += 1;
       }
     }
 
-    // ✅ FIXED: Check for completed/released payments
-    if (rental.payment?.status === 'completed' || rental.payment?.releasedAt) {
-      stats.completedPayments += 1;
-      stats.totalRevenue += amount;
-      
-      // ✅ Use actual platform fee if stored, otherwise calculate
-      const actualPlatformFee = rental.payment?.platformFee || platformFee;
-      const actualOwnerPayout = rental.payment?.ownerPayout || ownerPayout;
-      
-      stats.platformFees += actualPlatformFee;
-      stats.ownerPayouts += actualOwnerPayout;
+    // ✅ Approved but not paid yet
+    if (rental.status === 'approved' && 
+        (!rental.payment?.status || rental.payment?.status === 'pending')) {
+      console.log('✅ Approved, will be in escrow:', amount);
+      stats.totalInEscrow += amount;
     }
 
-    // Disputed
+    // ✅ Completed payments
+    if (rental.payment?.status === 'completed' || rental.status === 'closed') {
+      console.log('✅ Completed payment:', amount);
+      stats.completedPayments += 1;
+      stats.totalRevenue += amount;
+      stats.platformFees += (rental.payment?.platformFee || platformFee);
+      stats.ownerPayouts += (rental.payment?.ownerPayout || ownerPayout);
+    }
+
+    // ✅ Disputed
     if (rental.status === 'disputed') {
+      console.log('⚠️ Disputed');
       stats.disputedPayments += 1;
     }
   });
 
+  console.log('\n📊 FINAL STATS:', stats);
   return stats;
 };
 
@@ -232,34 +286,52 @@ const calculateStats = (rentals) => {
     }
   };
 
-  const getFilteredRentals = () => {
-    switch (filter) {
-      case 'pending':
-        // ✅ BOTH renter AND owner confirmed, waiting for admin
+const getFilteredRentals = () => {
+  switch (filter) {
+    case 'pending':
+      // ✅ BOTH renter AND owner confirmed, waiting for admin
       return rentals.filter(r => 
         r.status === 'released' &&
         r.renterConfirmedCompletion && 
         r.ownerConfirmedCompletion &&
         r.payment?.status === 'held_in_escrow'
       );
-      case 'waiting':
-        // Waiting for confirmations
-        return rentals.filter(r => 
-          r.payment?.status === 'held_in_escrow' &&
-          (!r.renterConfirmedCompletion || !r.ownerConfirmedCompletion)
-        );
-      case 'escrow':
-        return rentals.filter(r => r.payment?.status === 'held_in_escrow');
-      case 'completed':
-        return rentals.filter(r => r.payment?.status === 'completed');
-      case 'disputed':
-        return rentals.filter(r => r.status === 'disputed');
-      case 'all':
-        return rentals;
-      default:
-        return rentals;
-    }
-  };
+    case 'waiting':
+      // ✅ FIX: Show approved rentals waiting for payment + active rentals waiting for confirmations
+      return rentals.filter(r => {
+        // Approved but not paid yet
+        if (r.status === 'approved' && r.payment?.status === 'pending') {
+          return true;
+        }
+        // Active but missing confirmations
+        if (r.status === 'active' && r.payment?.status === 'held_in_escrow') {
+          return !r.renterConfirmedCompletion || !r.ownerConfirmedCompletion;
+        }
+        // Completed but missing owner confirmation
+        if (r.status === 'completed' && r.payment?.status === 'held_in_escrow') {
+          return !r.ownerConfirmedCompletion;
+        }
+        return false;
+      });
+    case 'escrow':
+      // ✅ FIX: Show all with payment in escrow OR approved waiting for payment
+      return rentals.filter(r => 
+        r.payment?.status === 'held_in_escrow' || 
+        (r.status === 'approved' && r.payment?.status === 'pending')
+      );
+    case 'completed':
+      return rentals.filter(r => 
+        r.payment?.status === 'completed' || 
+        r.status === 'closed'
+      );
+    case 'disputed':
+      return rentals.filter(r => r.status === 'disputed');
+    case 'all':
+      return rentals;
+    default:
+      return rentals;
+  }
+};
 
   const filteredRentals = getFilteredRentals();
 
@@ -360,47 +432,141 @@ const calculateStats = (rentals) => {
           )}
 
           {/* Money Stats */}
-          <div className="py-6">
-            <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
-              <StatCard icon={<DollarSign size={20} />} label="In Escrow" value={`$${escrowData?.totalInEscrow?.toFixed(2) || '0.00'}`} sublabel="Held funds" color="yellow" />
-              <StatCard icon={<AlertTriangle size={20} />} label="Pending" value={escrowData?.pendingApproval || 0} sublabel="Both confirmed" color="yellow" />
-              <StatCard icon={<CheckCircle size={20} />} label="Completed" value={escrowData?.completedPayments || 0} sublabel="Released" color="green" />
-              <StatCard icon={<TrendingUp size={20} />} label="Revenue" value={`$${escrowData?.totalRevenue?.toFixed(2) || '0.00'}`} sublabel="All time" color="green" />
-              <StatCard icon={<Percent size={20} />} label="Platform Fees" value={`$${escrowData?.platformFees?.toFixed(2) || '0.00'}`} sublabel="10% earned" color="blue" />
-            </div>
+{/* Money Stats */}
+{/* Money Stats */}
+<div className="py-6">
+  <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
+    <StatCard 
+      icon={<DollarSign size={20} />} 
+      label="In Escrow" 
+      value={`$${formatCurrency(escrowData?.totalInEscrow)}`} 
+      sublabel="Held funds" 
+      color="yellow" 
+    />
+    <StatCard 
+      icon={<AlertTriangle size={20} />} 
+      label="Pending" 
+      value={escrowData?.pendingApproval || 0} 
+      sublabel="Both confirmed" 
+      color="yellow" 
+    />
+    <StatCard 
+      icon={<CheckCircle size={20} />} 
+      label="Completed" 
+      value={escrowData?.completedPayments || 0} 
+      sublabel="Released" 
+      color="green" 
+    />
+    <StatCard 
+      icon={<TrendingUp size={20} />} 
+      label="Revenue" 
+      value={`$${formatCurrency(escrowData?.totalRevenue)}`} 
+      sublabel="All time" 
+      color="green" 
+    />
+    <StatCard 
+      icon={<Percent size={20} />} 
+      label="Platform Fees" 
+      value={`$${formatCurrency(escrowData?.platformFees)}`} 
+      sublabel="10% earned" 
+      color="blue" 
+    />
+  </div>
 
-            <div className="grid grid-cols-2 lg:grid-cols-3 gap-4 mt-4">
-              <StatCard icon={<DollarSign size={18} />} label="Owner Payouts" value={`$${escrowData?.ownerPayouts?.toFixed(2) || '0.00'}`} sublabel="90% paid" color="white" />
-              <StatCard icon={<XCircle size={18} />} label="Disputed" value={escrowData?.disputedPayments || 0} sublabel="Need resolution" color="white" />
-              <StatCard icon={<Clock size={18} />} label="Transactions" value={rentals.length} sublabel="All payments" color="white" />
-            </div>
-          </div>
+  <div className="grid grid-cols-2 lg:grid-cols-3 gap-4 mt-4">
+    <StatCard 
+      icon={<DollarSign size={18} />} 
+      label="Owner Payouts" 
+      value={`$${formatCurrency(escrowData?.ownerPayouts)}`} 
+      sublabel="90% paid" 
+      color="white" 
+    />
+    <StatCard 
+      icon={<XCircle size={18} />} 
+      label="Disputed" 
+      value={escrowData?.disputedPayments || 0} 
+      sublabel="Need resolution" 
+      color="white" 
+    />
+    <StatCard 
+      icon={<Clock size={18} />} 
+      label="Transactions" 
+      value={rentals?.length || 0} 
+      sublabel="All payments" 
+      color="white" 
+    />
+  </div>
+</div>
         </div>
       </div>
 
       {/* Filters */}
       <div className="max-w-7xl mx-auto px-4 mt-6">
         <div className="bg-white rounded-2xl p-2 shadow-lg flex gap-2 overflow-x-auto">
-          {[
-            { key: 'pending', label: '✅ Ready to Release', count: escrowData?.pendingApproval },
-            { key: 'waiting', label: '⏳ Waiting Confirmations', count: rentals.filter(r => r.payment?.status === 'held_in_escrow' && (!r.renterConfirmedCompletion || !r.ownerConfirmedCompletion)).length },
-            { key: 'escrow', label: 'All in Escrow', count: rentals.filter(r => r.payment?.status === 'held_in_escrow').length },
-            { key: 'disputed', label: 'Disputed', count: escrowData?.disputedPayments },
-            { key: 'completed', label: 'Completed', count: escrowData?.completedPayments },
-            { key: 'all', label: 'All Payments', count: rentals.length }
-          ].map((tab) => (
-            <button
-              key={tab.key}
-              onClick={() => setFilter(tab.key)}
-              className={`px-6 py-3 rounded-xl font-semibold whitespace-nowrap transition ${
-                filter === tab.key
-                  ? 'bg-gradient-to-r from-rose-500 to-red-500 text-white shadow-lg'
-                  : 'text-gray-600 hover:bg-gray-100'
-              }`}
-            >
-              {tab.label} ({tab.count || 0})
-            </button>
-          ))}
+{[
+  { 
+    key: 'pending', 
+    label: '✅ Ready to Release', 
+    count: rentals.filter(r => 
+      r.ownerConfirmedCompletion && 
+      r.renterConfirmedCompletion &&
+      r.payment?.status === 'held_in_escrow'
+    ).length
+  },
+  { 
+    key: 'waiting', 
+    label: '⏳ Waiting Confirmations', 
+    count: rentals.filter(r => {
+      // Approved but not paid
+      if (r.status === 'approved' && r.payment?.status === 'pending') return true;
+      
+      // Active with payment in escrow but missing confirmations
+      if (r.payment?.status === 'held_in_escrow') {
+        return !r.ownerConfirmedCompletion || !r.renterConfirmedCompletion;
+      }
+      
+      return false;
+    }).length
+  },
+  { 
+    key: 'escrow', 
+    label: '💰 All in Escrow', 
+    count: rentals.filter(r => 
+      r.payment?.status === 'held_in_escrow' || 
+      (r.status === 'approved' && r.payment?.status === 'pending')
+    ).length
+  },
+  { 
+    key: 'disputed', 
+    label: '⚠️ Disputed', 
+    count: rentals.filter(r => r.status === 'disputed').length
+  },
+  { 
+    key: 'completed', 
+    label: '✅ Completed', 
+    count: rentals.filter(r => 
+      r.payment?.status === 'completed' || 
+      r.status === 'closed'
+    ).length
+  },
+  { 
+    key: 'all', 
+    label: '📋 All Payments', 
+    count: rentals.length 
+  }
+].map((tab) => (
+  <button
+    key={tab.key}
+    onClick={() => setFilter(tab.key)}
+    className={`px-6 py-3 rounded-xl font-semibold whitespace-nowrap transition ${
+      filter === tab.key
+        ? 'bg-gradient-to-r from-rose-500 to-red-500 text-white shadow-lg'
+        : 'text-gray-600 hover:bg-gray-100'
+    }`}
+  >
+    {tab.label} ({tab.count || 0})
+  </button>
+))}
         </div>
       </div>
 
@@ -507,7 +673,6 @@ function RentalCard({ rental, onRelease, onReject, onViewDetails }) {
   const platformFee = amount * 0.10;
   const ownerPayout = amount - platformFee;
   
-  // ✅ BOTH must confirm before admin can release
   const bothConfirmed = rental.renterConfirmedCompletion && rental.ownerConfirmedCompletion;
   const showActions = bothConfirmed && rental.payment?.status === 'held_in_escrow';
 
@@ -531,7 +696,7 @@ function RentalCard({ rental, onRelease, onReject, onViewDetails }) {
                 : 'bg-gray-100 text-gray-800'
             }`}
           >
-            {rental.payment?.status?.replace('_', ' ').toUpperCase()}
+            {rental.payment?.status?.replace('_', ' ').toUpperCase() || 'PENDING'}
           </span>
         </div>
 
@@ -544,19 +709,18 @@ function RentalCard({ rental, onRelease, onReject, onViewDetails }) {
           <div className="grid grid-cols-3 gap-4 text-sm">
             <div>
               <p className="text-gray-600 mb-1">Total Amount</p>
-              <p className="text-2xl font-bold text-gray-900">${amount.toFixed(2)}</p>
+              <p className="text-2xl font-bold text-gray-900">${formatCurrency(amount)}</p>
             </div>
             <div>
               <p className="text-gray-600 mb-1">Platform (10%)</p>
-              <p className="text-2xl font-bold text-blue-600">${platformFee.toFixed(2)}</p>
+              <p className="text-2xl font-bold text-blue-600">${formatCurrency(platformFee)}</p>
             </div>
             <div>
               <p className="text-gray-600 mb-1">Owner Gets (90%)</p>
-              <p className="text-2xl font-bold text-emerald-600">${ownerPayout.toFixed(2)}</p>
+              <p className="text-2xl font-bold text-emerald-600">${formatCurrency(ownerPayout)}</p>
             </div>
           </div>
         </div>
-
         {/* Parties */}
         <div className="grid md:grid-cols-2 gap-4 mb-4 bg-gray-50 rounded-xl p-4">
           <div>

@@ -69,6 +69,8 @@ export const rentalAPI = {
   create: (data) => api.post("/rentals", data),
   updateStatus: (id, data) => api.patch(`/rentals/${id}/status`, data),
   complete: (id) => api.patch(`/rentals/${id}/complete`),
+  confirmCompletion: (id, data) =>
+    api.patch(`/rentals/${id}/confirm-completion`, data),
   cancel: (id, data) => api.post(`/rentals/${id}/cancel`, data),
   submitReview: (id, reviewData) =>
     api.post(`/rentals/${id}/review`, reviewData),
@@ -100,7 +102,11 @@ export const paymentAPI = {
   openDispute: (rentalId, data) =>
     api.post(`/payments/open-dispute/${rentalId}`, data),
 
-  // Admin Operations
+  ownerConfirm: (rentalId, data) =>
+    api.post(`/payments/rentals/${rentalId}/owner-confirm`, data),
+
+  renterConfirm: (rentalId, data) =>
+    api.post(`/payments/rentals/${rentalId}/renter-confirm`, data),
   getAdminPendingPayments: () => api.get("/payments/admin/pending-payments"),
   getAdminPendingReleases: () => api.get("/payments/admin/pending-releases"),
   releasePayment: (paymentId, data) =>
@@ -118,6 +124,7 @@ export const paymentAPI = {
 
   // Test endpoint
   testPayments: () => api.get("/payments/test"),
+
 };
 
 // Upload API

@@ -202,35 +202,35 @@ export default function Dashboard({ user: currentUser, onLogout }) {
     }
   };
 
-const handleBookMachine = async (bookingData) => {
-  try {
-    const response = await rentalAPI.create({
-      machineId: bookingMachine._id,
-      ...bookingData,
-    });
-    if (response.data.success) {
-      alert(
-        "✅ Booking request sent successfully! The owner will review your request."
-      );
-      
-      // ✅ Close modal first
-      setShowBookingModal(false);
-      setBookingMachine(null);
-      
-      // ✅ Add small delay to ensure backend has updated
-      await new Promise(resolve => setTimeout(resolve, 500));
-      
-      // ✅ Then refresh data
-      await fetchRentals();
-      await fetchMachines();
-      
-      // ✅ Navigate to machines view
-      setCurrentView("machines");
+  const handleBookMachine = async (bookingData) => {
+    try {
+      const response = await rentalAPI.create({
+        machineId: bookingMachine._id,
+        ...bookingData,
+      });
+      if (response.data.success) {
+        alert(
+          "✅ Booking request sent successfully! The owner will review your request."
+        );
+
+        // ✅ Close modal first
+        setShowBookingModal(false);
+        setBookingMachine(null);
+
+        // ✅ Add small delay to ensure backend has updated
+        await new Promise((resolve) => setTimeout(resolve, 500));
+
+        // ✅ Then refresh data
+        await fetchRentals();
+        await fetchMachines();
+
+        // ✅ Navigate to machines view
+        setCurrentView("machines");
+      }
+    } catch (error) {
+      throw error;
     }
-  } catch (error) {
-    throw error;
-  }
-};
+  };
 
   const handlePaymentSuccess = async (paymentData) => {
     console.log("💰 Payment success callback:", paymentData);
@@ -1615,10 +1615,14 @@ const handleBookMachine = async (bookingData) => {
                   </div>
                   <span
                     className={`px-4 py-2 rounded-xl text-xs font-bold capitalize ${
-                      rental.status === "booking"
+                      rental.status === "pending"
                         ? "bg-amber-100 text-amber-800"
                         : rental.status === "approved"
+                        ? "bg-blue-100 text-blue-800"
+                        : rental.status === "active"
                         ? "bg-emerald-100 text-emerald-800"
+                        : rental.status === "completed"
+                        ? "bg-purple-100 text-purple-800"
                         : rental.status === "rejected"
                         ? "bg-rose-100 text-rose-800"
                         : "bg-gray-100 text-gray-800"
@@ -1658,7 +1662,32 @@ const handleBookMachine = async (bookingData) => {
                   Total: ${rental.pricing?.totalPrice?.toFixed(2)}
                 </p>
 
-                {/* Show rejection reason if rejected */}
+                {/* PAYMENT STATUS INDICATOR */}
+                {rental.payment?.status && (
+                  <div className="mt-3 p-3 bg-gradient-to-r from-blue-50 to-cyan-50 rounded-xl border border-blue-200">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-semibold text-gray-700">
+                        Payment Status:
+                      </span>
+                      <span
+                        className={`text-sm font-bold ${
+                          rental.payment.status === "held_in_escrow"
+                            ? "text-blue-600"
+                            : rental.payment.status === "completed"
+                            ? "text-emerald-600"
+                            : "text-gray-600"
+                        }`}
+                      >
+                        {rental.payment.status === "held_in_escrow"
+                          ? "🔒 Secured in Escrow"
+                          : rental.payment.status === "completed"
+                          ? "✅ Released to Owner"
+                          : rental.payment.status}
+                      </span>
+                    </div>
+                  </div>
+                )}
+
                 {/* Show rejection reason if rejected */}
                 {rental.status === "rejected" && rental.rejectionReason && (
                   <div className="mt-4 bg-rose-50 border-l-4 border-rose-500 p-3 rounded">
@@ -1689,53 +1718,12 @@ const handleBookMachine = async (bookingData) => {
                   </div>
                 )}
 
-                {/* ✅ COMPLETE BUTTON - Only for ACTIVE rentals (after payment) */}
-                {rental.status === "active" && (
-                  <button
-                    onClick={async () => {
-                      if (!window.confirm("Mark this rental as completed?"))
-                        return;
-                      try {
-                        await rentalAPI.complete(rental._id);
-                        alert(
-                          "✅ Job marked as completed! Waiting for renter to confirm."
-                        );
-                        fetchRequests();
-                      } catch (err) {
-                        alert(
-                          err.response?.data?.message ||
-                            "Failed to complete rental"
-                        );
-                      }
-                    }}
-                    className="mt-3 w-full py-2 bg-gradient-to-r from-purple-500 to-pink-500 text-white rounded-xl font-semibold text-sm"
-                  >
-                    ✅ Mark Job as Completed
-                  </button>
-                )}
-
-                {/* Complete for approved/active */}
-                {["approved", "active"].includes(rental.status) && (
-                  <button
-                    onClick={async () => {
-                      if (!window.confirm("Mark this rental as completed?"))
-                        return;
-                      try {
-                        await rentalAPI.complete(rental._id);
-                        alert("✅ Rental completed!");
-                        fetchRequests();
-                      } catch (err) {
-                        alert(
-                          err.response?.data?.message ||
-                            "Failed to complete rental"
-                        );
-                      }
-                    }}
-                    className="mt-3 w-full py-2 bg-gradient-to-r from-blue-500 to-cyan-500 text-white rounded-xl font-semibold text-sm"
-                  >
-                    ✅ Complete Rental
-                  </button>
-                )}
+                {/* ✅ WORKFLOW BUTTONS COMPONENT - Handles all other statuses */}
+                <RentalActionsComponent
+                  rental={rental}
+                  currentUser={currentUser || localUser}
+                  onUpdate={fetchRequests}
+                />
               </div>
             ))}
           </div>
@@ -3613,6 +3601,9 @@ const handleBookMachine = async (bookingData) => {
       {currentView === "profile" && <ProfileScreen />}
       {currentView === "myMachines" && <MyMachinesScreen />}
       {currentView === "requests" && <RentalRequestsScreen />}
+      {currentView === "admin-releases" && (
+        <AdminRentalDashboard onClose={() => setCurrentView("home")} />
+      )}
 
       {/* All Modals */}
       {showAddMachineForm && <AddMachineForm />}

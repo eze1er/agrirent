@@ -324,30 +324,306 @@ router.get(
 );
 
 // ============================================
-// ADMIN: GET PENDING PAYMENTS FOR DASHBOARD
-router.get("/admin/pending-payments", protect, authorize("admin"), async (req, res) => {
+// ADMIN: GET PENDING PAYMENTS FOR ESCROW DASHBOARD
+// ============================================
+// ============================================
+// ADMIN: GET PENDING PAYMENTS FOR ESCROW DASHBOARD
+// ============================================
+router.get("/admin/pending-payments", protect, async (req, res) => {
   try {
-    // ✅ Get ALL payments (in escrow + completed) for stats
-    const allPayments = await Rental.find({
-      $or: [
-        { 'payment.status': 'held_in_escrow' },
-        { 'payment.status': 'completed' }
-      ]
-    })
+    // Check if user is admin
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({
+        success: false,
+        message: "Only admins can access this endpoint",
+      });
+    }
+
+    console.log('🔍 Fetching ALL rentals for escrow dashboard...');
+
+    // ✅ GET ALL RENTALS
+    const rentals = await Rental.find({})
+      .populate("machineId", "name images category")
       .populate("renterId", "firstName lastName email phoneNumber")
       .populate("ownerId", "firstName lastName email phoneNumber")
-      .populate("machineId", "name category")
-      .sort({ "payment.paidAt": -1 });
+      .sort({ createdAt: -1 });
 
-    console.log("📊 Found payments:", allPayments.length);
+    console.log(`📊 Total rentals found: ${rentals.length}`);
+
+    // ✅ CRITICAL FIX: Use rental.payment directly, don't override with Payment document
+    const rentalsWithPayments = rentals.map(rental => {
+      const rentalObj = rental.toObject();
+      
+      // ✅ Use the payment info directly from the rental
+      // DO NOT fetch from Payment collection as it might have different status
+      if (!rentalObj.payment || !rentalObj.payment.status) {
+        rentalObj.payment = {
+          status: 'pending',
+          amount: rentalObj.pricing?.totalPrice || 0,
+          method: 'unknown',
+          transactionId: null,
+        };
+      }
+      
+      return rentalObj;
+    });
+
+    console.log(`✅ Processed ${rentalsWithPayments.length} rentals`);
+    console.log(`📊 Status Breakdown:`);
+    console.log(`   - Pending: ${rentalsWithPayments.filter(r => r.status === 'pending').length}`);
+    console.log(`   - Approved: ${rentalsWithPayments.filter(r => r.status === 'approved').length}`);
+    console.log(`   - Rejected: ${rentalsWithPayments.filter(r => r.status === 'rejected').length}`);
+    console.log(`   - Active: ${rentalsWithPayments.filter(r => r.status === 'active').length}`);
+    console.log(`   - Completed: ${rentalsWithPayments.filter(r => r.status === 'completed').length}`);
+    console.log(`   - Released: ${rentalsWithPayments.filter(r => r.status === 'released').length}`);
+    console.log(`   - Closed: ${rentalsWithPayments.filter(r => r.status === 'closed').length}`);
+    
+    console.log(`💰 Payment Status:`);
+    console.log(`   - Pending: ${rentalsWithPayments.filter(r => r.payment?.status === 'pending').length}`);
+    console.log(`   - Held in escrow: ${rentalsWithPayments.filter(r => r.payment?.status === 'held_in_escrow').length}`);
+    console.log(`   - Completed: ${rentalsWithPayments.filter(r => r.payment?.status === 'completed').length}`);
 
     res.json({
       success: true,
-      count: allPayments.length,
-      data: allPayments
+      data: rentalsWithPayments,
+      count: rentalsWithPayments.length,
     });
   } catch (error) {
-    console.error("Error fetching payments:", error);
+    console.error("❌ Error fetching pending payments:", error);
+    res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+});
+// Get all rentals (admin only)
+router.get("/admin/all", protect, async (req, res) => {
+  try {
+    const { status, page = 1, limit = 20 } = req.query;
+    
+    let query = {};
+    if (status) {
+      query.status = status;
+    }
+
+    const rentals = await Rental.find(query)
+      .populate("machineId", "name images category")
+      .populate("renterId", "firstName lastName email phone")
+      .populate("ownerId", "firstName lastName email phone")
+      .sort({ createdAt: -1 })
+      .limit(limit * 1)
+      .skip((page - 1) * limit);
+
+    const total = await Rental.countDocuments(query);
+
+    res.json({
+      success: true,
+      data: rentals,
+      pagination: {
+        current: page,
+        pages: Math.ceil(total / limit),
+        total
+      }
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// Get rentals pending payment release
+router.get("/admin/pending-release", protect, async (req, res) => {
+  try {
+    const rentals = await Rental.find({ 
+      status: "released",
+      renterConfirmedCompletion: true 
+    })
+      .populate("machineId", "name category")
+      .populate("renterId", "firstName lastName email")
+      .populate("ownerId", "firstName lastName email bankDetails")
+      .sort({ renterConfirmedAt: 1 });
+
+    // Get payment details for each rental
+    const rentalsWithPayments = await Promise.all(
+      rentals.map(async (rental) => {
+        const payment = await Payment.findOne({ rentalId: rental._id });
+        return {
+          ...rental.toObject(),
+          payment: payment || null
+        };
+      })
+    );
+
+    res.json({
+      success: true,
+      data: rentalsWithPayments
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// Get rental statistics
+router.get("/admin/stats", protect, async (req, res) => {
+  try {
+    const totalRentals = await Rental.countDocuments();
+    const pendingRentals = await Rental.countDocuments({ status: "pending" });
+    const activeRentals = await Rental.countDocuments({ status: "active" });
+    const completedRentals = await Rental.countDocuments({ status: "closed" });
+    
+    const totalRevenue = await Rental.aggregate([
+      { $match: { status: "closed" } },
+      { $group: { _id: null, total: { $sum: "$pricing.totalPrice" } } }
+    ]);
+
+    const monthlyRevenue = await Rental.aggregate([
+      { 
+        $match: { 
+          status: "closed",
+          closedAt: { $gte: new Date(new Date().getFullYear(), new Date().getMonth(), 1) }
+        } 
+      },
+      { $group: { _id: null, total: { $sum: "$pricing.totalPrice" } } }
+    ]);
+
+    res.json({
+      success: true,
+      data: {
+        totalRentals,
+        pendingRentals,
+        activeRentals,
+        completedRentals,
+        totalRevenue: totalRevenue[0]?.total || 0,
+        monthlyRevenue: monthlyRevenue[0]?.total || 0
+      }
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// Admin update rental status
+router.patch("/admin/:id/status", protect, async (req, res) => {
+  try {
+    const { status, reason } = req.body;
+    
+    const rental = await Rental.findById(req.params.id)
+      .populate("machineId", "name")
+      .populate("ownerId", "firstName lastName email")
+      .populate("renterId", "firstName lastName email");
+
+    if (!rental) {
+      return res.status(404).json({
+        success: false,
+        message: "Rental not found"
+      });
+    }
+
+    const oldStatus = rental.status;
+    rental.status = status;
+    rental.adminStatusUpdate = {
+      previousStatus: oldStatus,
+      updatedBy: req.user.id,
+      updatedAt: new Date(),
+      reason: reason || "Admin status update"
+    };
+    
+    await rental.save();
+
+    // Update machine availability if needed
+    if (["cancelled", "rejected", "closed"].includes(status)) {
+      const machine = await Machine.findById(rental.machineId._id);
+      if (machine) {
+        machine.availability = "available";
+        await machine.save();
+      }
+    }
+
+    res.json({
+      success: true,
+      message: `Rental status updated from ${oldStatus} to ${status}`,
+      data: rental
+    });
+  } catch (error) {
+    console.error("Admin status update error:", error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// Process refund
+router.post("/admin/:id/refund", protect, async (req, res) => {
+  try {
+    const { refundAmount, reason } = req.body;
+    
+    const rental = await Rental.findById(req.params.id)
+      .populate("machineId", "name")
+      .populate("ownerId", "firstName lastName email")
+      .populate("renterId", "firstName lastName email");
+
+    if (!rental) {
+      return res.status(404).json({
+        success: false,
+        message: "Rental not found"
+      });
+    }
+
+    const payment = await Payment.findOne({ rentalId: rental._id });
+    if (!payment) {
+      return res.status(400).json({
+        success: false,
+        message: "Payment record not found"
+      });
+    }
+
+    // Create refund record
+    const refund = await Refund.create({
+      rentalId: rental._id,
+      amount: refundAmount,
+      reason,
+      processedBy: req.user.id,
+      processedAt: new Date()
+    });
+
+    // Update payment status
+    payment.escrowStatus = "refunded";
+    payment.refundedAmount = refundAmount;
+    await payment.save();
+
+    // Update rental status
+    rental.status = "cancelled";
+    rental.cancelledAt = new Date();
+    rental.cancelledBy = req.user.id;
+    await rental.save();
+
+    // Notify both parties
+    try {
+      await sendEmail(
+        rental.renterId.email,
+        "💰 Refund Processed - AgriRent",
+        `
+          <h2>Refund Processed</h2>
+          <p>Hi ${rental.renterId.firstName},</p>
+          <p>Your refund for the rental of <strong>${rental.machineId.name}</strong> has been processed.</p>
+          <p><strong>Refund Amount:</strong> $${refundAmount.toFixed(2)}</p>
+          <p><strong>Reason:</strong> ${reason}</p>
+          <p>The funds should appear in your account within 5-7 business days.</p>
+          <p>Thank you for using AgriRent!</p>
+        `
+      );
+    } catch (emailError) {
+      console.error("Email error:", emailError);
+    }
+
+    res.json({
+      success: true,
+      message: "Refund processed successfully",
+      data: {
+        rental,
+        refund,
+        payment
+      }
+    });
+  } catch (error) {
+    console.error("Refund processing error:", error);
     res.status(500).json({ success: false, message: error.message });
   }
 });
@@ -1500,16 +1776,6 @@ router.get("/mobile-money/status/:transactionId", protect, async (req, res) => {
   }
 });
 
-// ADD THESE ROUTES TO YOUR paymentRoutes.js FILE
-// Add at the end, before module.exports = router;
-// ADD THESE ROUTES TO YOUR paymentRoutes.js FILE
-// These work with your comprehensive Payment model
-// Add at the end, before module.exports = router;
-// ADD THESE ROUTES TO YOUR paymentRoutes.js FILE
-// BOTH RENTER AND OWNER must confirm before admin can release
-// ADD THESE ROUTES TO YOUR paymentRoutes.js FILE
-// BOTH RENTER AND OWNER must confirm before admin can release
-
 // ============================================
 // ADMIN: RELEASE PAYMENT (Requires BOTH confirmations)
 // ============================================
@@ -1825,12 +2091,18 @@ router.post('/rentals/:rentalId/confirm-completion', protect, async (req, res) =
 // ============================================
 // OWNER: CONFIRM COMPLETION
 // ============================================
+// ============================================
+// OWNER: CONFIRM COMPLETION
+// ============================================
+// ============================================
+// OWNER: CONFIRM COMPLETION
+// ============================================
 router.post("/rentals/:rentalId/owner-confirm", protect, async (req, res) => {
   try {
     const { rentalId } = req.params;
     const { confirmationNote } = req.body;
 
-    if (!confirmationNote || confirmationNote.length < 10) {
+    if (!confirmationNote || confirmationNote.trim().length < 10) {
       return res.status(400).json({
         success: false,
         message: "Detailed confirmation note required (minimum 10 characters)",
@@ -1861,7 +2133,7 @@ router.post("/rentals/:rentalId/owner-confirm", protect, async (req, res) => {
     if (rental.status !== "active") {
       return res.status(400).json({
         success: false,
-        message: "Rental must be active to confirm",
+        message: `Rental must be active to confirm. Current status: ${rental.status}`,
       });
     }
 
@@ -1869,14 +2141,15 @@ router.post("/rentals/:rentalId/owner-confirm", protect, async (req, res) => {
     if (rental.payment?.status !== "held_in_escrow") {
       return res.status(400).json({
         success: false,
-        message: "Payment must be in escrow",
+        message: `Payment must be in escrow. Current status: ${rental.payment?.status || 'none'}`,
       });
     }
 
     // Update rental with owner confirmation
     rental.ownerConfirmedCompletion = true;
-    rental.ownerConfirmationNote = confirmationNote;
+    rental.ownerConfirmationNote = confirmationNote.trim();
     rental.ownerConfirmedAt = new Date();
+    rental.status = "completed";
 
     await rental.save();
 
@@ -1885,34 +2158,30 @@ router.post("/rentals/:rentalId/owner-confirm", protect, async (req, res) => {
     if (payment) {
       payment.metadata = payment.metadata || {};
       payment.metadata.ownerConfirmed = true;
-      payment.metadata.ownerConfirmationNote = confirmationNote;
+      payment.metadata.ownerConfirmationNote = confirmationNote.trim();
       payment.metadata.ownerConfirmedAt = new Date();
       await payment.save();
     }
 
-    // Notify admin if BOTH confirmed
-    const bothConfirmed =
-      rental.renterConfirmedCompletion && rental.ownerConfirmedCompletion;
-
-    console.log(`✅ OWNER CONFIRMED:
-      Rental: ${rentalId}
-      Owner: ${rental.ownerId.email}
-      Note: ${confirmationNote}
-      Renter confirmation: ${
-        rental.renterConfirmedCompletion ? "YES" : "PENDING"
+    // Send SMS to renter
+    if (rental.renterId?.phoneNumber && sendNotificationSMS) {
+      try {
+        const message = `AgriRent: Owner confirmed completion of "${rental.machineId?.name}". Please confirm to release payment.`;
+        await sendNotificationSMS(rental.renterId.phoneNumber, message);
+      } catch (smsError) {
+        console.error("⚠️ SMS error:", smsError);
       }
-      Both confirmed: ${bothConfirmed ? "YES - READY FOR ADMIN" : "NO"}
-    `);
+    }
+
+    console.log(`✅ Owner confirmed completion for rental ${rentalId}`);
 
     res.json({
       success: true,
-      message: bothConfirmed
-        ? "Completion confirmed! Both parties confirmed. Admin can now release payment."
-        : "Completion confirmed! Waiting for renter confirmation.",
-      data: { rental, payment, bothConfirmed },
+      message: "Completion confirmed! Renter will be notified.",
+      data: { rental },
     });
   } catch (error) {
-    console.error("❌ Confirm error:", error);
+    console.error("❌ Owner confirm error:", error);
     res.status(500).json({
       success: false,
       message: "Failed to confirm completion",
@@ -1920,5 +2189,120 @@ router.post("/rentals/:rentalId/owner-confirm", protect, async (req, res) => {
     });
   }
 });
+
+// ============================================
+// RENTER: CONFIRM COMPLETION
+// ============================================
+router.post("/rentals/:rentalId/renter-confirm", protect, async (req, res) => {
+  try {
+    const { rentalId } = req.params;
+    const { confirmationNote } = req.body;
+
+    if (!confirmationNote || confirmationNote.trim().length < 10) {
+      return res.status(400).json({
+        success: false,
+        message: "Detailed confirmation note required (minimum 10 characters)",
+      });
+    }
+
+    const rental = await Rental.findById(rentalId)
+      .populate("renterId", "firstName lastName email phoneNumber")
+      .populate("ownerId", "firstName lastName email phoneNumber")
+      .populate("machineId", "name");
+
+    if (!rental) {
+      return res.status(404).json({
+        success: false,
+        message: "Rental not found",
+      });
+    }
+
+    // Verify user is the renter
+    if (rental.renterId._id.toString() !== req.user.id) {
+      return res.status(403).json({
+        success: false,
+        message: "Only the renter can confirm completion",
+      });
+    }
+
+    // Verify rental is completed (owner already confirmed)
+    if (rental.status !== "completed") {
+      return res.status(400).json({
+        success: false,
+        message: `Rental must be completed (owner confirmed) first. Current status: ${rental.status}`,
+      });
+    }
+
+    // Verify owner already confirmed
+    if (!rental.ownerConfirmedCompletion) {
+      return res.status(400).json({
+        success: false,
+        message: "Owner must confirm completion first",
+      });
+    }
+
+    // Verify payment in escrow
+    if (rental.payment?.status !== "held_in_escrow") {
+      return res.status(400).json({
+        success: false,
+        message: `Payment must be in escrow. Current status: ${rental.payment?.status || 'none'}`,
+      });
+    }
+
+    // Update rental with renter confirmation
+    rental.renterConfirmedCompletion = true;
+    rental.renterConfirmationNote = confirmationNote.trim();
+    rental.renterConfirmedAt = new Date();
+    rental.status = "released"; // Ready for admin to release payment
+
+    await rental.save();
+
+    // Update Payment model
+    const payment = await Payment.findOne({ rentalId });
+    if (payment) {
+      payment.metadata = payment.metadata || {};
+      payment.metadata.renterConfirmed = true;
+      payment.metadata.renterConfirmationNote = confirmationNote.trim();
+      payment.metadata.renterConfirmedAt = new Date();
+      await payment.save();
+    }
+
+    // Send SMS to owner
+    if (rental.ownerId?.phoneNumber && sendNotificationSMS) {
+      try {
+        const message = `AgriRent: Renter confirmed completion for "${rental.machineId?.name}". Payment will be released soon.`;
+        await sendNotificationSMS(rental.ownerId.phoneNumber, message);
+      } catch (smsError) {
+        console.error("⚠️ SMS error:", smsError);
+      }
+    }
+
+    console.log(`✅ Renter confirmed completion for rental ${rentalId}`);
+
+    res.json({
+      success: true,
+      message: "Completion confirmed! Both parties confirmed. Admin will release payment.",
+      data: { rental },
+    });
+  } catch (error) {
+    console.error("❌ Renter confirm error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to confirm completion",
+      error: error.message,
+    });
+  }
+});
+
+// ✅ DEBUG: Log all registered routes
+console.log('\n📋 Payment Routes Registered:');
+router.stack.forEach((r) => {
+  if (r.route) {
+    const methods = Object.keys(r.route.methods).join(', ').toUpperCase();
+    console.log(`${methods} /api/payments${r.route.path}`);
+  }
+});
+
+module.exports = router;
 
 module.exports = router;
