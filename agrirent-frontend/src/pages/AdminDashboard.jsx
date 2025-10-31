@@ -443,12 +443,12 @@ const fetchDashboardData = async () => {
                       </p>
                     </div>
                   </div>
-                  <button
+                  {/* <button
                     onClick={() => setActiveTab("releases")}
                     className="px-6 py-3 bg-amber-600 hover:bg-amber-700 text-white rounded-lg font-semibold transition"
                   >
                     Review Now →
-                  </button>
+                  </button> */}
                 </div>
               </div>
             )}
@@ -656,12 +656,12 @@ const fetchDashboardData = async () => {
                       </div>
                     </div>
 
-                    <button
+                    {/* <button
                       onClick={() => openReleaseModal(rental)}
                       className="w-full py-3 bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-700 hover:to-cyan-700 text-white rounded-lg font-bold transition shadow-lg"
                     >
                       💰 Release Payment to Owner
-                    </button>
+                    </button> */}
                   </div>
                 ))}
               </div>
