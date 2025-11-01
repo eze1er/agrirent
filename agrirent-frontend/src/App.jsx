@@ -196,7 +196,7 @@ function App() {
     <Elements stripe={stripePromise}>
       <Routes>
         {/* ============= PUBLIC ROUTES ============= */}
-        
+
         {/* Main Route - Auth or Dashboard based on authentication & role */}
         <Route
           path="/"
@@ -220,7 +220,7 @@ function App() {
         <Route path="/verify-phone" element={<PhoneVerificationPage />} />
 
         {/* ============= USER PROTECTED ROUTES ============= */}
-        
+
         {/* User Dashboard - For owners and renters */}
         <Route
           path="/dashboard"
@@ -242,7 +242,7 @@ function App() {
         />
 
         {/* ============= ADMIN ONLY ROUTES ============= */}
-        
+
         {/* Admin Main Dashboard */}
         <Route
           path="/admin/dashboard"
@@ -258,7 +258,10 @@ function App() {
           path="/admin/escrow"
           element={
             <ProtectedRoute adminOnly={true}>
-              <AdminEscrowDashboard user={currentUser} onLogout={handleLogout} />
+              <AdminEscrowDashboard
+                user={currentUser}
+                onLogout={handleLogout}
+              />
             </ProtectedRoute>
           }
         />
@@ -274,7 +277,7 @@ function App() {
         />
 
         {/* ============= FALLBACK ROUTES ============= */}
-        
+
         {/* Catch all - redirect to home */}
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

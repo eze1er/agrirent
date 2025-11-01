@@ -2277,7 +2277,10 @@ router.post("/rentals/:rentalId/owner-confirm", protect, async (req, res) => {
 });
 
 // ============================================
-// RENTER: CONFIRM COMPLETION
+// RENTER: CONFIRM COMPLETION WITH RATING
+// ============================================
+// ============================================
+// RENTER: CONFIRM COMPLETION WITH RATING
 // ============================================
 // ============================================
 // RENTER: CONFIRM COMPLETION WITH RATING
@@ -2285,7 +2288,10 @@ router.post("/rentals/:rentalId/owner-confirm", protect, async (req, res) => {
 router.post("/rentals/:rentalId/renter-confirm", protect, async (req, res) => {
   try {
     const { rentalId } = req.params;
-    const { confirmationNote, rating, reviewComment } = req.body; // ✅ Destructure rating here
+    const { confirmationNote, rating, reviewComment } = req.body;
+
+    console.log(`📝 Renter confirming rental: ${rentalId}`);
+    console.log(`⭐ Rating: ${rating}`);
 
     // Validate confirmation note
     if (!confirmationNote || confirmationNote.trim().length < 10) {
@@ -2357,17 +2363,35 @@ router.post("/rentals/:rentalId/renter-confirm", protect, async (req, res) => {
 
     // ✅ Add review to rental
     rental.renterReview = {
-      rating: Number(rating), // ✅ Ensure it's a number
+      rating: Number(rating),
       comment: reviewComment?.trim() || confirmationNote.trim(),
       createdAt: new Date(),
     };
 
     await rental.save();
 
-    // ✅ Update machine's average rating
+    console.log(`✅ Rental ${rentalId} status updated to: released`);
+
+    // ✅ CRITICAL: Make machine available immediately
     const Machine = require("../models/Machine");
-    const machine = await Machine.findById(rental.machineId._id);
+    const machineId = rental.machineId?._id || rental.machineId;
     
+    console.log(`🔄 Updating machine ${machineId} to available...`);
+    
+    const machine = await Machine.findByIdAndUpdate(
+      machineId,
+      { availability: "available" },
+      { new: true }
+    );
+    
+    if (machine) {
+      console.log(`✅ ✅ ✅ Machine "${machine.name}" is now AVAILABLE for new rentals!`);
+      console.log(`📊 Machine availability: ${machine.availability}`);
+    } else {
+      console.error(`❌ Machine not found: ${machineId}`);
+    }
+
+    // ✅ Update machine's average rating
     if (machine) {
       // Get all completed rentals with reviews for this machine
       const reviewedRentals = await Rental.find({
@@ -2406,7 +2430,7 @@ router.post("/rentals/:rentalId/renter-confirm", protect, async (req, res) => {
       await payment.save();
     }
 
-    // ✅ Send SMS to owner (NOW rating is in scope)
+    // ✅ Send SMS to owner
     if (rental.ownerId?.phoneNumber && sendNotificationSMS) {
       try {
         const stars = '⭐'.repeat(Number(rating));
@@ -2418,11 +2442,17 @@ router.post("/rentals/:rentalId/renter-confirm", protect, async (req, res) => {
       }
     }
 
-    console.log(`✅ Renter confirmed completion for rental ${rentalId} with ${rating}⭐ rating`);
+    console.log(`
+    ✅ ✅ ✅ RENTER CONFIRMATION COMPLETE ✅ ✅ ✅
+    - Rental ${rentalId} status: released
+    - Rating: ${rating}⭐
+    - Machine: NOW AVAILABLE for new bookings
+    - Admin: Can now release payment when ready
+    `);
 
     res.json({
       success: true,
-      message: `Completion confirmed with ${rating}⭐ rating! Both parties confirmed. Admin will release payment.`,
+      message: `Completion confirmed with ${rating}⭐ rating! Machine is now available. Admin will release payment soon.`,
       data: { rental },
     });
   } catch (error) {

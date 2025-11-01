@@ -716,20 +716,26 @@ export default function Dashboard({ user: currentUser, onLogout }) {
       }
     }, [machines]);
 
-    const filteredMachines = machines.filter((m) => {
-      if (selectedFilter !== "All" && m.category !== selectedFilter)
-        return false;
-      if (locationFilter.trim()) {
-        const locationText = `${m.address?.city || ""} ${
-          m.address?.commune || ""
-        } ${m.address?.quartier || ""} ${
-          m.address?.province || ""
-        }`.toLowerCase();
-        if (!locationText.includes(locationFilter.toLowerCase().trim()))
-          return false;
-      }
-      return true;
-    });
+const filteredMachines = machines.filter((m) => {
+  // ✅ Show all machines, but apply category and location filters
+  
+  // Category filter
+  if (selectedFilter !== "All" && m.category !== selectedFilter)
+    return false;
+  
+  // Location filter
+  if (locationFilter.trim()) {
+    const locationText = `${m.address?.city || ""} ${
+      m.address?.commune || ""
+    } ${m.address?.quartier || ""} ${
+      m.address?.province || ""
+    }`.toLowerCase();
+    if (!locationText.includes(locationFilter.toLowerCase().trim()))
+      return false;
+  }
+  
+  return true; // ✅ Show all machines with their status badges
+});
 
     if (loadingMachines) {
       return (

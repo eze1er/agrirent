@@ -1,7 +1,4 @@
-// RenterConfirmCompletion.jsx
-// Add this to your renter dashboard to confirm rental completion
-
-import { useState } from 'react';
+import React, { useState } from 'react';
 import { CheckCircle, MessageSquare, AlertCircle } from 'lucide-react';
 
 export default function RenterConfirmCompletion({ rental, onSuccess }) {
@@ -20,8 +17,8 @@ export default function RenterConfirmCompletion({ rental, onSuccess }) {
     if (!window.confirm(
       `Confirm rental completion?\n\n` +
       `This will notify the admin to release payment to the owner.\n\n` +
-      `Machine: ${rental.machineId?.name}\n` +
-      `Amount: $${rental.pricing?.totalPrice?.toFixed(2)}`
+      `Machine: ${rental.machineId?.name || 'N/A'}\n` +
+      `Amount: $${rental.pricing?.totalPrice?.toFixed(2) || '0.00'}`
     )) {
       return;
     }
@@ -104,10 +101,10 @@ export default function RenterConfirmCompletion({ rental, onSuccess }) {
 
             <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 mb-4">
               <p className="text-sm text-gray-700">
-                <strong>Machine:</strong> {rental.machineId?.name}
+                <strong>Machine:</strong> {rental.machineId?.name || 'N/A'}
               </p>
               <p className="text-sm text-gray-700">
-                <strong>Amount:</strong> ${rental.pricing?.totalPrice?.toFixed(2)}
+                <strong>Amount:</strong> ${rental.pricing?.totalPrice?.toFixed(2) || '0.00'}
               </p>
               <p className="text-sm text-gray-700 mt-2">
                 By confirming, you acknowledge:
@@ -179,4 +176,4 @@ export default function RenterConfirmCompletion({ rental, onSuccess }) {
       )}
     </>
   );
-}
+};
