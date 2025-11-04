@@ -40,3 +40,24 @@
 .read-the-docs {
   color: #888;
 }
+
+/* Optional: Hide scrollbar for cleaner look */
+.overflow-x-auto {
+  -ms-overflow-style: none;  /* IE and Edge */
+  scrollbar-width: none;  /* Firefox */
+}
+
+.overflow-x-auto::-webkit-scrollbar {
+  display: none;  /* Chrome, Safari, Opera */
+}
+
+/* Hide scrollbar but keep scroll functionality */
+#category-scroll-container::-webkit-scrollbar {
+  display: none;
+}
+
+#category-scroll-container {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+  scroll-behavior: smooth;
+}

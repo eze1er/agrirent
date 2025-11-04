@@ -716,36 +716,34 @@ export default function Dashboard({ user: currentUser, onLogout }) {
       }
     }, [machines]);
 
-const filteredMachines = machines.filter((m) => {
-  // Category filter
-  if (selectedFilter !== "All" && m.category !== selectedFilter)
-    return false;
-  
-  // ✅ IMPROVED: Sequential character matching for location search
-  if (locationFilter.trim()) {
-    const searchTerm = locationFilter.toLowerCase().trim();
-    const locationText = `${m.address?.city || ""} ${
-      m.address?.commune || ""
-    } ${m.address?.quartier || ""} ${
-      m.address?.province || ""
-    }`.toLowerCase();
-    
-    // ✅ Check if search characters appear in order
-    let searchIndex = 0;
-    for (let i = 0; i < locationText.length && searchIndex < searchTerm.length; i++) {
-      if (locationText[i] === searchTerm[searchIndex]) {
-        searchIndex++;
+    const filteredMachines = machines.filter((m) => {
+      // Category filter
+      if (selectedFilter !== "All" && m.category !== selectedFilter)
+        return false;
+
+      // Location filter
+      if (locationFilter.trim()) {
+        const locationText = `${m.address?.city || ""} ${
+          m.address?.commune || ""
+        } ${m.address?.quartier || ""} ${
+          m.address?.province || ""
+        }`.toLowerCase();
+        if (!locationText.includes(locationFilter.toLowerCase().trim()))
+          return false;
       }
+
+      return true;
+    });
+    // ✅ ADD THIS DEBUG CODE
+    console.log("🔍 DEBUG INFO:");
+    console.log("Total machines:", machines.length);
+    console.log("Filtered machines:", filteredMachines.length);
+    console.log("Selected filter:", selectedFilter);
+    console.log("Location filter:", locationFilter);
+    console.log("Categories:", categories);
+    if (machines.length > 0) {
+      console.log("First machine:", machines[0]);
     }
-    
-    // If not all search characters were found in sequence, filter out
-    if (searchIndex !== searchTerm.length) {
-      return false;
-    }
-  }
-  
-  return true;
-});
     if (loadingMachines) {
       return (
         <div className="p-4 flex items-center justify-center h-64">
@@ -773,22 +771,61 @@ const filteredMachines = machines.filter((m) => {
           )}
         </div>
 
-        {/* Category Filter Buttons */}
-        <div className="bg-white rounded-2xl p-3 mb-4 shadow-md flex gap-2 overflow-x-auto">
-          {categories.map((filter) => (
-            <button
-              key={filter}
-              onClick={() => setSelectedFilter(filter)}
-              className={`px-5 py-2 rounded-xl text-sm font-semibold whitespace-nowrap transition capitalize ${
-                selectedFilter === filter
-                  ? "bg-gradient-to-r from-blue-600 to-cyan-600 text-white shadow-lg"
-                  : "bg-gray-100 text-gray-700"
-              }`}
-            >
-              {filter === "All" ? "All" : `${filter}s`}
-            </button>
-          ))}
-        </div>
+{/* Category Filter Buttons with Transparent Scroll Buttons */}
+<div className="relative mb-4">
+  {/* Scrollable Categories Container */}
+  <div 
+    id="category-scroll-container"
+    className="bg-white rounded-2xl p-3 shadow-md flex gap-2 overflow-x-auto scroll-smooth"
+    style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
+  >
+    {categories.map((filter) => (
+      <button
+        key={filter}
+        onClick={() => setSelectedFilter(filter)}
+        className={`px-5 py-2 rounded-xl text-sm font-semibold whitespace-nowrap transition capitalize ${
+          selectedFilter === filter
+            ? "bg-gradient-to-r from-blue-600 to-cyan-600 text-white shadow-lg"
+            : "bg-gray-100 text-gray-700"
+        }`}
+      >
+        {filter === "All" ? "All" : `${filter}s`}
+      </button>
+    ))}
+  </div>
+
+  {/* Left Scroll Button - Transparent */}
+  <button
+    onClick={() => {
+      const container = document.getElementById('category-scroll-container');
+      if (container) {
+        container.scrollBy({ left: -200, behavior: 'smooth' });
+      }
+    }}
+    className="absolute left-0 top-0 bottom-0 w-12 bg-gradient-to-r from-white/80 to-transparent backdrop-blur-[2px] flex items-center justify-start pl-2 hover:from-white/90 transition z-20"
+    style={{ display: categories.length > 3 ? 'flex' : 'none' }}
+  >
+    <div className="bg-blue-600/80 text-white rounded-full w-7 h-7 flex items-center justify-center shadow-lg hover:bg-blue-600 hover:scale-110 transition">
+      <span className="text-base font-bold">←</span>
+    </div>
+  </button>
+
+  {/* Right Scroll Button - Transparent with Pulse */}
+  <button
+    onClick={() => {
+      const container = document.getElementById('category-scroll-container');
+      if (container) {
+        container.scrollBy({ left: 200, behavior: 'smooth' });
+      }
+    }}
+    className="absolute right-0 top-0 bottom-0 w-12 bg-gradient-to-l from-white/80 to-transparent backdrop-blur-[2px] flex items-center justify-end pr-2 hover:from-white/90 transition z-20"
+    style={{ display: categories.length > 3 ? 'flex' : 'none' }}
+  >
+    <div className="bg-blue-600/80 text-white rounded-full w-7 h-7 flex items-center justify-center shadow-lg hover:bg-blue-600 hover:scale-110 transition animate-pulse">
+      <span className="text-base font-bold">→</span>
+    </div>
+  </button>
+</div>
 
         {/* Location Search */}
         <div className="mb-4">
@@ -1219,36 +1256,43 @@ const filteredMachines = machines.filter((m) => {
                   </div>
 
                   {/* Rental Details */}
-{/* Show dates based on rental type */}
-{rental.rentalType === "daily" ? (
-  <>
-    <p className="text-sm text-gray-600">
-      Start: {rental.startDate ? new Date(rental.startDate).toLocaleDateString() : 'N/A'}
-    </p>
-    <p className="text-sm text-gray-600">
-      End: {rental.endDate ? new Date(rental.endDate).toLocaleDateString() : 'N/A'}
-    </p>
-    <p className="text-sm text-gray-600">
-      Days: {rental.pricing?.numberOfDays || 0}
-    </p>
-  </>
-) : (
-  <>
-    <p className="text-sm text-gray-600">
-      Work Date: {rental.workDate 
-        ? new Date(rental.workDate).toLocaleDateString() 
-        : rental.startDate 
-        ? new Date(rental.startDate).toLocaleDateString() 
-        : 'N/A'}
-    </p>
-    <p className="text-sm text-gray-600">
-      Hectares: {rental.pricing?.numberOfHectares || 0} Ha
-    </p>
-    <p className="text-sm text-gray-600">
-      Location: {rental.fieldLocation || 'N/A'}
-    </p>
-  </>
-)}
+                  {/* Show dates based on rental type */}
+                  {rental.rentalType === "daily" ? (
+                    <>
+                      <p className="text-sm text-gray-600">
+                        Start:{" "}
+                        {rental.startDate
+                          ? new Date(rental.startDate).toLocaleDateString()
+                          : "N/A"}
+                      </p>
+                      <p className="text-sm text-gray-600">
+                        End:{" "}
+                        {rental.endDate
+                          ? new Date(rental.endDate).toLocaleDateString()
+                          : "N/A"}
+                      </p>
+                      <p className="text-sm text-gray-600">
+                        Days: {rental.pricing?.numberOfDays || 0}
+                      </p>
+                    </>
+                  ) : (
+                    <>
+                      <p className="text-sm text-gray-600">
+                        Work Date:{" "}
+                        {rental.workDate
+                          ? new Date(rental.workDate).toLocaleDateString()
+                          : rental.startDate
+                          ? new Date(rental.startDate).toLocaleDateString()
+                          : "N/A"}
+                      </p>
+                      <p className="text-sm text-gray-600">
+                        Hectares: {rental.pricing?.numberOfHectares || 0} Ha
+                      </p>
+                      <p className="text-sm text-gray-600">
+                        Location: {rental.fieldLocation || "N/A"}
+                      </p>
+                    </>
+                  )}
                   <p className="text-lg font-bold mt-2 bg-gradient-to-r from-blue-600 to-cyan-600 bg-clip-text text-transparent">
                     ${rental.pricing?.totalPrice?.toFixed(2) || 0}
                   </p>

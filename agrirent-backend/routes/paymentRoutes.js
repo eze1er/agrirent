@@ -2005,7 +2005,10 @@ router.post(
       const { rentalId } = req.params;
       const { reason } = req.body;
 
-      if (!reason || reason.length < 20) {
+      console.log(`🔍 Admin attempting to reject payment release for rental: ${rentalId}`);
+
+      // ✅ VALIDATE FIRST - Before any database changes or SMS
+      if (!reason || reason.trim().length < 20) {
         return res.status(400).json({
           success: false,
           message: "Detailed rejection reason required (minimum 20 characters)",
@@ -2024,55 +2027,114 @@ router.post(
         });
       }
 
-      // Update rental with rejection
+      console.log(`📊 Current rental status: ${rental.status}`);
+      console.log(`💳 Payment status: ${rental.payment?.status}`);
+
+      // Verify payment is in escrow
+      if (rental.payment?.status !== "held_in_escrow") {
+        return res.status(400).json({
+          success: false,
+          message: `Cannot reject release. Payment status: ${rental.payment?.status || "none"}`,
+        });
+      }
+
+      // ✅ Update rental with rejection
       rental.payment = rental.payment || {};
       rental.payment.releaseRejected = true;
-      rental.payment.rejectionReason = reason;
+      rental.payment.rejectionReason = reason.trim();
       rental.payment.rejectedAt = new Date();
       rental.payment.rejectedBy = req.user._id;
 
-      // Reset BOTH confirmations
+      // Reset BOTH confirmations so they can re-confirm
       rental.renterConfirmedCompletion = false;
       rental.ownerConfirmedCompletion = false;
+      rental.renterConfirmationNote = null;
+      rental.ownerConfirmationNote = null;
+
+      // Keep status as "completed" or set back to "active"
+      if (rental.status === "released") {
+        rental.status = "completed"; // Back to completed, waiting for new confirmations
+      }
 
       await rental.save();
+
+      console.log(`✅ Rental updated with rejection`);
 
       // Update Payment collection
       const payment = await Payment.findOne({ rentalId });
       if (payment) {
-        await payment.verifyByAdmin(req.user._id, adminNote);
-        await payment.releaseToOwner();
+        payment.metadata = payment.metadata || {};
+        payment.metadata.adminRejected = true;
+        payment.metadata.rejectionReason = reason.trim();
+        payment.metadata.rejectedAt = new Date();
+        payment.metadata.rejectedBy = req.user._id;
+        await payment.save();
+        console.log(`✅ Payment document updated with rejection`);
       }
 
-      // Notify both parties
+      // ✅ SEND SMS AFTER validation and database updates
       try {
         if (sendNotificationSMS) {
+          // Notify renter
           if (rental.renterId?.phoneNumber) {
             await sendNotificationSMS(
               rental.renterId.phoneNumber,
-              `AgriRent: Payment release rejected for ${rental.machineId?.name}. Check your account.`
+              `AgriRent: Payment release for ${rental.machineId?.name} was rejected by admin. Reason: ${reason.trim()}. Please re-confirm completion.`
             );
+            console.log(`✅ SMS sent to renter`);
           }
+
+          // Notify owner
           if (rental.ownerId?.phoneNumber) {
             await sendNotificationSMS(
               rental.ownerId.phoneNumber,
-              `AgriRent: Payment release rejected for ${rental.machineId?.name}. Check your account.`
+              `AgriRent: Payment release for ${rental.machineId?.name} was rejected by admin. Reason: ${reason.trim()}. Please re-confirm completion.`
             );
+            console.log(`✅ SMS sent to owner`);
           }
         }
       } catch (smsError) {
-        console.error("SMS error:", smsError);
+        console.error("⚠️ SMS error:", smsError);
+        // Don't fail the request if SMS fails
       }
 
-      console.log(`❌ PAYMENT REJECTED:
-      Rental: ${rentalId}
-      Reason: ${reason}
-      Admin: ${req.user.email}
-    `);
+      // ✅ Send email notifications
+      try {
+        // Email to renter
+        if (rental.renterId?.email) {
+          await sendEmail({
+            to: rental.renterId.email,
+            subject: "Payment Release Rejected - AgriRent",
+            text: `Hello ${rental.renterId.firstName},\n\nThe payment release for ${rental.machineId?.name} has been rejected by our admin team.\n\nReason: ${reason.trim()}\n\nPlease review the service and re-confirm completion if appropriate.\n\nBest regards,\nAgriRent Team`,
+          });
+          console.log(`✅ Email sent to renter`);
+        }
+
+        // Email to owner
+        if (rental.ownerId?.email) {
+          await sendEmail({
+            to: rental.ownerId.email,
+            subject: "Payment Release Rejected - AgriRent",
+            text: `Hello ${rental.ownerId.firstName},\n\nThe payment release for ${rental.machineId?.name} has been rejected by our admin team.\n\nReason: ${reason.trim()}\n\nPlease review and re-confirm completion if appropriate.\n\nBest regards,\nAgriRent Team`,
+          });
+          console.log(`✅ Email sent to owner`);
+        }
+      } catch (emailError) {
+        console.error("⚠️ Email error:", emailError);
+      }
+
+      console.log(`❌ PAYMENT RELEASE REJECTED:
+        Rental: ${rentalId}
+        Machine: ${rental.machineId?.name}
+        Reason: ${reason.trim()}
+        Admin: ${req.user.email}
+        Renter: ${rental.renterId?.email}
+        Owner: ${rental.ownerId?.email}
+      `);
 
       res.json({
         success: true,
-        message: "Release rejected successfully",
+        message: "Release rejected successfully. Both parties have been notified.",
         data: { rental, payment },
       });
     } catch (error) {
@@ -2085,7 +2147,6 @@ router.post(
     }
   }
 );
-
 // RENTER: CONFIRM COMPLETION
 router.post(
   "/rentals/:rentalId/confirm-completion",

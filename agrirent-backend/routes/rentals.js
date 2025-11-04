@@ -8,6 +8,7 @@ const Payment = require("../models/Payment");
 const Notification = require("../models/Notification");
 const { sendEmail } = require("../services/emailService");
 const twilio = require("twilio");
+const { sendNotificationSMS } = require("../services/smsService");
 
 const twilioClient = twilio(
   process.env.TWILIO_ACCOUNT_SID,
@@ -290,20 +291,21 @@ router.patch("/:id/status", protect, async (req, res) => {
   try {
     const { status, rejectionReason } = req.body;
 
+    // ✅ CHANGE: Validate for 20 characters (not 10)
     if (
       status === "rejected" &&
-      (!rejectionReason || rejectionReason.trim().length < 10)
+      (!rejectionReason || rejectionReason.trim().length < 20)
     ) {
       return res.status(400).json({
         success: false,
-        message: "Rejection reason is required and must be at least 10 characters",
+        message: "Rejection reason is required and must be at least 20 characters",
       });
     }
 
     const rental = await Rental.findById(req.params.id)
       .populate("machineId", "name images pricePerDay pricePerHectare rating")
-      .populate("renterId", "firstName lastName email phone")
-      .populate("ownerId", "firstName lastName email");
+      .populate("renterId", "firstName lastName email phone") // ✅ ADD phoneNumber
+      .populate("ownerId", "firstName lastName email phone"); // ✅ ADD phoneNumber
 
     if (!rental) {
       return res.status(404).json({
@@ -411,20 +413,22 @@ router.patch("/:id/status", protect, async (req, res) => {
         console.error("Email error:", emailError);
       }
 
-      if (rental.renterId.phone) {
+      // ✅ FIXED: Use phoneNumber instead of phone
+      if (rental.renterId.phone && sendNotificationSMS) {
         try {
-          const smsMessage = `🎉 AgriRent: Your rental for ${rental.machineId.name} has been APPROVED! Total: $${rental.pricing.totalPrice.toFixed(2)}. Please proceed with payment.`;
-          await twilioClient.messages.create({
-            body: smsMessage,
-            from: process.env.TWILIO_PHONE_NUMBER,
-            to: rental.renterId.phone,
-          });
+          await sendNotificationSMS(
+            rental.renterId.phone,
+            `🎉 AgriRent: Your rental for ${rental.machineId.name} has been APPROVED! Total: $${rental.pricing.totalPrice.toFixed(2)}. Please proceed with payment.`
+          );
+          console.log("✅ Approval SMS sent");
         } catch (smsError) {
-          console.error("SMS error:", smsError);
+          console.error("⚠️ SMS error:", smsError);
         }
       }
+      
     } else if (status === "rejected") {
-      rental.rejectionReason = rejectionReason;
+      // ✅ IMPORTANT: Save rejection data BEFORE sending notifications
+      rental.rejectionReason = rejectionReason.trim();
       rental.rejectedAt = new Date();
       rental.rejectedBy = req.user.id;
 
@@ -467,7 +471,7 @@ router.patch("/:id/status", protect, async (req, res) => {
               <p>Your rental request for <strong>${rental.machineId.name}</strong> has been declined.</p>
               <div class="reason-box">
                 <h4 style="margin-top: 0;">📝 Reason:</h4>
-                <p style="margin: 0;">${rejectionReason}</p>
+                <p style="margin: 0;">${rejectionReason.trim()}</p>
               </div>
               <p>There are many other machines available on AgriRent.</p>
               <p>Thank you!</p>
@@ -482,20 +486,21 @@ router.patch("/:id/status", protect, async (req, res) => {
 
       try {
         await sendEmail(rental.renterId.email, emailSubject, emailHtml);
+        console.log("✅ Rejection email sent");
       } catch (emailError) {
-        console.error("Email error:", emailError);
+        console.error("⚠️ Email error:", emailError);
       }
 
-      if (rental.renterId.phone) {
+      // ✅ FIXED: Use phoneNumber and sendNotificationSMS
+      if (rental.renterId.phone && sendNotificationSMS) {
         try {
-          const smsBody = `AgriRent: Your rental for ${rental.machineId.name} was declined. Reason: ${rejectionReason.substring(0, 100)}`;
-          await twilioClient.messages.create({
-            body: smsBody,
-            from: process.env.TWILIO_PHONE_NUMBER,
-            to: rental.renterId.phone,
-          });
+          await sendNotificationSMS(
+            rental.renterId.phone,
+            `AgriRent: Your rental for ${rental.machineId.name} was declined. Reason: ${rejectionReason.trim().substring(0, 100)}`
+          );
+          console.log("✅ Rejection SMS sent");
         } catch (smsError) {
-          console.error("SMS error:", smsError);
+          console.error("⚠️ SMS error:", smsError);
         }
       }
     }
@@ -507,8 +512,8 @@ router.patch("/:id/status", protect, async (req, res) => {
         "machineId",
         "name images pricePerDay pricePerHectare category rating availability"
       )
-      .populate("renterId", "firstName lastName email")
-      .populate("ownerId", "firstName lastName email");
+      .populate("renterId", "firstName lastName email phone")
+      .populate("ownerId", "firstName lastName email phone");
 
     res.json({
       success: true,
