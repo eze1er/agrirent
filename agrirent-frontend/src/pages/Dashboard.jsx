@@ -717,26 +717,35 @@ export default function Dashboard({ user: currentUser, onLogout }) {
     }, [machines]);
 
 const filteredMachines = machines.filter((m) => {
-  // ✅ Show all machines, but apply category and location filters
-  
   // Category filter
   if (selectedFilter !== "All" && m.category !== selectedFilter)
     return false;
   
-  // Location filter
+  // ✅ IMPROVED: Sequential character matching for location search
   if (locationFilter.trim()) {
+    const searchTerm = locationFilter.toLowerCase().trim();
     const locationText = `${m.address?.city || ""} ${
       m.address?.commune || ""
     } ${m.address?.quartier || ""} ${
       m.address?.province || ""
     }`.toLowerCase();
-    if (!locationText.includes(locationFilter.toLowerCase().trim()))
+    
+    // ✅ Check if search characters appear in order
+    let searchIndex = 0;
+    for (let i = 0; i < locationText.length && searchIndex < searchTerm.length; i++) {
+      if (locationText[i] === searchTerm[searchIndex]) {
+        searchIndex++;
+      }
+    }
+    
+    // If not all search characters were found in sequence, filter out
+    if (searchIndex !== searchTerm.length) {
       return false;
+    }
   }
   
-  return true; // ✅ Show all machines with their status badges
+  return true;
 });
-
     if (loadingMachines) {
       return (
         <div className="p-4 flex items-center justify-center h-64">
