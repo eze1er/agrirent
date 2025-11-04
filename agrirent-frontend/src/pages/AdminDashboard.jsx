@@ -40,87 +40,89 @@ export default function AdminDashboard({ user, onLogout }) {
   const [selectedRental, setSelectedRental] = useState(null);
   const [adminNote, setAdminNote] = useState("");
   const [releasing, setReleasing] = useState(false);
-const [lastReleaseCount, setLastReleaseCount] = useState(0);
+  const [lastReleaseCount, setLastReleaseCount] = useState(0);
   const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:3001/api";
 
   // ✅ ADD: Fetch dashboard data function
-useEffect(() => {
-  if (user?.role !== 'admin') {
-    alert('⚠️ Access denied. Admin privileges required.');
-    navigate('/');
-    return;
-  }
-  fetchDashboardData(); // Initial fetch
-  
-  // Auto-refresh every 10 seconds
-  const interval = setInterval(() => {
-    console.log('🔄 Auto-refreshing dashboard data...');
-    fetchDashboardData();
-  }, 10000);
-
-  return () => clearInterval(interval); // Cleanup
-}, [user, navigate]);
-
-const fetchDashboardData = async () => {
-  try {
-    const token = localStorage.getItem('token');
-    
-    console.log('🔍 Fetching dashboard data...');
-    
-    const [overviewRes, activeRes, pendingRes, releasesRes] = await Promise.all([
-      fetch(`${API_BASE}/admin/dashboard/overview`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      }),
-      fetch(`${API_BASE}/admin/rentals/active`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      }),
-      fetch(`${API_BASE}/admin/rentals/pending`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      }),
-      fetch(`${API_BASE}/rentals/admin/pending-release`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      })
-    ]);
-
-    const overview = await overviewRes.json();
-    const active = await activeRes.json();
-    const pending = await pendingRes.json();
-    const releases = await releasesRes.json();
-
-    console.log('✅ Overview:', overview.success);
-    console.log('✅ Active rentals:', active.data?.length || 0);
-    console.log('✅ Pending rentals:', pending.data?.length || 0);
-    console.log('✅ Pending releases:', releases.data?.length || 0);
-
-    if (overview.success) setStats(overview.data);
-    if (active.success) setActiveRentals(active.data);
-    if (pending.success) setPendingRentals(pending.data);
-    if (releases.success) {
-      const newCount = releases.data.length;
-      
-      // Show notification if count increased
-      if (newCount > lastReleaseCount && lastReleaseCount > 0) {
-        const notification = document.createElement('div');
-        notification.className = 'fixed top-4 right-4 bg-green-500 text-white px-6 py-4 rounded-lg shadow-xl z-50 animate-bounce';
-        notification.innerHTML = '🎉 New payment ready for release!';
-        document.body.appendChild(notification);
-        
-        setTimeout(() => {
-          notification.remove();
-        }, 3000);
-      }
-      
-      setLastReleaseCount(newCount);
-      setPendingReleases(releases.data);
+  useEffect(() => {
+    if (user?.role !== "admin") {
+      alert("⚠️ Access denied. Admin privileges required.");
+      navigate("/");
+      return;
     }
+    fetchDashboardData(); // Initial fetch
 
-    setLoading(false);
-  } catch (error) {
-    console.error('❌ Error fetching dashboard data:', error);
-    alert('Failed to load admin dashboard data. Please refresh the page.');
-    setLoading(false);
-  }
-};
+    // Auto-refresh every 10 seconds
+    const interval = setInterval(() => {
+      console.log("🔄 Auto-refreshing dashboard data...");
+      fetchDashboardData();
+    }, 10000);
+
+    return () => clearInterval(interval); // Cleanup
+  }, [user, navigate]);
+
+  const fetchDashboardData = async () => {
+    try {
+      const token = localStorage.getItem("token");
+
+      console.log("🔍 Fetching dashboard data...");
+
+      const [overviewRes, activeRes, pendingRes, releasesRes] =
+        await Promise.all([
+          fetch(`${API_BASE}/admin/dashboard/overview`, {
+            headers: { Authorization: `Bearer ${token}` },
+          }),
+          fetch(`${API_BASE}/admin/rentals/active`, {
+            headers: { Authorization: `Bearer ${token}` },
+          }),
+          fetch(`${API_BASE}/admin/rentals/pending`, {
+            headers: { Authorization: `Bearer ${token}` },
+          }),
+          fetch(`${API_BASE}/rentals/admin/pending-release`, {
+            headers: { Authorization: `Bearer ${token}` },
+          }),
+        ]);
+
+      const overview = await overviewRes.json();
+      const active = await activeRes.json();
+      const pending = await pendingRes.json();
+      const releases = await releasesRes.json();
+
+      console.log("✅ Overview:", overview.success);
+      console.log("✅ Active rentals:", active.data?.length || 0);
+      console.log("✅ Pending rentals:", pending.data?.length || 0);
+      console.log("✅ Pending releases:", releases.data?.length || 0);
+
+      if (overview.success) setStats(overview.data);
+      if (active.success) setActiveRentals(active.data);
+      if (pending.success) setPendingRentals(pending.data);
+      if (releases.success) {
+        const newCount = releases.data.length;
+
+        // Show notification if count increased
+        if (newCount > lastReleaseCount && lastReleaseCount > 0) {
+          const notification = document.createElement("div");
+          notification.className =
+            "fixed top-4 right-4 bg-green-500 text-white px-6 py-4 rounded-lg shadow-xl z-50 animate-bounce";
+          notification.innerHTML = "🎉 New payment ready for release!";
+          document.body.appendChild(notification);
+
+          setTimeout(() => {
+            notification.remove();
+          }, 3000);
+        }
+
+        setLastReleaseCount(newCount);
+        setPendingReleases(releases.data);
+      }
+
+      setLoading(false);
+    } catch (error) {
+      console.error("❌ Error fetching dashboard data:", error);
+      alert("Failed to load admin dashboard data. Please refresh the page.");
+      setLoading(false);
+    }
+  };
 
   const fetchAllRentals = async () => {
     try {
@@ -600,24 +602,42 @@ const fetchDashboardData = async () => {
                           {rental.fieldLocation || "N/A"}
                         </span>
                       </div>
-                      <div className="flex justify-between">
-                        <span className="text-gray-600">Completed:</span>
-                        <span className="font-semibold">
-                          {rental.completedAt
-                            ? new Date(rental.completedAt).toLocaleDateString()
-                            : "N/A"}
-                        </span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-gray-600">Renter Confirmed:</span>
-                        <span className="font-semibold text-green-600">
-                          {rental.renterConfirmedAt
-                            ? new Date(
-                                rental.renterConfirmedAt
-                              ).toLocaleDateString()
-                            : "Yes"}
-                        </span>
-                      </div>
+                      {/* Confirmation Timeline */}
+{/* Confirmation Timeline */}
+<div className="bg-gray-50 rounded-lg p-3 space-y-2">
+  <h4 className="text-xs font-bold text-gray-700 mb-2">📅 Timeline:</h4>
+  
+  {/* Owner Marked Complete */}
+  {rental.ownerConfirmedAt && (
+    <div className="flex justify-between text-xs">
+      <span className="text-gray-600">Owner confirmed:</span>
+      <span className="font-semibold">
+        {new Date(rental.ownerConfirmedAt).toLocaleDateString()}
+      </span>
+    </div>
+  )}
+  
+  {/* Renter Confirmed */}
+  {rental.renterConfirmedAt && (
+    <div className="flex justify-between text-xs">
+      <span className="text-gray-600">Renter confirmed:</span>
+      <span className="font-semibold text-green-600">
+        {new Date(rental.renterConfirmedAt).toLocaleDateString()}
+      </span>
+    </div>
+  )}
+  
+  {/* Payment Released (if released) */}
+  {rental.payment?.releasedAt && (
+    <div className="flex justify-between text-xs">
+      <span className="text-gray-600">Payment released:</span>
+      <span className="font-semibold text-blue-600">
+        {new Date(rental.payment.releasedAt).toLocaleDateString()}
+      </span>
+    </div>
+  )}
+</div>
+
                     </div>
 
                     {rental.renterConfirmationNote && (
@@ -761,7 +781,7 @@ const fetchDashboardData = async () => {
                             </div>
                             <div className="flex items-center gap-2 text-sm text-gray-500">
                               <Phone size={14} />
-                              {rental.renterId?.phoneNumber}
+                              {rental.renterId?.phone}
                             </div>
                           </td>
                           <td className="px-6 py-4">
@@ -775,7 +795,7 @@ const fetchDashboardData = async () => {
                             </div>
                             <div className="flex items-center gap-2 text-sm text-gray-500">
                               <Phone size={14} />
-                              {rental.ownerId?.phoneNumber}
+                              {rental.ownerId?.phone}
                             </div>
                           </td>
                           <td className="px-6 py-4">
@@ -958,7 +978,7 @@ function RentalCard({ rental }) {
           </div>
           <div className="flex items-center gap-1 text-gray-500 mt-1">
             <Phone size={12} />
-            <span className="text-xs">{rental.renterId?.phoneNumber}</span>
+            <span className="text-xs">{rental.renterId?.phone}</span>
           </div>
         </div>
 
@@ -973,7 +993,7 @@ function RentalCard({ rental }) {
           </div>
           <div className="flex items-center gap-1 text-gray-500 mt-1">
             <Phone size={12} />
-            <span className="text-xs">{rental.ownerId?.phoneNumber}</span>
+            <span className="text-xs">{rental.ownerId?.phone}</span>
           </div>
         </div>
       </div>
@@ -1032,7 +1052,7 @@ function UserCard({ user }) {
         </div>
         <div className="flex items-center gap-2 text-gray-600">
           <Phone size={16} />
-          <span>{user.phoneNumber || "N/A"}</span>
+          <span>{user.phone || "N/A"}</span>
         </div>
       </div>
 

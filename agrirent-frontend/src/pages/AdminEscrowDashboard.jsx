@@ -783,7 +783,7 @@ function RentalCard({ rental, onRelease, onReject, onViewDetails }) {
             </p>
             <p className="text-sm text-gray-600">{rental.renterId?.email}</p>
             <p className="text-sm text-gray-600">
-              {rental.renterId?.phoneNumber}
+              {rental.renterId?.phone}
             </p>
           </div>
           <div>

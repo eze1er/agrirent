@@ -350,14 +350,14 @@ const RentalActionsComponent = ({ rental, currentUser, onUpdate }) => {
                   setNote('');
                   setRating(0);
                 }}
-                className="cancel-btn"
+                    className="flex-1 px-4 py-3 border-2 border-gray-300 rounded-xl hover:bg-gray-50 font-semibold text-gray-700 transition disabled:opacity-50"
                 disabled={loading}
               >
                 Cancel
               </button>
               <button
                 onClick={handleSubmitAction}
-                className="confirm-btn"
+                 className="flex-1 px-4 py-3 bg-gradient-to-r from-emerald-500 to-teal-500 text-white rounded-xl font-semibold disabled:opacity-50 disabled:cursor-not-allowed hover:shadow-xl transition"
                 disabled={loading || !note.trim() || (actionType === 'confirm' && rating === 0)}
               >
                 {loading ? 'Submitting...' : actionType === 'complete' ? 'Mark Complete' : 'Confirm & Submit Rating'}

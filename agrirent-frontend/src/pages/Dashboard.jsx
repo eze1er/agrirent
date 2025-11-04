@@ -771,61 +771,65 @@ export default function Dashboard({ user: currentUser, onLogout }) {
           )}
         </div>
 
-{/* Category Filter Buttons with Transparent Scroll Buttons */}
-<div className="relative mb-4">
-  {/* Scrollable Categories Container */}
-  <div 
-    id="category-scroll-container"
-    className="bg-white rounded-2xl p-3 shadow-md flex gap-2 overflow-x-auto scroll-smooth"
-    style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
-  >
-    {categories.map((filter) => (
-      <button
-        key={filter}
-        onClick={() => setSelectedFilter(filter)}
-        className={`px-5 py-2 rounded-xl text-sm font-semibold whitespace-nowrap transition capitalize ${
-          selectedFilter === filter
-            ? "bg-gradient-to-r from-blue-600 to-cyan-600 text-white shadow-lg"
-            : "bg-gray-100 text-gray-700"
-        }`}
-      >
-        {filter === "All" ? "All" : `${filter}s`}
-      </button>
-    ))}
-  </div>
+        {/* Category Filter Buttons with Transparent Scroll Buttons */}
+        <div className="relative mb-4">
+          {/* Scrollable Categories Container */}
+          <div
+            id="category-scroll-container"
+            className="bg-white rounded-2xl p-3 shadow-md flex gap-2 overflow-x-auto scroll-smooth"
+            style={{ scrollbarWidth: "none", msOverflowStyle: "none" }}
+          >
+            {categories.map((filter) => (
+              <button
+                key={filter}
+                onClick={() => setSelectedFilter(filter)}
+                className={`px-5 py-2 rounded-xl text-sm font-semibold whitespace-nowrap transition capitalize ${
+                  selectedFilter === filter
+                    ? "bg-gradient-to-r from-blue-600 to-cyan-600 text-white shadow-lg"
+                    : "bg-gray-100 text-gray-700"
+                }`}
+              >
+                {filter === "All" ? "All" : `${filter}s`}
+              </button>
+            ))}
+          </div>
 
-  {/* Left Scroll Button - Transparent */}
-  <button
-    onClick={() => {
-      const container = document.getElementById('category-scroll-container');
-      if (container) {
-        container.scrollBy({ left: -200, behavior: 'smooth' });
-      }
-    }}
-    className="absolute left-0 top-0 bottom-0 w-12 bg-gradient-to-r from-white/80 to-transparent backdrop-blur-[2px] flex items-center justify-start pl-2 hover:from-white/90 transition z-20"
-    style={{ display: categories.length > 3 ? 'flex' : 'none' }}
-  >
-    <div className="bg-blue-600/80 text-white rounded-full w-7 h-7 flex items-center justify-center shadow-lg hover:bg-blue-600 hover:scale-110 transition">
-      <span className="text-base font-bold">←</span>
-    </div>
-  </button>
+          {/* Left Scroll Button - Transparent */}
+          <button
+            onClick={() => {
+              const container = document.getElementById(
+                "category-scroll-container"
+              );
+              if (container) {
+                container.scrollBy({ left: -200, behavior: "smooth" });
+              }
+            }}
+            className="absolute left-0 top-0 bottom-0 w-12 bg-gradient-to-r from-white/80 to-transparent backdrop-blur-[2px] flex items-center justify-start pl-2 hover:from-white/90 transition z-20"
+            style={{ display: categories.length > 3 ? "flex" : "none" }}
+          >
+            <div className="bg-blue-600/80 text-white rounded-full w-7 h-7 flex items-center justify-center shadow-lg hover:bg-blue-600 hover:scale-110 transition">
+              <span className="text-base font-bold">←</span>
+            </div>
+          </button>
 
-  {/* Right Scroll Button - Transparent with Pulse */}
-  <button
-    onClick={() => {
-      const container = document.getElementById('category-scroll-container');
-      if (container) {
-        container.scrollBy({ left: 200, behavior: 'smooth' });
-      }
-    }}
-    className="absolute right-0 top-0 bottom-0 w-12 bg-gradient-to-l from-white/80 to-transparent backdrop-blur-[2px] flex items-center justify-end pr-2 hover:from-white/90 transition z-20"
-    style={{ display: categories.length > 3 ? 'flex' : 'none' }}
-  >
-    <div className="bg-blue-600/80 text-white rounded-full w-7 h-7 flex items-center justify-center shadow-lg hover:bg-blue-600 hover:scale-110 transition animate-pulse">
-      <span className="text-base font-bold">→</span>
-    </div>
-  </button>
-</div>
+          {/* Right Scroll Button - Transparent with Pulse */}
+          <button
+            onClick={() => {
+              const container = document.getElementById(
+                "category-scroll-container"
+              );
+              if (container) {
+                container.scrollBy({ left: 200, behavior: "smooth" });
+              }
+            }}
+            className="absolute right-0 top-0 bottom-0 w-12 bg-gradient-to-l from-white/80 to-transparent backdrop-blur-[2px] flex items-center justify-end pr-2 hover:from-white/90 transition z-20"
+            style={{ display: categories.length > 3 ? "flex" : "none" }}
+          >
+            <div className="bg-blue-600/80 text-white rounded-full w-7 h-7 flex items-center justify-center shadow-lg hover:bg-blue-600 hover:scale-110 transition animate-pulse">
+              <span className="text-base font-bold">→</span>
+            </div>
+          </button>
+        </div>
 
         {/* Location Search */}
         <div className="mb-4">
@@ -1562,6 +1566,7 @@ export default function Dashboard({ user: currentUser, onLogout }) {
     const [selectedRental, setSelectedRental] = useState(null);
     const [rejectionReason, setRejectionReason] = useState("");
     const [error, setError] = useState("");
+    const [processing, setProcessing] = useState(false);
 
     useEffect(() => {
       fetchRequests();
@@ -1589,6 +1594,7 @@ export default function Dashboard({ user: currentUser, onLogout }) {
     const handleApprove = async (rentalId) => {
       if (!window.confirm("Are you sure you want to approve this rental?"))
         return;
+      setProcessing(true); 
       try {
         await rentalAPI.updateStatus(rentalId, { status: "approved" });
         alert("✅ Rental approved successfully! Notification sent to renter.");
@@ -1635,6 +1641,7 @@ export default function Dashboard({ user: currentUser, onLogout }) {
         setError(err.response?.data?.message || "Failed to reject rental");
       } finally {
         setLoading(false);
+        setProcessing(false);
       }
     };
 
@@ -1773,7 +1780,14 @@ export default function Dashboard({ user: currentUser, onLogout }) {
                       onClick={() => handleApprove(rental._id)}
                       className="flex-1 bg-emerald-500 text-white py-2 rounded-xl font-semibold hover:bg-emerald-600 transition"
                     >
-                      ✅ Approve
+                      {processing ? (
+                        <span className="flex items-center justify-center gap-2">
+                          <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                          Approving...
+                        </span>
+                      ) : (
+                        "✅ Approve"
+                      )}
                     </button>
                     <button
                       onClick={() => openRejectModal(rental)}
@@ -3562,14 +3576,14 @@ export default function Dashboard({ user: currentUser, onLogout }) {
                 setConfirmingRental(null);
                 setCompletionNote("");
               }}
-              className="flex-1 px-4 py-3 border-2 border-gray-300 rounded-xl hover:bg-gray-50 font-semibold text-gray-700"
+              className="flex-1 px-4 py-3 border-2 border-gray-300 rounded-xl hover:bg-gray-50 font-semibold text-gray-700 transition"
             >
               Cancel
             </button>
             <button
               onClick={handleConfirm}
               disabled={localNote.length < 10}
-              className="flex-1 px-4 py-3 bg-gradient-to-r from-emerald-500 to-teal-500 text-white rounded-xl font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
+              className="flex-1 px-4 py-3 bg-gradient-to-r from-emerald-500 to-teal-500 text-white rounded-xl font-semibold disabled:opacity-50 disabled:cursor-not-allowed hover:shadow-xl transition"
             >
               Confirm & Release Payment
             </button>
