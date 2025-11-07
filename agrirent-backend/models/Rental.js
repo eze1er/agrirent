@@ -1,5 +1,3 @@
-// models/Rental.js - UPDATED WITH COMPLETE WORKFLOW
-
 const mongoose = require("mongoose");
 
 const rentalSchema = new mongoose.Schema(
@@ -74,9 +72,9 @@ const rentalSchema = new mongoose.Schema(
       },
       dailyRate: Number,
       duration: Number,
-      numberOfDays: Number, 
-      numberOfHectares: Number, 
-      pricePerHectare: Number, 
+      numberOfDays: Number,
+      numberOfHectares: Number,
+      pricePerHectare: Number,
       currency: {
         type: String,
         default: "USD",
@@ -194,6 +192,28 @@ const rentalSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
     },
+    disputedBy: {
+      type: String,
+      enum: ["renter", "owner"],
+    },
+    disputeImages: [String], 
+
+    disputeResolution: {
+  resolvedAt: Date,
+  resolvedBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: "User",
+  },
+  resolutionType: {
+    type: String,
+    enum: ["owner", "renter", "split"],
+  },
+  ownerAmount: Number,
+  renterAmount: Number,
+  platformFee: Number,
+  ownerPayout: Number,
+  adminNotes: String,
+},
 
     // ============================================
     // DELIVERY/LOCATION
@@ -241,7 +261,7 @@ const rentalSchema = new mongoose.Schema(
   },
   {
     timestamps: true,
-  }
+  },
 );
 
 // ============================================
@@ -377,6 +397,7 @@ rentalSchema.statics.getStatusStats = async function () {
 };
 
 rentalSchema.set("toObject", { virtuals: true });
+
 rentalSchema.set("toJSON", { virtuals: true });
 
 module.exports = mongoose.model("Rental", rentalSchema);

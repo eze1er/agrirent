@@ -80,6 +80,8 @@ export const rentalAPI = {
     api.get(`/rentals/machine/${machineId}/reviews`),
   getMyRentals: () => api.get("/rentals/my-rentals"),
   getRentalRequests: () => api.get("/rentals/requests"),
+openDispute: (rentalId, data) =>
+  api.post(`/rentals/${rentalId}/dispute`, data),
 };
 
 // Payment API - CORRECTED TO MATCH BACKEND ROUTES
@@ -99,8 +101,8 @@ export const paymentAPI = {
     api.post(`/payments/owner/mark-complete/${rentalId}`, data),
 
   // Dispute Operations
-  openDispute: (rentalId, data) =>
-    api.post(`/payments/open-dispute/${rentalId}`, data),
+openDispute: (rentalId, data) =>
+  api.post(`/rentals/${rentalId}/dispute`, data),
 
   ownerConfirm: (rentalId, data) =>
     api.post(`/payments/rentals/${rentalId}/owner-confirm`, data),
@@ -114,7 +116,7 @@ export const paymentAPI = {
   resolveDispute: (paymentId, data) =>
     api.post(`/payments/admin/resolve-dispute/${paymentId}`, data),
   getDashboardStats: () => api.get("/payments/admin/dashboard-stats"),
-  getDisputes: () => api.get("/payments/admin/disputes"),
+  getDisputes: () => api.get("/rentals/admin/disputes"),
 
   // Payment Status & Info
   getRentalPaymentStatus: (rentalId) =>
@@ -124,7 +126,11 @@ export const paymentAPI = {
 
   // Test endpoint
   testPayments: () => api.get("/payments/test"),
-
+    getDisputes: () => 
+    api.get("/rentals/admin/disputes"),
+  
+  resolveDispute: (rentalId, data) =>
+    api.post(`/payments/resolve-dispute/${rentalId}`, data),
 };
 
 // Upload API

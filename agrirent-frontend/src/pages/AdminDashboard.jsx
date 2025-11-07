@@ -279,6 +279,7 @@ export default function AdminDashboard({ user, onLogout }) {
             </div>
 
             {/* Desktop Navigation */}
+            {/* Desktop Navigation */}
             <div className="hidden md:flex items-center gap-4">
               <button
                 onClick={() => navigate("/admin/escrow")}
@@ -286,6 +287,16 @@ export default function AdminDashboard({ user, onLogout }) {
               >
                 💰 Escrow Management
               </button>
+
+              {/* ✅ ADD THIS DISPUTE BUTTON */}
+              <button
+                onClick={() => navigate("/admin/disputes")}
+                className="px-4 py-2 bg-orange-500 hover:bg-orange-600 rounded-lg transition font-semibold relative"
+              >
+                ⚠️ Disputes
+                {/* You can add a count badge here later if needed */}
+              </button>
+
               <div className="flex items-center gap-2 px-4 py-2 bg-white/10 rounded-lg">
                 <User size={20} />
                 <span className="font-semibold">{user?.email}</span>
@@ -321,8 +332,21 @@ export default function AdminDashboard({ user, onLogout }) {
                 💰 Escrow Management
               </button>
               <div className="px-4 py-2 bg-white/10 rounded-lg">
-                <span className="text-sm">{user?.email}</span>
+                // Add this to your admin navigation
+                <Link
+                  to="/admin/disputes"
+                  className="flex items-center gap-2 px-4 py-3 bg-orange-100 text-orange-800 rounded-xl font-semibold hover:bg-orange-200 transition"
+                >
+                  <span>⚠️</span>
+                  <span>Dispute Management</span>
+                  {disputeCount > 0 && (
+                    <span className="ml-auto bg-orange-500 text-white rounded-full w-6 h-6 flex items-center justify-center text-xs">
+                      {disputeCount}
+                    </span>
+                  )}
+                </Link>
               </div>
+
               <button
                 onClick={handleLogoutClick}
                 className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-red-500 hover:bg-red-600 rounded-lg transition font-semibold"
@@ -445,12 +469,6 @@ export default function AdminDashboard({ user, onLogout }) {
                       </p>
                     </div>
                   </div>
-                  {/* <button
-                    onClick={() => setActiveTab("releases")}
-                    className="px-6 py-3 bg-amber-600 hover:bg-amber-700 text-white rounded-lg font-semibold transition"
-                  >
-                    Review Now →
-                  </button> */}
                 </div>
               </div>
             )}
@@ -603,41 +621,54 @@ export default function AdminDashboard({ user, onLogout }) {
                         </span>
                       </div>
                       {/* Confirmation Timeline */}
-{/* Confirmation Timeline */}
-<div className="bg-gray-50 rounded-lg p-3 space-y-2">
-  <h4 className="text-xs font-bold text-gray-700 mb-2">📅 Timeline:</h4>
-  
-  {/* Owner Marked Complete */}
-  {rental.ownerConfirmedAt && (
-    <div className="flex justify-between text-xs">
-      <span className="text-gray-600">Owner confirmed:</span>
-      <span className="font-semibold">
-        {new Date(rental.ownerConfirmedAt).toLocaleDateString()}
-      </span>
-    </div>
-  )}
-  
-  {/* Renter Confirmed */}
-  {rental.renterConfirmedAt && (
-    <div className="flex justify-between text-xs">
-      <span className="text-gray-600">Renter confirmed:</span>
-      <span className="font-semibold text-green-600">
-        {new Date(rental.renterConfirmedAt).toLocaleDateString()}
-      </span>
-    </div>
-  )}
-  
-  {/* Payment Released (if released) */}
-  {rental.payment?.releasedAt && (
-    <div className="flex justify-between text-xs">
-      <span className="text-gray-600">Payment released:</span>
-      <span className="font-semibold text-blue-600">
-        {new Date(rental.payment.releasedAt).toLocaleDateString()}
-      </span>
-    </div>
-  )}
-</div>
+                      {/* Confirmation Timeline */}
+                      <div className="bg-gray-50 rounded-lg p-3 space-y-2">
+                        <h4 className="text-xs font-bold text-gray-700 mb-2">
+                          📅 Timeline:
+                        </h4>
 
+                        {/* Owner Marked Complete */}
+                        {rental.ownerConfirmedAt && (
+                          <div className="flex justify-between text-xs">
+                            <span className="text-gray-600">
+                              Owner confirmed:
+                            </span>
+                            <span className="font-semibold">
+                              {new Date(
+                                rental.ownerConfirmedAt
+                              ).toLocaleDateString()}
+                            </span>
+                          </div>
+                        )}
+
+                        {/* Renter Confirmed */}
+                        {rental.renterConfirmedAt && (
+                          <div className="flex justify-between text-xs">
+                            <span className="text-gray-600">
+                              Renter confirmed:
+                            </span>
+                            <span className="font-semibold text-green-600">
+                              {new Date(
+                                rental.renterConfirmedAt
+                              ).toLocaleDateString()}
+                            </span>
+                          </div>
+                        )}
+
+                        {/* Payment Released (if released) */}
+                        {rental.payment?.releasedAt && (
+                          <div className="flex justify-between text-xs">
+                            <span className="text-gray-600">
+                              Payment released:
+                            </span>
+                            <span className="font-semibold text-blue-600">
+                              {new Date(
+                                rental.payment.releasedAt
+                              ).toLocaleDateString()}
+                            </span>
+                          </div>
+                        )}
+                      </div>
                     </div>
 
                     {rental.renterConfirmationNote && (

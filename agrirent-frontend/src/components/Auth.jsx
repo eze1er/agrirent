@@ -241,276 +241,278 @@ export default function Auth({ onLoginSuccess }) {
           </div>
         )}
 
-<form onSubmit={handleSubmit} className="space-y-4">
-  {/* ===== REGISTRATION ONLY FIELDS ===== */}
-  {!isLogin && (
-    <>
-      {/* First Name & Last Name */}
-      <div className="grid grid-cols-2 gap-3">
-        <div>
-          <label className="block text-sm font-semibold mb-2 text-gray-700">
-            First Name *
-          </label>
-          <input
-            ref={firstNameRef}
-            type="text"
-            required
-            className="w-full border-2 border-gray-200 rounded-xl px-4 py-3 focus:border-indigo-500 focus:outline-none transition"
-            placeholder="John"
-          />
-        </div>
-        <div>
-          <label className="block text-sm font-semibold mb-2 text-gray-700">
-            Last Name *
-          </label>
-          <input
-            ref={lastNameRef}
-            type="text"
-            required
-            className="w-full border-2 border-gray-200 rounded-xl px-4 py-3 focus:border-indigo-500 focus:outline-none transition"
-            placeholder="Doe"
-          />
-        </div>
-      </div>
+        <form onSubmit={handleSubmit} className="space-y-4">
+          {/* ===== REGISTRATION ONLY FIELDS ===== */}
+          {!isLogin && (
+            <>
+              {/* First Name & Last Name */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-sm font-semibold mb-2 text-gray-700">
+                    First Name *
+                  </label>
+                  <input
+                    ref={firstNameRef}
+                    type="text"
+                    required
+                    className="w-full border-2 border-gray-200 rounded-xl px-4 py-3 focus:border-indigo-500 focus:outline-none transition"
+                    placeholder="John"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-semibold mb-2 text-gray-700">
+                    Last Name *
+                  </label>
+                  <input
+                    ref={lastNameRef}
+                    type="text"
+                    required
+                    className="w-full border-2 border-gray-200 rounded-xl px-4 py-3 focus:border-indigo-500 focus:outline-none transition"
+                    placeholder="Doe"
+                  />
+                </div>
+              </div>
 
-      {/* Phone Number */}
-      <div>
-        <label className="block text-sm font-semibold mb-2 text-gray-700">
-          Phone Number (International Format) *
-        </label>
-        <div className="relative">
-          <Phone
-            className="absolute left-4 top-1/2 transform -translate-y-1/2 text-gray-400"
-            size={20}
-          />
-          <input
-            ref={phoneRef}
-            type="tel"
-            onInput={handlePhoneInput}
-            required
-            placeholder="+243812345678 or +16472377070"
-            className={`w-full border-2 rounded-xl pl-12 pr-4 py-3 focus:outline-none transition ${
-              phoneError
-                ? "border-rose-500 focus:border-rose-500"
-                : "border-gray-200 focus:border-indigo-500"
-            }`}
-          />
-        </div>
-        <p className="text-xs text-gray-500 mt-1">
-          Examples: +243... (DRC), +1... (US/Canada), +33... (France)
-        </p>
-        {phoneError && (
-          <p className="text-rose-500 text-xs mt-1 flex items-center gap-1">
-            <AlertCircle size={12} />
-            {phoneError}
-          </p>
-        )}
-      </div>
+              {/* Phone Number */}
+              <div>
+                <label className="block text-sm font-semibold mb-2 text-gray-700">
+                  Phone Number (International Format) *
+                </label>
+                <div className="relative">
+                  <Phone
+                    className="absolute left-4 top-1/2 transform -translate-y-1/2 text-gray-400"
+                    size={20}
+                  />
+                  <input
+                    ref={phoneRef}
+                    type="tel"
+                    onInput={handlePhoneInput}
+                    required
+                    placeholder="+243812345678 or +16472377070"
+                    className={`w-full border-2 rounded-xl pl-12 pr-4 py-3 focus:outline-none transition ${
+                      phoneError
+                        ? "border-rose-500 focus:border-rose-500"
+                        : "border-gray-200 focus:border-indigo-500"
+                    }`}
+                  />
+                </div>
+                <p className="text-xs text-gray-500 mt-1">
+                  Examples: +243... (DRC), +1... (US/Canada), +33... (France)
+                </p>
+                {phoneError && (
+                  <p className="text-rose-500 text-xs mt-1 flex items-center gap-1">
+                    <AlertCircle size={12} />
+                    {phoneError}
+                  </p>
+                )}
+              </div>
 
-      {/* Role */}
-      <div>
-        <label className="block text-sm font-semibold mb-2 text-gray-700">
-          I am a: *
-        </label>
-        <select
-          ref={roleRef}
-          required
-          value={selectedRole}
-          onChange={(e) => setSelectedRole(e.target.value)}
-          className="w-full border-2 border-gray-200 rounded-xl px-4 py-3 focus:border-indigo-500 focus:outline-none transition"
-        >
-          <option value="renter">Renter (looking for equipment)</option>
-          <option value="owner">Owner (renting out equipment)</option>
-          <option value="both">Both</option>
-        </select>
-      </div>
+              {/* Role */}
+              <div>
+                <label className="block text-sm font-semibold mb-2 text-gray-700">
+                  I am a: *
+                </label>
+                <select
+                  ref={roleRef}
+                  required
+                  value={selectedRole}
+                  onChange={(e) => setSelectedRole(e.target.value)}
+                  className="w-full border-2 border-gray-200 rounded-xl px-4 py-3 focus:border-indigo-500 focus:outline-none transition"
+                >
+                  <option value="renter">Renter (looking for equipment)</option>
+                  <option value="owner">Owner (renting out equipment)</option>
+                  <option value="both">Both</option>
+                </select>
+              </div>
 
-      {/* Mobile Money - Only for owners */}
-      {(selectedRole === 'owner' || selectedRole === 'both') && (
-        <div className="bg-emerald-50 border-2 border-emerald-200 rounded-xl p-4 space-y-3">
-          <div className="flex items-center gap-2 mb-2">
-            <Wallet className="text-emerald-600" size={20} />
-            <h3 className="font-semibold text-gray-800">Payment Information</h3>
-          </div>
-          <p className="text-xs text-gray-600 mb-3">
-            We'll use this to send your rental earnings
-          </p>
+              {/* Mobile Money - Only for owners */}
+              {(selectedRole === "owner" || selectedRole === "both") && (
+                <div className="bg-emerald-50 border-2 border-emerald-200 rounded-xl p-4 space-y-3">
+                  <div className="flex items-center gap-2 mb-2">
+                    <Wallet className="text-emerald-600" size={20} />
+                    <h3 className="font-semibold text-gray-800">
+                      Payment Information
+                    </h3>
+                  </div>
+                  <p className="text-xs text-gray-600 mb-3">
+                    We'll use this to send your rental earnings
+                  </p>
 
+                  <div>
+                    <label className="block text-sm font-semibold mb-2 text-gray-700">
+                      Mobile Money Provider *
+                    </label>
+                    <select
+                      ref={mobileMoneyProviderRef}
+                      required
+                      className="w-full border-2 border-gray-200 rounded-xl px-4 py-3 focus:border-emerald-500 focus:outline-none transition"
+                    >
+                      <option value="">Select provider</option>
+                      <option value="mtn">MTN Mobile Money</option>
+                      <option value="orange">Orange Money</option>
+                      <option value="moov">Moov Money</option>
+                      <option value="airtel">Airtel Money</option>
+                      <option value="other">Other</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-semibold mb-2 text-gray-700">
+                      Mobile Money Number *
+                    </label>
+                    <input
+                      ref={mobileMoneyNumberRef}
+                      type="tel"
+                      required
+                      placeholder="+237123456789"
+                      className="w-full border-2 border-gray-200 rounded-xl px-4 py-3 focus:border-emerald-500 focus:outline-none transition"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-semibold mb-2 text-gray-700">
+                      Account Name *
+                    </label>
+                    <input
+                      ref={mobileMoneyNameRef}
+                      type="text"
+                      required
+                      placeholder="Full name on account"
+                      className="w-full border-2 border-gray-200 rounded-xl px-4 py-3 focus:border-emerald-500 focus:outline-none transition"
+                    />
+                  </div>
+                </div>
+              )}
+
+              {/* Email - OPTIONAL for registration */}
+              <div>
+                <label className="block text-sm font-semibold mb-2 text-gray-700">
+                  Email (optional)
+                </label>
+                <div className="relative">
+                  <Mail
+                    className="absolute left-4 top-1/2 transform -translate-y-1/2 text-gray-400"
+                    size={20}
+                  />
+                  <input
+                    ref={emailRef}
+                    type="email"
+                    autoComplete="off"
+                    className="w-full border-2 border-gray-200 rounded-xl pl-12 pr-4 py-3 focus:border-indigo-500 focus:outline-none transition"
+                    placeholder="your@email.com (optional)"
+                  />
+                </div>
+              </div>
+
+              {/* Username - OPTIONAL for registration */}
+              <div>
+                <label className="block text-sm font-semibold mb-2 text-gray-700">
+                  Username (optional)
+                </label>
+                <div className="relative">
+                  <User
+                    className="absolute left-4 top-1/2 transform -translate-y-1/2 text-gray-400"
+                    size={20}
+                  />
+                  <input
+                    ref={usernameRef}
+                    type="text"
+                    autoComplete="off"
+                    minLength={3}
+                    maxLength={30}
+                    pattern="[a-zA-Z0-9_-]+"
+                    className="w-full border-2 border-gray-200 rounded-xl pl-12 pr-4 py-3 focus:border-indigo-500 focus:outline-none transition"
+                    placeholder="johndoe123 (optional)"
+                  />
+                </div>
+                <p className="text-xs text-gray-500 mt-1">
+                  3-30 characters, letters, numbers, _ and - only
+                </p>
+              </div>
+
+              {/* Registration Info Message */}
+              <div className="bg-blue-50 border border-blue-200 rounded-xl p-3">
+                <p className="text-xs text-blue-800">
+                  💡 Provide at least email or username to create your account
+                </p>
+              </div>
+            </>
+          )}
+
+          {/* ===== LOGIN ONLY FIELDS ===== */}
+          {isLogin && (
+            <>
+              <div>
+                <label className="block text-sm font-semibold mb-2 text-gray-700">
+                  Email or Username *
+                </label>
+                <div className="relative">
+                  <Mail
+                    className="absolute left-4 top-1/2 transform -translate-y-1/2 text-gray-400"
+                    size={20}
+                  />
+                  <input
+                    ref={emailRef}
+                    type="text"
+                    autoComplete="off"
+                    required
+                    className="w-full border-2 border-gray-200 rounded-xl pl-12 pr-4 py-3 focus:border-indigo-500 focus:outline-none transition"
+                    placeholder="email@example.com or username"
+                  />
+                </div>
+              </div>
+
+              {/* Login Info Message */}
+              <div className="bg-green-50 border border-green-200 rounded-xl p-3">
+                <p className="text-xs text-green-800">
+                  💡 You can login with either your email or username
+                </p>
+              </div>
+            </>
+          )}
+
+          {/* ===== PASSWORD - SHOW FOR BOTH ===== */}
           <div>
             <label className="block text-sm font-semibold mb-2 text-gray-700">
-              Mobile Money Provider *
+              Password *
             </label>
-            <select
-              ref={mobileMoneyProviderRef}
-              required
-              className="w-full border-2 border-gray-200 rounded-xl px-4 py-3 focus:border-emerald-500 focus:outline-none transition"
-            >
-              <option value="">Select provider</option>
-              <option value="mtn">MTN Mobile Money</option>
-              <option value="orange">Orange Money</option>
-              <option value="moov">Moov Money</option>
-              <option value="airtel">Airtel Money</option>
-              <option value="other">Other</option>
-            </select>
+            <div className="relative">
+              <Lock
+                className="absolute left-4 top-1/2 transform -translate-y-1/2 text-gray-400"
+                size={20}
+              />
+              <input
+                ref={passwordRef}
+                type="password"
+                required
+                minLength={6}
+                className="w-full border-2 border-gray-200 rounded-xl pl-12 pr-4 py-3 focus:border-indigo-500 focus:outline-none transition"
+                placeholder="••••••••"
+              />
+            </div>
+            {!isLogin && (
+              <p className="text-xs text-gray-500 mt-1">Minimum 6 characters</p>
+            )}
           </div>
 
-          <div>
-            <label className="block text-sm font-semibold mb-2 text-gray-700">
-              Mobile Money Number *
-            </label>
-            <input
-              ref={mobileMoneyNumberRef}
-              type="tel"
-              required
-              placeholder="+237123456789"
-              className="w-full border-2 border-gray-200 rounded-xl px-4 py-3 focus:border-emerald-500 focus:outline-none transition"
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-semibold mb-2 text-gray-700">
-              Account Name *
-            </label>
-            <input
-              ref={mobileMoneyNameRef}
-              type="text"
-              required
-              placeholder="Full name on account"
-              className="w-full border-2 border-gray-200 rounded-xl px-4 py-3 focus:border-emerald-500 focus:outline-none transition"
-            />
-          </div>
-        </div>
-      )}
-
-      {/* Email - OPTIONAL for registration */}
-      <div>
-        <label className="block text-sm font-semibold mb-2 text-gray-700">
-          Email (optional)
-        </label>
-        <div className="relative">
-          <Mail
-            className="absolute left-4 top-1/2 transform -translate-y-1/2 text-gray-400"
-            size={20}
-          />
-          <input
-            ref={emailRef}
-            type="email"
-            autoComplete="off"
-            className="w-full border-2 border-gray-200 rounded-xl pl-12 pr-4 py-3 focus:border-indigo-500 focus:outline-none transition"
-            placeholder="your@email.com (optional)"
-          />
-        </div>
-      </div>
-
-      {/* Username - OPTIONAL for registration */}
-      <div>
-        <label className="block text-sm font-semibold mb-2 text-gray-700">
-          Username (optional)
-        </label>
-        <div className="relative">
-          <User
-            className="absolute left-4 top-1/2 transform -translate-y-1/2 text-gray-400"
-            size={20}
-          />
-          <input
-            ref={usernameRef}
-            type="text"
-            autoComplete="off"
-            minLength={3}
-            maxLength={30}
-            pattern="[a-zA-Z0-9_-]+"
-            className="w-full border-2 border-gray-200 rounded-xl pl-12 pr-4 py-3 focus:border-indigo-500 focus:outline-none transition"
-            placeholder="johndoe123 (optional)"
-          />
-        </div>
-        <p className="text-xs text-gray-500 mt-1">
-          3-30 characters, letters, numbers, _ and - only
-        </p>
-      </div>
-
-      {/* Registration Info Message */}
-      <div className="bg-blue-50 border border-blue-200 rounded-xl p-3">
-        <p className="text-xs text-blue-800">
-          💡 Provide at least email or username to create your account
-        </p>
-      </div>
-    </>
-  )}
-
-  {/* ===== LOGIN ONLY FIELDS ===== */}
-  {isLogin && (
-    <>
-      <div>
-        <label className="block text-sm font-semibold mb-2 text-gray-700">
-          Email or Username *
-        </label>
-        <div className="relative">
-          <Mail
-            className="absolute left-4 top-1/2 transform -translate-y-1/2 text-gray-400"
-            size={20}
-          />
-          <input
-            ref={emailRef}
-            type="text"
-            autoComplete="off"
-            required
-            className="w-full border-2 border-gray-200 rounded-xl pl-12 pr-4 py-3 focus:border-indigo-500 focus:outline-none transition"
-            placeholder="email@example.com or username"
-          />
-        </div>
-      </div>
-
-      {/* Login Info Message */}
-      <div className="bg-green-50 border border-green-200 rounded-xl p-3">
-        <p className="text-xs text-green-800">
-          💡 You can login with either your email or username
-        </p>
-      </div>
-    </>
-  )}
-
-  {/* ===== PASSWORD - SHOW FOR BOTH ===== */}
-  <div>
-    <label className="block text-sm font-semibold mb-2 text-gray-700">
-      Password *
-    </label>
-    <div className="relative">
-      <Lock
-        className="absolute left-4 top-1/2 transform -translate-y-1/2 text-gray-400"
-        size={20}
-      />
-      <input
-        ref={passwordRef}
-        type="password"
-        required
-        minLength={6}
-        className="w-full border-2 border-gray-200 rounded-xl pl-12 pr-4 py-3 focus:border-indigo-500 focus:outline-none transition"
-        placeholder="••••••••"
-      />
-    </div>
-    {!isLogin && (
-      <p className="text-xs text-gray-500 mt-1">Minimum 6 characters</p>
-    )}
-  </div>
-
-  {/* Submit Button */}
-  <button
-    type="submit"
-    disabled={loading || phoneError}
-    className="w-full bg-gradient-to-r from-indigo-600 to-purple-600 text-white py-4 rounded-xl font-bold hover:shadow-xl transition disabled:opacity-50 disabled:cursor-not-allowed"
-  >
-    {loading ? (
-      <span className="flex items-center justify-center gap-2">
-        <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-        Processing...
-      </span>
-    ) : isLogin ? (
-      "Sign In"
-    ) : (
-      "Create Account"
-    )}
-  </button>
-</form>
+          {/* Submit Button */}
+          <button
+            type="submit"
+            disabled={loading || phoneError}
+            className="w-full bg-gradient-to-r from-indigo-600 to-purple-600 text-white py-4 rounded-xl font-bold hover:shadow-xl transition disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {loading ? (
+              <span className="flex items-center justify-center gap-2">
+                <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                Processing...
+              </span>
+            ) : isLogin ? (
+              "Sign In"
+            ) : (
+              "Create Account"
+            )}
+          </button>
+        </form>
 
         <div className="relative my-6">
           <div className="absolute inset-0 flex items-center">

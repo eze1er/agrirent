@@ -28,7 +28,7 @@ export default function PaymentModal({ rental, onClose, onPaymentSuccess }) {
   const [error, setError] = useState('');
   const [cardComplete, setCardComplete] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState('stripe'); // 'stripe', 'orange', 'mtn', 'moov'
-  const [phoneNumber, setPhoneNumber] = useState('');
+  const [phone, setPhone] = useState('');
 
   // ============================================
   // STRIPE CHECKOUT
@@ -142,7 +142,7 @@ export default function PaymentModal({ rental, onClose, onPaymentSuccess }) {
   // ORANGE MONEY PAYMENT
   // ============================================
   const handleOrangeMoneyPayment = async () => {
-    if (!phoneNumber) {
+    if (!phone) {
       setError('Please enter your Orange Money phone number');
       return;
     }
@@ -162,7 +162,7 @@ export default function PaymentModal({ rental, onClose, onPaymentSuccess }) {
           'Authorization': `Bearer ${token}`
         },
         body: JSON.stringify({
-          phoneNumber: phoneNumber
+          phone: phone
         })
       });
 
@@ -189,7 +189,7 @@ export default function PaymentModal({ rental, onClose, onPaymentSuccess }) {
   // MTN MONEY PAYMENT (PLACEHOLDER - YOU'LL NEED TO IMPLEMENT BACKEND)
   // ============================================
   const handleMTNPayment = async () => {
-    if (!phoneNumber) {
+    if (!phone) {
       setError('Please enter your MTN Mobile Money phone number');
       return;
     }
@@ -207,7 +207,7 @@ export default function PaymentModal({ rental, onClose, onPaymentSuccess }) {
           'Authorization': `Bearer ${token}`
         },
         body: JSON.stringify({
-          phoneNumber: phoneNumber
+          phone: phone
         })
       });
 
@@ -234,7 +234,7 @@ export default function PaymentModal({ rental, onClose, onPaymentSuccess }) {
   // MOOV MONEY PAYMENT (PLACEHOLDER - YOU'LL NEED TO IMPLEMENT BACKEND)
   // ============================================
   const handleMoovPayment = async () => {
-    if (!phoneNumber) {
+    if (!phone) {
       setError('Please enter your Moov Money phone number');
       return;
     }
@@ -252,7 +252,7 @@ export default function PaymentModal({ rental, onClose, onPaymentSuccess }) {
           'Authorization': `Bearer ${token}`
         },
         body: JSON.stringify({
-          phoneNumber: phoneNumber
+          phone: phone
         })
       });
 
@@ -494,17 +494,17 @@ export default function PaymentModal({ rental, onClose, onPaymentSuccess }) {
               </label>
               <input
                 type="tel"
-                value={phoneNumber}
-                onChange={(e) => setPhoneNumber(e.target.value)}
+                value={phone}
+                onChange={(e) => setPhone(e.target.value)}
                 placeholder="+243 XXX XXX XXX"
                 className="w-full px-4 py-3 border-2 border-gray-300 rounded-xl focus:border-blue-500 focus:outline-none mb-4"
               />
               
               <button
                 onClick={handlePayment}
-                disabled={loading || !phoneNumber}
+                disabled={loading || !phone}
                 className={`w-full py-4 rounded-xl font-bold text-lg transition shadow-lg ${
-                  loading || !phoneNumber
+                  loading || !phone
                     ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
                     : paymentMethod === 'orange'
                     ? 'bg-gradient-to-r from-orange-500 to-orange-600 text-white hover:shadow-xl hover:scale-[1.02]'

@@ -1,6 +1,6 @@
 const express = require("express");
 const router = express.Router();
-const { protect } = require("../middleware/auth");
+const { protect, authorize } = require("../middleware/auth");
 const Rental = require("../models/Rental");
 const Machine = require("../models/Machine");
 const User = require("../models/User");
@@ -298,14 +298,15 @@ router.patch("/:id/status", protect, async (req, res) => {
     ) {
       return res.status(400).json({
         success: false,
-        message: "Rejection reason is required and must be at least 20 characters",
+        message:
+          "Rejection reason is required and must be at least 20 characters",
       });
     }
 
     const rental = await Rental.findById(req.params.id)
       .populate("machineId", "name images pricePerDay pricePerHectare rating")
-      .populate("renterId", "firstName lastName email phone") // ✅ ADD phoneNumber
-      .populate("ownerId", "firstName lastName email phone"); // ✅ ADD phoneNumber
+      .populate("renterId", "firstName lastName email phone")
+      .populate("ownerId", "firstName lastName email phone");
 
     if (!rental) {
       return res.status(404).json({
@@ -330,7 +331,7 @@ router.patch("/:id/status", protect, async (req, res) => {
       closed: [],
       cancelled: [],
       rejected: [],
-      disputed: ["closed"]
+      disputed: ["closed"],
     };
 
     const allowedNextStatuses = validTransitions[rental.status] || [];
@@ -393,7 +394,9 @@ router.patch("/:id/status", protect, async (req, res) => {
                 </div>
                 <div class="info-row" style="border-bottom: none;">
                   <span style="font-size: 18px;">Total:</span>
-                  <span style="font-size: 20px; color: #10b981; font-weight: bold;">$${rental.pricing.totalPrice.toFixed(2)}</span>
+                  <span style="font-size: 20px; color: #10b981; font-weight: bold;">$${rental.pricing.totalPrice.toFixed(
+                    2
+                  )}</span>
                 </div>
               </div>
               <p><strong>Next Step:</strong> Please proceed with payment.</p>
@@ -418,14 +421,17 @@ router.patch("/:id/status", protect, async (req, res) => {
         try {
           await sendNotificationSMS(
             rental.renterId.phone,
-            `🎉 AgriRent: Your rental for ${rental.machineId.name} has been APPROVED! Total: $${rental.pricing.totalPrice.toFixed(2)}. Please proceed with payment.`
+            `🎉 AgriRent: Your rental for ${
+              rental.machineId.name
+            } has been APPROVED! Total: $${rental.pricing.totalPrice.toFixed(
+              2
+            )}. Please proceed with payment.`
           );
           console.log("✅ Approval SMS sent");
         } catch (smsError) {
           console.error("⚠️ SMS error:", smsError);
         }
       }
-      
     } else if (status === "rejected") {
       // ✅ IMPORTANT: Save rejection data BEFORE sending notifications
       rental.rejectionReason = rejectionReason.trim();
@@ -468,7 +474,9 @@ router.patch("/:id/status", protect, async (req, res) => {
             </div>
             <div class="content">
               <p>Hi ${rental.renterId.firstName},</p>
-              <p>Your rental request for <strong>${rental.machineId.name}</strong> has been declined.</p>
+              <p>Your rental request for <strong>${
+                rental.machineId.name
+              }</strong> has been declined.</p>
               <div class="reason-box">
                 <h4 style="margin-top: 0;">📝 Reason:</h4>
                 <p style="margin: 0;">${rejectionReason.trim()}</p>
@@ -496,7 +504,9 @@ router.patch("/:id/status", protect, async (req, res) => {
         try {
           await sendNotificationSMS(
             rental.renterId.phone,
-            `AgriRent: Your rental for ${rental.machineId.name} was declined. Reason: ${rejectionReason.trim().substring(0, 100)}`
+            `AgriRent: Your rental for ${
+              rental.machineId.name
+            } was declined. Reason: ${rejectionReason.trim().substring(0, 100)}`
           );
           console.log("✅ Rejection SMS sent");
         } catch (smsError) {
@@ -615,9 +625,9 @@ router.patch("/:id/complete", protect, async (req, res) => {
     // ✅ UPDATE RENTAL WITH OWNER CONFIRMATION FIELDS
     rental.status = "completed";
     rental.completedAt = new Date();
-    rental.ownerConfirmedCompletion = true;  // ✅ ADD THIS
-    rental.ownerConfirmedAt = new Date();     // ✅ ADD THIS
-    rental.ownerConfirmationNote = completionNote || "Job completed by owner";  // ✅ ADD THIS
+    rental.ownerConfirmedCompletion = true; // ✅ ADD THIS
+    rental.ownerConfirmedAt = new Date(); // ✅ ADD THIS
+    rental.ownerConfirmationNote = completionNote || "Job completed by owner"; // ✅ ADD THIS
     await rental.save();
 
     console.log(`✅ Rental ${rental._id} marked as completed by owner`);
@@ -630,8 +640,14 @@ router.patch("/:id/complete", protect, async (req, res) => {
         `
           <h2>Job Completed!</h2>
           <p>Hi ${rental.renterId.firstName},</p>
-          <p>The owner has marked your rental of <strong>${rental.machineId.name}</strong> as completed.</p>
-          ${completionNote ? `<p><strong>Owner's note:</strong> ${completionNote}</p>` : ''}
+          <p>The owner has marked your rental of <strong>${
+            rental.machineId.name
+          }</strong> as completed.</p>
+          ${
+            completionNote
+              ? `<p><strong>Owner's note:</strong> ${completionNote}</p>`
+              : ""
+          }
           <p><strong>Please confirm that the job was completed satisfactorily.</strong></p>
           <p>Once you confirm, the payment will be released to the owner.</p>
         `
@@ -690,7 +706,8 @@ router.patch("/:id/confirm-completion", protect, async (req, res) => {
     rental.status = "released";
     rental.renterConfirmedCompletion = true;
     rental.renterConfirmedAt = new Date();
-    rental.renterConfirmationNote = confirmationNote || "Job completed satisfactorily";
+    rental.renterConfirmationNote =
+      confirmationNote || "Job completed satisfactorily";
     await rental.save();
 
     const machine = await Machine.findById(rental.machineId._id);
@@ -706,9 +723,17 @@ router.patch("/:id/confirm-completion", protect, async (req, res) => {
         `
           <h2>Job Confirmed!</h2>
           <p>Hi ${rental.ownerId.firstName},</p>
-          <p>Great news! ${rental.renterId.firstName} has confirmed that the rental of <strong>${rental.machineId.name}</strong> was completed successfully.</p>
+          <p>Great news! ${
+            rental.renterId.firstName
+          } has confirmed that the rental of <strong>${
+          rental.machineId.name
+        }</strong> was completed successfully.</p>
           <p>Your payment will be released shortly by the admin.</p>
-          ${confirmationNote ? `<p><strong>Renter's note:</strong> ${confirmationNote}</p>` : ""}
+          ${
+            confirmationNote
+              ? `<p><strong>Renter's note:</strong> ${confirmationNote}</p>`
+              : ""
+          }
           <p>Thank you for using AgriRent!</p>
         `
       );
@@ -900,7 +925,8 @@ router.put("/:id/review", protect, async (req, res) => {
     if (rental.status !== "completed" || !rental.isReviewed) {
       return res.status(400).json({
         success: false,
-        message: "Can only edit reviews for completed rentals that have been reviewed",
+        message:
+          "Can only edit reviews for completed rentals that have been reviewed",
       });
     }
 
@@ -982,14 +1008,14 @@ router.get("/machine/:machineId/reviews", async (req, res) => {
 router.get("/admin/pending-release", protect, async (req, res) => {
   try {
     // Check if user is admin
-    if (req.user.role !== 'admin') {
+    if (req.user.role !== "admin") {
       return res.status(403).json({
         success: false,
         message: "Only admins can access this endpoint",
       });
     }
 
-    console.log('🔍 Fetching rentals with status: released');
+    console.log("🔍 Fetching rentals with status: released");
 
     // Find all rentals in 'released' status
     const rentals = await Rental.find({
@@ -1009,6 +1035,198 @@ router.get("/admin/pending-release", protect, async (req, res) => {
     });
   } catch (error) {
     console.error("❌ Error fetching pending releases:", error);
+    res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+});
+
+// Open Dispute
+router.post("/:rentalId/dispute", protect, async (req, res) => {
+  try {
+    const { rentalId } = req.params;
+    const { reason, images } = req.body;
+
+    console.log(`⚠️ Dispute being opened for rental: ${rentalId}`);
+
+    // Validate reason
+    if (!reason || reason.trim().length < 20) {
+      return res.status(400).json({
+        success: false,
+        message: "Detailed dispute reason required (minimum 20 characters)",
+      });
+    }
+
+    const rental = await Rental.findById(rentalId)
+      .populate("renterId", "firstName lastName email phone")
+      .populate("ownerId", "firstName lastName email phone")
+      .populate("machineId", "name");
+
+    if (!rental) {
+      return res.status(404).json({
+        success: false,
+        message: "Rental not found",
+      });
+    }
+
+    console.log(`📊 Current rental status: ${rental.status}`);
+    console.log(`💳 Payment status: ${rental.payment?.status}`);
+
+    // Verify user is renter or owner
+    const isRenter = rental.renterId._id.toString() === req.user.id;
+    const isOwner = rental.ownerId._id.toString() === req.user.id;
+
+    if (!isRenter && !isOwner) {
+      return res.status(403).json({
+        success: false,
+        message: "Only renter or owner can open a dispute",
+      });
+    }
+
+    // ✅ FIXED: Check if already disputed FIRST
+    if (rental.status === "disputed") {
+      return res.status(400).json({
+        success: false,
+        message: "This rental already has an active dispute.",
+      });
+    }
+
+    // ✅ FIXED: Only block these specific statuses
+    if (["pending", "approved", "cancelled", "rejected", "closed"].includes(rental.status)) {
+      return res.status(400).json({
+        success: false,
+        message: `Cannot open dispute for ${rental.status} rentals. Disputes can only be opened for active, completed, or released rentals.`,
+      });
+    }
+
+    // ✅ Check if payment already released
+    if (rental.payment?.status === "completed") {
+      return res.status(400).json({
+        success: false,
+        message: "Cannot dispute - payment has already been released",
+      });
+    }
+
+    console.log(`✅ All checks passed. Opening dispute...`);
+
+    // Update rental with dispute
+    rental.status = "disputed";
+    rental.disputeReason = reason.trim();
+    rental.disputedAt = new Date();
+    rental.disputedBy = isOwner ? "owner" : "renter";
+    rental.disputeImages = images || [];
+    await rental.save();
+
+    console.log(`⚠️ Dispute opened by ${rental.disputedBy}`);
+
+    // Notify admin
+    const User = require("../models/User");
+    const { sendEmail } = require("../utils/notifications");
+    
+    const admins = await User.find({ role: "admin" });
+    
+    for (const admin of admins) {
+      if (admin.email) {
+        try {
+          await sendEmail({
+            to: admin.email,
+            subject: "⚠️ New Dispute Opened - AgriRent",
+            text: `A dispute has been opened for rental #${rentalId}.\n\nMachine: ${rental.machineId?.name}\nDisputed by: ${rental.disputedBy}\nReason: ${reason.trim()}\n\nPlease review immediately.`,
+            html: `
+              <h2>⚠️ New Dispute Opened</h2>
+              <p>A dispute has been opened for rental #${rentalId}.</p>
+              <p><strong>Machine:</strong> ${rental.machineId?.name}</p>
+              <p><strong>Disputed by:</strong> ${rental.disputedBy}</p>
+              <p><strong>Reason:</strong> ${reason.trim()}</p>
+              <p>Please review immediately in the admin dashboard.</p>
+            `
+          });
+          console.log(`✅ Admin email sent to: ${admin.email}`);
+        } catch (emailError) {
+          console.error("❌ Admin email error:", emailError.message);
+        }
+      }
+    }
+
+    // Notify the other party
+    const otherParty = isRenter ? rental.ownerId : rental.renterId;
+    if (otherParty?.email) {
+      try {
+        await sendEmail({
+          to: otherParty.email,
+          subject: "⚠️ Dispute Opened - AgriRent",
+          text: `Hello ${otherParty.firstName},\n\nA dispute has been opened for the rental of ${rental.machineId?.name}.\n\nReason: ${reason.trim()}\n\nOur team will review and contact you within 24 hours. The payment is secure in escrow.\n\nBest regards,\nAgriRent Team`,
+          html: `
+            <h2>⚠️ Dispute Opened</h2>
+            <p>Hello ${otherParty.firstName},</p>
+            <p>A dispute has been opened for the rental of <strong>${rental.machineId?.name}</strong>.</p>
+            <p><strong>Reason:</strong> ${reason.trim()}</p>
+            <p>Our team will review and contact you within 24 hours. The payment is secure in escrow.</p>
+            <p>Best regards,<br>AgriRent Team</p>
+          `
+        });
+        console.log(`✅ Email sent to other party: ${otherParty.email}`);
+      } catch (emailError) {
+        console.error("❌ Email error:", emailError.message);
+      }
+    }
+
+    // Send SMS notifications
+    const { sendNotificationSMS } = require("../services/smsService");
+    
+    if (sendNotificationSMS && otherParty?.phone) {
+      try {
+        await sendNotificationSMS(
+          otherParty.phone,
+          `AgriRent: A dispute was opened for ${rental.machineId?.name}. Our team will contact you within 24 hours. Payment is secure.`
+        );
+        console.log(`✅ SMS sent to other party`);
+      } catch (smsError) {
+        console.error("❌ SMS error:", smsError.message);
+      }
+    }
+
+    console.log(`✅ Dispute notifications sent successfully`);
+
+    res.json({
+      success: true,
+      message: "Dispute opened successfully. Admin team will review within 24 hours.",
+      data: { rental },
+    });
+  } catch (error) {
+    console.error("❌ Dispute error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to open dispute",
+      error: error.message,
+    });
+  }
+});
+
+// Get all disputed rentals for admin
+router.get("/admin/disputes", protect, authorize("admin"), async (req, res) => {
+  try {
+    console.log("🔍 Fetching disputed rentals...");
+
+    const disputes = await Rental.find({ 
+      status: "disputed" 
+    })
+      .populate("renterId", "firstName lastName email phone")
+      .populate("ownerId", "firstName lastName email phone")
+      .populate("machineId", "name category images")
+      .sort({ disputedAt: -1 })
+      .lean();
+
+    console.log(`📊 Found ${disputes.length} disputed rentals`);
+
+    res.json({
+      success: true,
+      data: disputes,
+      count: disputes.length,
+    });
+  } catch (error) {
+    console.error("❌ Get disputes error:", error);
     res.status(500).json({
       success: false,
       message: error.message,

@@ -93,8 +93,8 @@ router.get('/escrow/overview', protect, isAdmin, async (req, res) => {
     const rentals = await Rental.find({
       payment: { $exists: true }
     })
-    .populate('renterId', 'firstName lastName email phoneNumber')
-    .populate('ownerId', 'firstName lastName email phoneNumber')
+    .populate('renterId', 'firstName lastName email phone')
+    .populate('ownerId', 'firstName lastName email phone')
     .populate('machineId', 'name category')
     .sort({ createdAt: -1 })
     .lean();
@@ -188,7 +188,7 @@ router.get('/rentals/all', protect, isAdmin, async (req, res) => {
           { firstName: searchRegex },
           { lastName: searchRegex },
           { email: searchRegex },
-          { phoneNumber: searchRegex }
+          { phone: searchRegex }
         ]
       }).select('_id');
 
@@ -211,8 +211,8 @@ router.get('/rentals/all', protect, isAdmin, async (req, res) => {
 
     const [rentals, total] = await Promise.all([
       Rental.find(query)
-        .populate('renterId', 'firstName lastName email phoneNumber')
-        .populate('ownerId', 'firstName lastName email phoneNumber')
+        .populate('renterId', 'firstName lastName email phone')
+        .populate('ownerId', 'firstName lastName email phone')
         .populate('machineId', 'name category brand location')
         .populate({
           path: 'payment',
@@ -249,8 +249,8 @@ router.get('/rentals/all', protect, isAdmin, async (req, res) => {
 router.get('/rentals/active', protect, isAdmin, async (req, res) => {
   try {
     const activeRentals = await Rental.find({ status: 'active' })
-      .populate('renterId', 'firstName lastName email phoneNumber')
-      .populate('ownerId', 'firstName lastName email phoneNumber')
+      .populate('renterId', 'firstName lastName email phone')
+      .populate('ownerId', 'firstName lastName email phone')
       .populate('machineId', 'name category brand')
       .populate({
         path: 'payment',
@@ -289,8 +289,8 @@ router.get('/rentals/active', protect, isAdmin, async (req, res) => {
 router.get('/rentals/pending', protect, isAdmin, async (req, res) => {
   try {
     const pendingRentals = await Rental.find({ status: 'pending' })
-      .populate('renterId', 'firstName lastName email phoneNumber')
-      .populate('ownerId', 'firstName lastName email phoneNumber')
+      .populate('renterId', 'firstName lastName email phone')
+      .populate('ownerId', 'firstName lastName email phone')
       .populate('machineId', 'name category brand location')
       .sort({ createdAt: -1 })
       .lean();
@@ -332,7 +332,7 @@ router.get('/users/all', protect, isAdmin, async (req, res) => {
         { firstName: searchRegex },
         { lastName: searchRegex },
         { email: searchRegex },
-        { phoneNumber: searchRegex }
+        { phone: searchRegex }
       ];
     }
 
@@ -408,8 +408,8 @@ router.get('/payments/all', protect, isAdmin, async (req, res) => {
 
     const [payments, total] = await Promise.all([
       Payment.find(query)
-        .populate('userId', 'firstName lastName email phoneNumber')
-        .populate('ownerId', 'firstName lastName email phoneNumber')
+        .populate('userId', 'firstName lastName email phone')
+        .populate('ownerId', 'firstName lastName email phone')
         .populate({
           path: 'rentalId',
           populate: {
@@ -452,8 +452,8 @@ router.get('/export/rentals', protect, isAdmin, async (req, res) => {
     const query = status && status !== 'all' ? { status } : {};
 
     const rentals = await Rental.find(query)
-      .populate('renterId', 'firstName lastName email phoneNumber')
-      .populate('ownerId', 'firstName lastName email phoneNumber')
+      .populate('renterId', 'firstName lastName email phone')
+      .populate('ownerId', 'firstName lastName email phone')
       .populate('machineId', 'name category brand')
       .sort({ createdAt: -1 })
       .lean();
@@ -471,10 +471,10 @@ router.get('/export/rentals', protect, isAdmin, async (req, res) => {
           rental.machineId?.category || 'N/A',
           `${rental.renterId?.firstName} ${rental.renterId?.lastName}`,
           rental.renterId?.email || '',
-          rental.renterId?.phoneNumber || '',
+          rental.renterId?.phone || '',
           `${rental.ownerId?.firstName} ${rental.ownerId?.lastName}`,
           rental.ownerId?.email || '',
-          rental.ownerId?.phoneNumber || '',
+          rental.ownerId?.phone || '',
           rental.status,
           rental.startDate || rental.workDate || '',
           rental.endDate || '',
@@ -522,10 +522,10 @@ router.get('/search', protect, isAdmin, async (req, res) => {
           { firstName: searchRegex },
           { lastName: searchRegex },
           { email: searchRegex },
-          { phoneNumber: searchRegex }
+          { phone: searchRegex }
         ]
       })
-        .select('firstName lastName email phoneNumber role')
+        .select('firstName lastName email phone role')
         .limit(10)
         .lean(),
       

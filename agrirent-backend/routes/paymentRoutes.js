@@ -11,6 +11,7 @@ const { sendNotificationSMS } = require("../services/smsService");
 const orangeMoneyService = require("../services/orangeMoneyService");
 // Initialize Stripe
 let stripe = null;
+
 if (process.env.STRIPE_SECRET_KEY) {
   stripe = require("stripe")(process.env.STRIPE_SECRET_KEY);
   console.log("✅ Stripe initialized");
@@ -344,8 +345,8 @@ router.get("/admin/pending-payments", protect, async (req, res) => {
     // ✅ GET ALL RENTALS
     const rentals = await Rental.find({})
       .populate("machineId", "name images category")
-      .populate("renterId", "firstName lastName email phoneNumber")
-      .populate("ownerId", "firstName lastName email phoneNumber")
+      .populate("renterId", "firstName lastName email phone")
+      .populate("ownerId", "firstName lastName email phone")
       .sort({ createdAt: -1 });
 
     console.log(`📊 Total rentals found: ${rentals.length}`);
@@ -686,8 +687,8 @@ router.post("/owner/mark-complete/:rentalId", protect, async (req, res) => {
     const { completionNote } = req.body;
 
     const rental = await Rental.findById(rentalId)
-      .populate("ownerId", "firstName lastName phoneNumber")
-      .populate("renterId", "firstName lastName phoneNumber")
+      .populate("ownerId", "firstName lastName phone")
+      .populate("renterId", "firstName lastName phone")
       .populate("machineId", "name");
 
     if (!rental) {
@@ -735,7 +736,7 @@ router.post("/owner/mark-complete/:rentalId", protect, async (req, res) => {
     console.log("✅ Owner marked rental as complete");
 
     // ✅ SEND SMS to renter
-    if (rental.renterId?.phoneNumber) {
+    if (rental.renterId?.phone) {
       try {
         const message = `AgriRent: The owner has marked your rental of "${
           rental.machineId?.name
@@ -743,8 +744,8 @@ router.post("/owner/mark-complete/:rentalId", protect, async (req, res) => {
           2
         )}.`;
 
-        await sendSMS(rental.renterId.phoneNumber, message);
-        console.log("✅ SMS sent to renter:", rental.renterId.phoneNumber);
+        await sendSMS(rental.renterId.phone, message);
+        console.log("✅ SMS sent to renter:", rental.renterId.phone);
       } catch (smsError) {
         console.error("⚠️ Failed to send SMS to renter:", smsError.message);
         // Don't fail the request if SMS fails
@@ -771,8 +772,8 @@ router.post("/confirm-completion/:rentalId", protect, async (req, res) => {
     const { confirmationNote } = req.body;
 
     const rental = await Rental.findById(rentalId)
-      .populate("ownerId", "firstName lastName phoneNumber")
-      .populate("renterId", "firstName lastName phoneNumber")
+      .populate("ownerId", "firstName lastName phone")
+      .populate("renterId", "firstName lastName phone")
       .populate("machineId", "name");
 
     if (!rental) {
@@ -828,7 +829,7 @@ router.post("/confirm-completion/:rentalId", protect, async (req, res) => {
     console.log("✅ Renter confirmed completion");
 
     // ✅ SEND SMS to owner
-    if (rental.ownerId?.phoneNumber) {
+    if (rental.ownerId?.phone) {
       try {
         const message = `AgriRent: The renter has confirmed completion of rental "${
           rental.machineId?.name
@@ -836,8 +837,8 @@ router.post("/confirm-completion/:rentalId", protect, async (req, res) => {
           2
         )} will be released within 24-48 hours.`;
 
-        await sendSMS(rental.ownerId.phoneNumber, message);
-        console.log("✅ SMS sent to owner:", rental.ownerId.phoneNumber);
+        await sendSMS(rental.ownerId.phone, message);
+        console.log("✅ SMS sent to owner:", rental.ownerId.phone);
       } catch (smsError) {
         console.error("⚠️ Failed to send SMS to owner:", smsError.message);
       }
@@ -887,8 +888,8 @@ router.post(
       const { adminNote } = req.body;
 
       const payment = await Payment.findById(paymentId)
-        .populate("userId", "firstName lastName phoneNumber")
-        .populate("ownerId", "firstName lastName phoneNumber mobileMoneyInfo")
+        .populate("userId", "firstName lastName phone")
+        .populate("ownerId", "firstName lastName phone mobileMoneyInfo")
         .populate({
           path: "rentalId",
           populate: { path: "machineId", select: "name" },
@@ -948,7 +949,7 @@ router.post(
       }
 
       // ✅ SEND SMS to owner
-      if (payment.ownerId?.phoneNumber) {
+      if (payment.ownerId?.phone) {
         try {
           const { sendNotificationSMS } = require("../services/smsService");
 
@@ -965,7 +966,7 @@ router.post(
             rental.machineId?.name
           }. Platform fee: $${platformFeeAmount.toFixed(2)} (10%).`;
 
-          await sendNotificationSMS(payment.ownerId.phoneNumber, message);
+          await sendNotificationSMS(payment.ownerId.phone, message);
           console.log("✅ SMS sent to owner");
         } catch (smsError) {
           console.error("⚠️ Failed to send SMS:", smsError.message);
@@ -1093,8 +1094,12 @@ router.get("/admin/disputes", protect, authorize("admin"), async (req, res) => {
 router.post("/open-dispute/:rentalId", protect, async (req, res) => {
   try {
     const { rentalId } = req.params;
-    const { reason } = req.body;
+    const { reason, images } = req.body;
+    console.log("📸 Received images:", images);
+    console.log("📸 Images count:", images?.length || 0);
+    console.log(`⚠️ Dispute being opened for rental: ${rentalId}`);
 
+    // Validate reason
     if (!reason || reason.trim().length < 20) {
       return res.status(400).json({
         success: false,
@@ -1103,43 +1108,76 @@ router.post("/open-dispute/:rentalId", protect, async (req, res) => {
     }
 
     const rental = await Rental.findById(rentalId)
-      .populate("ownerId", "firstName lastName email")
-      .populate("renterId", "firstName lastName email")
+      .populate("ownerId", "firstName lastName email phone")
+      .populate("renterId", "firstName lastName email phone")
       .populate("machineId", "name");
 
     if (!rental) {
-      return res
-        .status(404)
-        .json({ success: false, message: "Rental not found" });
+      return res.status(404).json({
+        success: false,
+        message: "Rental not found",
+      });
     }
 
-    if (rental.renterId._id.toString() !== req.user.id) {
+    console.log(`📊 Current rental status: ${rental.status}`);
+
+    // Verify user is renter or owner
+    const isRenter = rental.renterId._id.toString() === req.user.id;
+    const isOwner = rental.ownerId._id.toString() === req.user.id;
+
+    if (!isRenter && !isOwner) {
       return res.status(403).json({
         success: false,
-        message: "Only the renter can open a dispute",
+        message: "Only renter or owner can open a dispute",
       });
     }
 
-    if (rental.status !== "completed") {
+    // Check if already disputed
+    if (rental.status === "disputed") {
       return res.status(400).json({
         success: false,
-        message: "Can only dispute completed rentals",
+        message: "This rental already has an active dispute.",
       });
     }
 
-    const payment = await Payment.findOne({ rentalId });
-    if (!payment) {
-      return res
-        .status(404)
-        .json({ success: false, message: "Payment not found" });
+    // ✅ FIXED: Only block these statuses (allows active, completed, released)
+    if (
+      ["pending", "approved", "cancelled", "rejected", "closed"].includes(
+        rental.status
+      )
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: `Cannot open dispute for ${rental.status} rentals.`,
+      });
     }
 
+    // Check payment status
+    const payment = await Payment.findOne({ rentalId });
+    if (!payment) {
+      return res.status(404).json({
+        success: false,
+        message: "Payment not found",
+      });
+    }
+
+    // Check if payment already released
+    if (payment.status === "completed" || payment.escrowStatus === "released") {
+      return res.status(400).json({
+        success: false,
+        message: "Cannot dispute - payment has already been released",
+      });
+    }
+
+    // Check if payment is in escrow
     if (payment.escrowStatus !== "held") {
       return res.status(400).json({
         success: false,
         message: "Payment must be in escrow to open dispute",
       });
     }
+
+    console.log(`✅ All checks passed. Opening dispute...`);
 
     // Update payment to disputed
     payment.escrowStatus = "disputed";
@@ -1149,6 +1187,7 @@ router.post("/open-dispute/:rentalId", protect, async (req, res) => {
       openedAt: new Date(),
       reason: reason.trim(),
       status: "open",
+      images: images || [],
     };
     payment.escrowTimeline = payment.escrowTimeline || {};
     payment.escrowTimeline.disputedAt = new Date();
@@ -1156,51 +1195,107 @@ router.post("/open-dispute/:rentalId", protect, async (req, res) => {
 
     // Update rental status
     rental.status = "disputed";
+    rental.disputeReason = reason.trim();
+    rental.disputedAt = new Date();
+    rental.disputedBy = isOwner ? "owner" : "renter";
+    rental.disputeImages = images || [];
     await rental.save();
+    console.log(`⚠️ Dispute created with ${images?.length || 0} images`);
+    console.log(`⚠️ Dispute opened by ${rental.disputedBy}`);
 
     // Notify admin
-    await sendEmail({
-      to: process.env.ADMIN_EMAIL,
-      subject: "New Dispute Opened - Action Required",
-      html: `
-        <h2>New Dispute Opened</h2>
-        <p><strong>Rental ID:</strong> ${rental._id}</p>
-        <p><strong>Machine:</strong> ${rental.machineId.name}</p>
-        <p><strong>Amount:</strong> $${payment.amount.toFixed(2)}</p>
-        <p><strong>Opened by:</strong> ${rental.renterId.firstName} ${
-        rental.renterId.lastName
-      } (Renter)</p>
-        <p><strong>Reason:</strong></p>
-        <p>${reason}</p>
-        <p>Please review and resolve this dispute in the admin dashboard.</p>
-      `,
-    });
+    const { sendEmail } = require("../utils/notifications");
 
-    // Notify owner
-    await sendEmail({
-      to: rental.ownerId.email,
-      subject: "Dispute Opened for Your Rental",
-      html: `
-        <h2>Dispute Notification</h2>
-        <p>A dispute has been opened for your rental.</p>
-        <p><strong>Machine:</strong> ${rental.machineId.name}</p>
-        <p><strong>Amount:</strong> $${payment.amount.toFixed(2)}</p>
-        <p>AgriRent team will review this case and contact you if needed. Your payment is secure.</p>
-      `,
-    });
+    try {
+      await sendEmail({
+        to: process.env.ADMIN_EMAIL || "admin@agrirent.com",
+        subject: "⚠️ New Dispute Opened - Action Required",
+        html: `
+          <h2>⚠️ New Dispute Opened</h2>
+          <p><strong>Rental ID:</strong> ${rental._id}</p>
+          <p><strong>Machine:</strong> ${rental.machineId.name}</p>
+          <p><strong>Amount:</strong> $${payment.amount.toFixed(2)}</p>
+          <p><strong>Opened by:</strong> ${isOwner ? "Owner" : "Renter"} - ${
+          req.user.firstName
+        } ${req.user.lastName}</p>
+          <p><strong>Reason:</strong></p>
+          <p>${reason.trim()}</p>
+          ${
+            images && images.length > 0
+              ? `<p><strong>Evidence images:</strong> ${images.length} photo(s) attached</p>`
+              : ""
+          }
+          <p>Please review and resolve this dispute in the admin dashboard.</p>
+        `,
+        text: `New Dispute Opened\n\nRental ID: ${rental._id}\nMachine: ${
+          rental.machineId.name
+        }\nAmount: $${payment.amount.toFixed(2)}\nOpened by: ${
+          isOwner ? "Owner" : "Renter"
+        }\nReason: ${reason.trim()}`,
+      });
+      console.log(`✅ Admin email sent`);
+    } catch (emailError) {
+      console.error("❌ Admin email error:", emailError.message);
+    }
+
+    // Notify the other party
+    const otherParty = isRenter ? rental.ownerId : rental.renterId;
+    try {
+      await sendEmail({
+        to: otherParty.email,
+        subject: "⚠️ Dispute Opened for Your Rental",
+        html: `
+          <h2>⚠️ Dispute Notification</h2>
+          <p>Hello ${otherParty.firstName},</p>
+          <p>A dispute has been opened for the rental of <strong>${
+            rental.machineId.name
+          }</strong>.</p>
+          <p><strong>Amount:</strong> $${payment.amount.toFixed(2)}</p>
+          <p><strong>Opened by:</strong> ${isOwner ? "Owner" : "Renter"}</p>
+          <p>AgriRent team will review this case and contact you within 24 hours if needed. Your payment is secure in escrow.</p>
+          <p>Best regards,<br>AgriRent Team</p>
+        `,
+        text: `Dispute Opened\n\nA dispute has been opened for ${
+          rental.machineId.name
+        }.\nAmount: $${payment.amount.toFixed(
+          2
+        )}\nOur team will review and contact you within 24 hours. Payment is secure.`,
+      });
+      console.log(`✅ Email sent to other party`);
+    } catch (emailError) {
+      console.error("❌ Email error:", emailError.message);
+    }
+
+    // Send SMS notification
+    const { sendNotificationSMS } = require("../services/smsService");
+    if (sendNotificationSMS && otherParty?.phone) {
+      try {
+        await sendNotificationSMS(
+          otherParty.phone,
+          `AgriRent: A dispute was opened for ${rental.machineId.name}. Our team will contact you within 24 hours. Payment is secure.`
+        );
+        console.log(`✅ SMS sent to other party`);
+      } catch (smsError) {
+        console.error("❌ SMS error:", smsError.message);
+      }
+    }
+
+    console.log(`✅ Dispute opened successfully`);
 
     res.json({
       success: true,
       message:
         "Dispute opened successfully. Our team will review within 24 hours.",
-      data: payment,
+      data: { payment, rental },
     });
   } catch (error) {
-    console.error("Dispute error:", error);
-    res.status(500).json({ success: false, message: error.message });
+    console.error("❌ Dispute error:", error);
+    res.status(500).json({
+      success: false,
+      message: error.message,
+    });
   }
 });
-
 // ============================================
 // ADMIN: RESOLVE DISPUTE
 // ============================================
@@ -1452,7 +1547,7 @@ router.post(
         amount: amount,
         currency: "CDF",
         orderRef: `RENTAL-${rentalId}`,
-        customerPhone: rental.renterId.phoneNumber,
+        customerPhone: rental.renterId.phone,
         description: `Rental: ${rental.machineId?.name}`,
       });
 
@@ -1535,9 +1630,9 @@ router.post("/orange-money-webhook", async (req, res) => {
 router.post("/mtn-money/init-payment/:rentalId", protect, async (req, res) => {
   try {
     const { rentalId } = req.params;
-    const { phoneNumber } = req.body;
+    const { phone } = req.body;
 
-    if (!phoneNumber) {
+    if (!phone) {
       return res.status(400).json({
         success: false,
         message: "Phone number is required",
@@ -1584,7 +1679,7 @@ router.post("/mtn-money/init-payment/:rentalId", protect, async (req, res) => {
       status: "pending",
       escrowStatus: "pending",
       metadata: {
-        phoneNumber: phoneNumber,
+        phone: phone,
         provider: "MTN Mobile Money",
       },
     });
@@ -1599,7 +1694,7 @@ router.post("/mtn-money/init-payment/:rentalId", protect, async (req, res) => {
         paymentId: payment._id,
         transactionId: transactionId,
         amount: amount,
-        phoneNumber: phoneNumber,
+        phone: phone,
         // In production, you'd return a payment URL or instructions
         instructions: "Check your phone for MTN Mobile Money payment prompt",
       },
@@ -1660,9 +1755,9 @@ router.post("/mtn-money-webhook", async (req, res) => {
 router.post("/moov-money/init-payment/:rentalId", protect, async (req, res) => {
   try {
     const { rentalId } = req.params;
-    const { phoneNumber } = req.body;
+    const { phone } = req.body;
 
-    if (!phoneNumber) {
+    if (!phone) {
       return res.status(400).json({
         success: false,
         message: "Phone number is required",
@@ -1708,7 +1803,7 @@ router.post("/moov-money/init-payment/:rentalId", protect, async (req, res) => {
       status: "pending",
       escrowStatus: "pending",
       metadata: {
-        phoneNumber: phoneNumber,
+        phone: phone,
         provider: "Moov Money",
       },
     });
@@ -1722,7 +1817,7 @@ router.post("/moov-money/init-payment/:rentalId", protect, async (req, res) => {
         paymentId: payment._id,
         transactionId: transactionId,
         amount: amount,
-        phoneNumber: phoneNumber,
+        phone: phone,
         instructions: "Check your phone for Moov Money payment prompt",
       },
     });
@@ -1850,8 +1945,8 @@ router.post(
 
       // Find rental
       const rental = await Rental.findById(rentalId)
-        .populate("renterId", "firstName lastName email phoneNumber")
-        .populate("ownerId", "firstName lastName email phoneNumber")
+        .populate("renterId", "firstName lastName email phone")
+        .populate("ownerId", "firstName lastName email phone")
         .populate("machineId", "name category");
 
       if (!rental) {
@@ -1950,9 +2045,9 @@ router.post(
 
       // Send SMS notification to owner
       try {
-        if (sendNotificationSMS && rental.ownerId?.phoneNumber) {
+        if (sendNotificationSMS && rental.ownerId?.phone) {
           await sendNotificationSMS(
-            rental.ownerId.phoneNumber,
+            rental.ownerId.phone,
             `AgriRent: Payment of $${ownerPayout.toFixed(2)} released for ${
               rental.machineId?.name
             }. Funds transferred.`
@@ -2005,7 +2100,9 @@ router.post(
       const { rentalId } = req.params;
       const { reason } = req.body;
 
-      console.log(`🔍 Admin attempting to reject payment release for rental: ${rentalId}`);
+      console.log(
+        `🔍 Admin attempting to reject payment release for rental: ${rentalId}`
+      );
 
       // ✅ VALIDATE FIRST - Before any database changes or SMS
       if (!reason || reason.trim().length < 20) {
@@ -2016,8 +2113,8 @@ router.post(
       }
 
       const rental = await Rental.findById(rentalId)
-        .populate("renterId", "firstName lastName email phoneNumber")
-        .populate("ownerId", "firstName lastName email phoneNumber")
+        .populate("renterId", "firstName lastName email phone")
+        .populate("ownerId", "firstName lastName email phone")
         .populate("machineId", "name");
 
       if (!rental) {
@@ -2034,7 +2131,9 @@ router.post(
       if (rental.payment?.status !== "held_in_escrow") {
         return res.status(400).json({
           success: false,
-          message: `Cannot reject release. Payment status: ${rental.payment?.status || "none"}`,
+          message: `Cannot reject release. Payment status: ${
+            rental.payment?.status || "none"
+          }`,
         });
       }
 
@@ -2076,19 +2175,23 @@ router.post(
       try {
         if (sendNotificationSMS) {
           // Notify renter
-          if (rental.renterId?.phoneNumber) {
+          if (rental.renterId?.phone) {
             await sendNotificationSMS(
-              rental.renterId.phoneNumber,
-              `AgriRent: Payment release for ${rental.machineId?.name} was rejected by admin. Reason: ${reason.trim()}. Please re-confirm completion.`
+              rental.renterId.phone,
+              `AgriRent: Payment release for ${
+                rental.machineId?.name
+              } was rejected by admin. Reason: ${reason.trim()}. Please re-confirm completion.`
             );
             console.log(`✅ SMS sent to renter`);
           }
 
           // Notify owner
-          if (rental.ownerId?.phoneNumber) {
+          if (rental.ownerId?.phone) {
             await sendNotificationSMS(
-              rental.ownerId.phoneNumber,
-              `AgriRent: Payment release for ${rental.machineId?.name} was rejected by admin. Reason: ${reason.trim()}. Please re-confirm completion.`
+              rental.ownerId.phone,
+              `AgriRent: Payment release for ${
+                rental.machineId?.name
+              } was rejected by admin. Reason: ${reason.trim()}. Please re-confirm completion.`
             );
             console.log(`✅ SMS sent to owner`);
           }
@@ -2105,7 +2208,11 @@ router.post(
           await sendEmail({
             to: rental.renterId.email,
             subject: "Payment Release Rejected - AgriRent",
-            text: `Hello ${rental.renterId.firstName},\n\nThe payment release for ${rental.machineId?.name} has been rejected by our admin team.\n\nReason: ${reason.trim()}\n\nPlease review the service and re-confirm completion if appropriate.\n\nBest regards,\nAgriRent Team`,
+            text: `Hello ${
+              rental.renterId.firstName
+            },\n\nThe payment release for ${
+              rental.machineId?.name
+            } has been rejected by our admin team.\n\nReason: ${reason.trim()}\n\nPlease review the service and re-confirm completion if appropriate.\n\nBest regards,\nAgriRent Team`,
           });
           console.log(`✅ Email sent to renter`);
         }
@@ -2115,7 +2222,11 @@ router.post(
           await sendEmail({
             to: rental.ownerId.email,
             subject: "Payment Release Rejected - AgriRent",
-            text: `Hello ${rental.ownerId.firstName},\n\nThe payment release for ${rental.machineId?.name} has been rejected by our admin team.\n\nReason: ${reason.trim()}\n\nPlease review and re-confirm completion if appropriate.\n\nBest regards,\nAgriRent Team`,
+            text: `Hello ${
+              rental.ownerId.firstName
+            },\n\nThe payment release for ${
+              rental.machineId?.name
+            } has been rejected by our admin team.\n\nReason: ${reason.trim()}\n\nPlease review and re-confirm completion if appropriate.\n\nBest regards,\nAgriRent Team`,
           });
           console.log(`✅ Email sent to owner`);
         }
@@ -2134,7 +2245,8 @@ router.post(
 
       res.json({
         success: true,
-        message: "Release rejected successfully. Both parties have been notified.",
+        message:
+          "Release rejected successfully. Both parties have been notified.",
         data: { rental, payment },
       });
     } catch (error) {
@@ -2165,8 +2277,8 @@ router.post(
       }
 
       const rental = await Rental.findById(rentalId)
-        .populate("renterId", "firstName lastName email phoneNumber")
-        .populate("ownerId", "firstName lastName email phoneNumber")
+        .populate("renterId", "firstName lastName email phone")
+        .populate("ownerId", "firstName lastName email phone")
         .populate("machineId", "name");
 
       if (!rental) {
@@ -2231,13 +2343,6 @@ router.post(
     }
   }
 );
-
-// ============================================
-// OWNER: CONFIRM COMPLETION
-// ============================================
-// ============================================
-// OWNER: CONFIRM COMPLETION
-// ============================================
 // ============================================
 // OWNER: CONFIRM COMPLETION
 // ============================================
@@ -2254,8 +2359,8 @@ router.post("/rentals/:rentalId/owner-confirm", protect, async (req, res) => {
     }
 
     const rental = await Rental.findById(rentalId)
-      .populate("renterId", "firstName lastName email phoneNumber")
-      .populate("ownerId", "firstName lastName email phoneNumber")
+      .populate("renterId", "firstName lastName email phone")
+      .populate("ownerId", "firstName lastName email phone")
       .populate("machineId", "name");
 
     if (!rental) {
@@ -2311,10 +2416,10 @@ router.post("/rentals/:rentalId/owner-confirm", protect, async (req, res) => {
     }
 
     // Send SMS to renter
-    if (rental.renterId?.phoneNumber && sendNotificationSMS) {
+    if (rental.renterId?.phone && sendNotificationSMS) {
       try {
         const message = `AgriRent: Owner confirmed completion of "${rental.machineId?.name}". Please confirm to release payment.`;
-        await sendNotificationSMS(rental.renterId.phoneNumber, message);
+        await sendNotificationSMS(rental.renterId.phone, message);
       } catch (smsError) {
         console.error("⚠️ SMS error:", smsError);
       }
@@ -2337,12 +2442,6 @@ router.post("/rentals/:rentalId/owner-confirm", protect, async (req, res) => {
   }
 });
 
-// ============================================
-// RENTER: CONFIRM COMPLETION WITH RATING
-// ============================================
-// ============================================
-// RENTER: CONFIRM COMPLETION WITH RATING
-// ============================================
 // ============================================
 // RENTER: CONFIRM COMPLETION WITH RATING
 // ============================================
@@ -2371,8 +2470,8 @@ router.post("/rentals/:rentalId/renter-confirm", protect, async (req, res) => {
     }
 
     const rental = await Rental.findById(rentalId)
-      .populate("renterId", "firstName lastName email phoneNumber")
-      .populate("ownerId", "firstName lastName email phoneNumber")
+      .populate("renterId", "firstName lastName email phone")
+      .populate("ownerId", "firstName lastName email phone")
       .populate("machineId", "name");
 
     if (!rental) {
@@ -2436,17 +2535,19 @@ router.post("/rentals/:rentalId/renter-confirm", protect, async (req, res) => {
     // ✅ CRITICAL: Make machine available immediately
     const Machine = require("../models/Machine");
     const machineId = rental.machineId?._id || rental.machineId;
-    
+
     console.log(`🔄 Updating machine ${machineId} to available...`);
-    
+
     const machine = await Machine.findByIdAndUpdate(
       machineId,
       { availability: "available" },
       { new: true }
     );
-    
+
     if (machine) {
-      console.log(`✅ ✅ ✅ Machine "${machine.name}" is now AVAILABLE for new rentals!`);
+      console.log(
+        `✅ ✅ ✅ Machine "${machine.name}" is now AVAILABLE for new rentals!`
+      );
       console.log(`📊 Machine availability: ${machine.availability}`);
     } else {
       console.error(`❌ Machine not found: ${machineId}`);
@@ -2473,9 +2574,11 @@ router.post("/rentals/:rentalId/renter-confirm", protect, async (req, res) => {
           average: Math.round(averageRating * 10) / 10,
           count: reviewCount,
         };
-        
+
         await machine.save();
-        console.log(`✅ Machine rating updated: ${machine.rating.average} (${machine.rating.count} reviews)`);
+        console.log(
+          `✅ Machine rating updated: ${machine.rating.average} (${machine.rating.count} reviews)`
+        );
       }
     }
 
@@ -2487,16 +2590,17 @@ router.post("/rentals/:rentalId/renter-confirm", protect, async (req, res) => {
       payment.metadata.renterConfirmationNote = confirmationNote.trim();
       payment.metadata.renterConfirmedAt = new Date();
       payment.metadata.rating = Number(rating);
-      payment.metadata.reviewComment = reviewComment?.trim() || confirmationNote.trim();
+      payment.metadata.reviewComment =
+        reviewComment?.trim() || confirmationNote.trim();
       await payment.save();
     }
 
     // ✅ Send SMS to owner
-    if (rental.ownerId?.phoneNumber && sendNotificationSMS) {
+    if (rental.ownerId?.phone && sendNotificationSMS) {
       try {
-        const stars = '⭐'.repeat(Number(rating));
+        const stars = "⭐".repeat(Number(rating));
         const message = `AgriRent: ${rental.renterId.firstName} confirmed completion and rated ${stars} (${rating}/5) for "${rental.machineId?.name}". Payment will be released soon.`;
-        await sendNotificationSMS(rental.ownerId.phoneNumber, message);
+        await sendNotificationSMS(rental.ownerId.phone, message);
         console.log(`✅ SMS sent to owner`);
       } catch (smsError) {
         console.error("⚠️ SMS error:", smsError);
@@ -2535,6 +2639,374 @@ router.stack.forEach((r) => {
   }
 });
 
-module.exports = router;
+// Get all active disputes for admin
+router.get("/admin/disputes", protect, authorize("admin"), async (req, res) => {
+  try {
+    console.log("🔍 Fetching all active disputes...");
+
+    const disputes = await Rental.find({
+      status: "disputed",
+    })
+      .populate("renterId", "firstName lastName email phone")
+      .populate("ownerId", "firstName lastName email phone")
+      .populate("machineId", "name category images")
+      .sort({ disputedAt: -1 })
+      .lean(); // ✅ Use lean for better performance
+
+    console.log(`📊 Found ${disputes.length} active disputes`);
+
+    // Log first dispute to debug
+    if (disputes.length > 0) {
+      console.log("📋 First dispute data:", {
+        id: disputes[0]._id,
+        machineId: disputes[0].machineId,
+        renterId: disputes[0].renterId,
+        ownerId: disputes[0].ownerId,
+        disputedAt: disputes[0].disputedAt,
+        disputeReason: disputes[0].disputeReason,
+        pricing: disputes[0].pricing,
+      });
+    }
+
+    res.json({
+      success: true,
+      data: disputes,
+      count: disputes.length,
+    });
+  } catch (error) {
+    console.error("❌ Get disputes error:", error);
+    res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+});
+
+// Admin resolves dispute
+router.post(
+  "/resolve-dispute/:rentalId",
+  protect,
+  authorize("admin"),
+  async (req, res) => {
+    try {
+      const { rentalId } = req.params;
+      const { resolutionType, ownerAmount, renterAmount, adminNotes } =
+        req.body;
+
+      console.log(`🔧 Resolving dispute for rental: ${rentalId}`);
+      console.log(`Resolution type: ${resolutionType}`);
+
+      // Validate inputs
+      if (
+        !resolutionType ||
+        !["owner", "renter", "split"].includes(resolutionType)
+      ) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid resolution type",
+        });
+      }
+
+      if (!adminNotes || adminNotes.trim().length < 20) {
+        return res.status(400).json({
+          success: false,
+          message: "Admin notes required (minimum 20 characters)",
+        });
+      }
+
+      if (ownerAmount < 0 || renterAmount < 0) {
+        return res.status(400).json({
+          success: false,
+          message: "Amounts cannot be negative",
+        });
+      }
+
+      // Get rental with all details
+      const rental = await Rental.findById(rentalId)
+        .populate("renterId", "firstName lastName email phone")
+        .populate("ownerId", "firstName lastName email phone")
+        .populate("machineId", "name");
+
+      if (!rental) {
+        return res.status(404).json({
+          success: false,
+          message: "Rental not found",
+        });
+      }
+
+      if (rental.status !== "disputed") {
+        return res.status(400).json({
+          success: false,
+          message: "This rental is not disputed",
+        });
+      }
+
+      const totalAmount = rental.pricing?.totalPrice || 0;
+      const distributedAmount =
+        parseFloat(ownerAmount) + parseFloat(renterAmount);
+
+      // Validate amounts add up correctly
+      if (Math.abs(distributedAmount - totalAmount) > 0.01) {
+        return res.status(400).json({
+          success: false,
+          message: `Distributed amount ($${distributedAmount.toFixed(
+            2
+          )}) must equal rental amount ($${totalAmount.toFixed(2)})`,
+        });
+      }
+
+      // ✅ Calculate platform fee (10% of owner's amount)
+      const ownerAmountValue = parseFloat(ownerAmount);
+      const platformFeePercent = 10;
+      const platformFeeAmount = (ownerAmountValue * platformFeePercent) / 100;
+      const ownerPayout = ownerAmountValue - platformFeeAmount;
+
+      console.log(`💰 Owner amount: $${ownerAmountValue.toFixed(2)}`);
+      console.log(`💰 Platform fee (10%): $${platformFeeAmount.toFixed(2)}`);
+      console.log(`💰 Owner payout (90%): $${ownerPayout.toFixed(2)}`);
+      console.log(`💰 Renter refund: $${parseFloat(renterAmount).toFixed(2)}`);
+
+      // Get payment record
+      const payment = await Payment.findOne({ rentalId });
+      if (!payment) {
+        return res.status(404).json({
+          success: false,
+          message: "Payment record not found",
+        });
+      }
+
+      // ✅ FIXED: Use 'released' instead of 'resolved'
+      payment.escrowStatus = "released";
+      payment.status = "completed";
+      payment.dispute = payment.dispute || {};
+      payment.dispute.resolvedAt = new Date();
+      payment.dispute.resolvedBy = req.user.id;
+      payment.dispute.resolutionType = resolutionType;
+      payment.dispute.adminNotes = adminNotes.trim();
+      payment.dispute.status = "resolved";
+
+      // ✅ Add platform fee
+      payment.platformFee = {
+        percentage: platformFeePercent,
+        amount: platformFeeAmount,
+        deductedAt: new Date(),
+      };
+
+      // ✅ Add payout info
+      payment.payout = {
+        amount: ownerPayout,
+        status: "completed",
+        payoutAt: new Date(),
+      };
+
+      payment.resolution = {
+        ownerAmount: ownerAmountValue,
+        renterAmount: parseFloat(renterAmount),
+        platformFee: platformFeeAmount,
+        ownerPayout: ownerPayout,
+        resolvedAt: new Date(),
+        resolvedBy: req.user.id,
+        notes: adminNotes.trim(),
+      };
+
+      await payment.save();
+      console.log("✅ Payment updated");
+
+      // Update rental status
+      rental.status = "closed";
+      rental.payment = rental.payment || {};
+      rental.payment.status = "completed";
+      rental.payment.releasedAt = new Date();
+      rental.disputeResolution = {
+        resolvedAt: new Date(),
+        resolvedBy: req.user.id,
+        resolutionType,
+        ownerAmount: ownerAmountValue,
+        renterAmount: parseFloat(renterAmount),
+        platformFee: platformFeeAmount,
+        ownerPayout: ownerPayout,
+        adminNotes: adminNotes.trim(),
+      };
+      await rental.save();
+      console.log("✅ Rental updated to closed");
+
+      // Set machine back to available
+      const Machine = require("../models/Machine");
+      await Machine.findByIdAndUpdate(rental.machineId._id, {
+        availability: "available",
+      });
+      console.log(`✅ Machine set back to available`);
+
+      // Prepare notification content
+      const { sendEmail } = require("../utils/notifications");
+      const { sendNotificationSMS } = require("../services/smsService");
+
+      const resolutionSummary = {
+        owner: `The owner will receive the full payment (minus 10% platform fee).`,
+        renter: "The renter will receive a full refund.",
+        split: `Payment split: Owner receives $${ownerPayout.toFixed(
+          2
+        )} (after 10% fee), Renter receives $${parseFloat(renterAmount).toFixed(
+          2
+        )} refund.`,
+      };
+
+      // ✅ Notify Owner
+      try {
+        await sendEmail({
+          to: rental.ownerId.email,
+          subject: "✅ Dispute Resolved - AgriRent",
+          html: `
+            <h2>✅ Dispute Resolved</h2>
+            <p>Hello ${rental.ownerId.firstName},</p>
+            <p>The dispute for <strong>${
+              rental.machineId.name
+            }</strong> has been resolved by our admin team.</p>
+            
+            <div style="background: #f3f4f6; padding: 20px; border-radius: 10px; margin: 20px 0;">
+              <h3 style="margin-top: 0;">💰 Resolution Details:</h3>
+              <p><strong>Total amount:</strong> $${ownerAmountValue.toFixed(
+                2
+              )}</p>
+              <p><strong>Platform fee (10%):</strong> -$${platformFeeAmount.toFixed(
+                2
+              )}</p>
+              <p><strong>Your payout:</strong> $${ownerPayout.toFixed(2)}</p>
+            </div>
+
+            <div style="background: #fef3c7; padding: 15px; border-left: 4px solid #f59e0b; margin: 20px 0;">
+              <p style="margin: 0;"><strong>📝 Admin Decision:</strong></p>
+              <p style="margin: 10px 0 0 0;">${adminNotes.trim()}</p>
+            </div>
+
+            ${
+              ownerPayout > 0
+                ? `<p>Your payment of $${ownerPayout.toFixed(
+                    2
+                  )} will be processed within 2-5 business days.</p>`
+                : `<p>No payment will be released for this rental.</p>`
+            }
+
+            <p>Thank you for using AgriRent!</p>
+            <p>Best regards,<br>AgriRent Team</p>
+          `,
+          text: `Dispute Resolved\n\nHello ${
+            rental.ownerId.firstName
+          },\n\nThe dispute for ${
+            rental.machineId.name
+          } has been resolved.\n\nYour payout: $${ownerPayout.toFixed(
+            2
+          )} (after 10% platform fee)\n\nAdmin Decision: ${adminNotes.trim()}\n\nThank you for using AgriRent!`,
+        });
+
+        if (sendNotificationSMS && rental.ownerId.phone) {
+          await sendNotificationSMS(
+            rental.ownerId.phone,
+            `AgriRent: Dispute resolved for ${
+              rental.machineId.name
+            }. You will receive $${ownerPayout.toFixed(
+              2
+            )} (after 10% fee). Check your email for details.`
+          );
+        }
+
+        console.log(`✅ Owner notified`);
+      } catch (error) {
+        console.error("❌ Owner notification error:", error.message);
+      }
+
+      // ✅ Notify Renter
+      try {
+        await sendEmail({
+          to: rental.renterId.email,
+          subject: "✅ Dispute Resolved - AgriRent",
+          html: `
+            <h2>✅ Dispute Resolved</h2>
+            <p>Hello ${rental.renterId.firstName},</p>
+            <p>The dispute for <strong>${
+              rental.machineId.name
+            }</strong> has been resolved by our admin team.</p>
+            
+            <div style="background: #f3f4f6; padding: 20px; border-radius: 10px; margin: 20px 0;">
+              <h3 style="margin-top: 0;">💰 Resolution Details:</h3>
+              <p><strong>Your refund:</strong> $${parseFloat(
+                renterAmount
+              ).toFixed(2)}</p>
+              <p><strong>Decision:</strong> ${
+                resolutionSummary[resolutionType]
+              }</p>
+            </div>
+
+            <div style="background: #fef3c7; padding: 15px; border-left: 4px solid #f59e0b; margin: 20px 0;">
+              <p style="margin: 0;"><strong>📝 Admin Decision:</strong></p>
+              <p style="margin: 10px 0 0 0;">${adminNotes.trim()}</p>
+            </div>
+
+            ${
+              parseFloat(renterAmount) > 0
+                ? `<p>Your refund of $${parseFloat(renterAmount).toFixed(
+                    2
+                  )} will be processed within 2-5 business days.</p>`
+                : `<p>No refund will be issued for this rental.</p>`
+            }
+
+            <p>Thank you for using AgriRent!</p>
+            <p>Best regards,<br>AgriRent Team</p>
+          `,
+          text: `Dispute Resolved\n\nHello ${
+            rental.renterId.firstName
+          },\n\nThe dispute for ${
+            rental.machineId.name
+          } has been resolved.\n\nYour refund: $${parseFloat(
+            renterAmount
+          ).toFixed(
+            2
+          )}\n\nAdmin Decision: ${adminNotes.trim()}\n\nThank you for using AgriRent!`,
+        });
+
+        if (sendNotificationSMS && rental.renterId.phone) {
+          await sendNotificationSMS(
+            rental.renterId.phone,
+            `AgriRent: Dispute resolved for ${
+              rental.machineId.name
+            }. You will receive $${parseFloat(renterAmount).toFixed(
+              2
+            )} refund. Check your email for details.`
+          );
+        }
+
+        console.log(`✅ Renter notified`);
+      } catch (error) {
+        console.error("❌ Renter notification error:", error.message);
+      }
+
+      console.log(`✅ Dispute resolved successfully`);
+
+      res.json({
+        success: true,
+        message:
+          "Dispute resolved successfully. Both parties have been notified.",
+        data: {
+          rental,
+          payment,
+          resolution: {
+            ownerAmount: ownerAmountValue,
+            platformFee: platformFeeAmount,
+            ownerPayout: ownerPayout,
+            renterAmount: parseFloat(renterAmount),
+            type: resolutionType,
+          },
+        },
+      });
+    } catch (error) {
+      console.error("❌ Resolve dispute error:", error);
+      res.status(500).json({
+        success: false,
+        message: "Failed to resolve dispute",
+        error: error.message,
+      });
+    }
+  }
+);
 
 module.exports = router;

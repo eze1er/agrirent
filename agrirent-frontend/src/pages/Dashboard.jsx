@@ -2483,7 +2483,7 @@ export default function Dashboard({ user: currentUser, onLogout }) {
         user.firstName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
         user.lastName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
         user.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        user.phoneNumber?.includes(searchTerm)
+        user.phone?.includes(searchTerm)
       );
     });
 
@@ -2727,10 +2727,10 @@ export default function Dashboard({ user: currentUser, onLogout }) {
                           📧 {rental.renterId?.email}
                         </a>
                         <a
-                          href={`tel:${rental.renterId?.phoneNumber}`}
+                          href={`tel:${rental.renterId?.phone}`}
                           className="text-green-600 text-xs block"
                         >
-                          📱 {rental.renterId?.phoneNumber || "N/A"}
+                          📱 {rental.renterId?.phone || "N/A"}
                         </a>
                       </div>
 
@@ -2749,10 +2749,10 @@ export default function Dashboard({ user: currentUser, onLogout }) {
                           📧 {rental.ownerId?.email}
                         </a>
                         <a
-                          href={`tel:${rental.ownerId?.phoneNumber}`}
+                          href={`tel:${rental.ownerId?.phone}`}
                           className="text-green-600 text-xs block"
                         >
-                          📱 {rental.ownerId?.phoneNumber || "N/A"}
+                          📱 {rental.ownerId?.phone || "N/A"}
                         </a>
                       </div>
                     </div>
@@ -2822,12 +2822,12 @@ export default function Dashboard({ user: currentUser, onLogout }) {
                         >
                           📧 {user.email}
                         </a>
-                        {user.phoneNumber && (
+                        {user.phone && (
                           <a
-                            href={`tel:${user.phoneNumber}`}
+                            href={`tel:${user.phone}`}
                             className="text-green-600 text-sm block"
                           >
-                            📱 {user.phoneNumber}
+                            📱 {user.phone}
                           </a>
                         )}
 

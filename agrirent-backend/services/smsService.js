@@ -13,17 +13,17 @@ const generateVerificationCode = () => {
 };
 
 // Send SMS verification code
-const sendVerificationSMS = async (phoneNumber, code, firstName) => {
+const sendVerificationSMS = async (phone, code, firstName) => {
   const message = `Hi ${firstName}! Your AgriRent verification code is: ${code}. Valid for 10 minutes.`;
 
   try {
     const result = await client.messages.create({
       body: message,
       from: process.env.TWILIO_PHONE_NUMBER,
-      to: phoneNumber
+      to: phone
     });
 
-    console.log('✅ SMS sent to:', phoneNumber, 'SID:', result.sid);
+    console.log('✅ SMS sent to:', phone, 'SID:', result.sid);
     return { success: true, sid: result.sid };
   } catch (error) {
     console.error('❌ Failed to send SMS:', error.message);
@@ -32,15 +32,15 @@ const sendVerificationSMS = async (phoneNumber, code, firstName) => {
 };
 
 // Send SMS notification (for rentals, payments, etc.)
-const sendNotificationSMS = async (phoneNumber, message) => {
+const sendNotificationSMS = async (phone, message) => {
   try {
     const result = await client.messages.create({
       body: message,
       from: process.env.TWILIO_PHONE_NUMBER,
-      to: phoneNumber
+      to: phone
     });
 
-    console.log('✅ Notification SMS sent to:', phoneNumber);
+    console.log('✅ Notification SMS sent to:', phone);
     return { success: true, sid: result.sid };
   } catch (error) {
     console.error('❌ Failed to send notification SMS:', error.message);

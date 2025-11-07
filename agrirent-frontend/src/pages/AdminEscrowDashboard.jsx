@@ -793,7 +793,7 @@ function RentalCard({ rental, onRelease, onReject, onViewDetails }) {
             </p>
             <p className="text-sm text-gray-600">{rental.ownerId?.email}</p>
             <p className="text-sm text-gray-600">
-              {rental.ownerId?.phoneNumber}
+              {rental.ownerId?.phone}
             </p>
           </div>
         </div>
@@ -1122,7 +1122,7 @@ function ReleaseModal({
             {rental.ownerId?.firstName} {rental.ownerId?.lastName}
           </p>
           <p className="text-sm text-gray-600">{rental.ownerId?.email}</p>
-          <p className="text-sm text-gray-600">{rental.ownerId?.phoneNumber}</p>
+          <p className="text-sm text-gray-600">{rental.ownerId?.phone}</p>
         </div>
 
         {/* Admin Verification Note */}

@@ -11,6 +11,7 @@ import PaymentSuccess from "./pages/PaymentSuccess";
 import { userAPI } from "./services/api";
 import { Elements } from "@stripe/react-stripe-js";
 import { loadStripe } from "@stripe/stripe-js";
+import AdminDisputeResolution from "./components/AdminDisputeResolution";
 
 // ✅ Stripe initialization with fallback
 const stripePromise = loadStripe(
@@ -280,6 +281,8 @@ function App() {
 
         {/* Catch all - redirect to home */}
         <Route path="*" element={<Navigate to="/" replace />} />
+        <Route path="/admin/disputes" element={<AdminDisputeResolution />} />
+        
       </Routes>
     </Elements>
   );
