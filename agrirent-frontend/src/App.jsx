@@ -6,12 +6,12 @@ import ForgotPassword from "./pages/ForgotPassword";
 import ResetPassword from "./pages/ResetPassword";
 import AdminEscrowDashboard from "./pages/AdminEscrowDashboard";
 import AdminDashboard from "./pages/AdminDashboard";
+import AdminDisputeResolution from "./pages/AdminDisputeResolution";
 import PhoneVerificationPage from "./pages/PhoneVerificationPage";
 import PaymentSuccess from "./pages/PaymentSuccess";
 import { userAPI } from "./services/api";
 import { Elements } from "@stripe/react-stripe-js";
 import { loadStripe } from "@stripe/stripe-js";
-import AdminDisputeResolution from "./components/AdminDisputeResolution";
 
 // ✅ Stripe initialization with fallback
 const stripePromise = loadStripe(
@@ -255,17 +255,15 @@ function App() {
         />
 
         {/* Admin Escrow Management */}
-        <Route
-          path="/admin/escrow"
-          element={
-            <ProtectedRoute adminOnly={true}>
-              <AdminEscrowDashboard
-                user={currentUser}
-                onLogout={handleLogout}
-              />
-            </ProtectedRoute>
-          }
-        />
+<Route 
+  path="/admin/escrow" 
+  element={
+    <AdminEscrowDashboard 
+      user={currentUser}  // or whatever your user state is called
+      onLogout={handleLogout} 
+    />
+  } 
+/>
 
         {/* Admin Root - Redirect to dashboard */}
         <Route

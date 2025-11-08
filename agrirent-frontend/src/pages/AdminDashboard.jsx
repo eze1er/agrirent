@@ -26,7 +26,8 @@ export default function AdminDashboard({ user, onLogout }) {
   const [stats, setStats] = useState(null);
   const [activeRentals, setActiveRentals] = useState([]);
   const [pendingRentals, setPendingRentals] = useState([]);
-  const [pendingReleases, setPendingReleases] = useState([]); // ✅ ADDED
+  const [pendingReleases, setPendingReleases] = useState([]);
+  const [disputes, setDisputes] = useState([]);
   const [allRentals, setAllRentals] = useState([]);
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -67,26 +68,30 @@ export default function AdminDashboard({ user, onLogout }) {
 
       console.log("🔍 Fetching dashboard data...");
 
-      const [overviewRes, activeRes, pendingRes, releasesRes] =
-        await Promise.all([
-          fetch(`${API_BASE}/admin/dashboard/overview`, {
-            headers: { Authorization: `Bearer ${token}` },
-          }),
-          fetch(`${API_BASE}/admin/rentals/active`, {
-            headers: { Authorization: `Bearer ${token}` },
-          }),
-          fetch(`${API_BASE}/admin/rentals/pending`, {
-            headers: { Authorization: `Bearer ${token}` },
-          }),
-          fetch(`${API_BASE}/rentals/admin/pending-release`, {
-            headers: { Authorization: `Bearer ${token}` },
-          }),
-        ]);
+      const [overviewRes, activeRes, pendingRes, releasesRes, disputesRes] =
+  await Promise.all([
+    fetch(`${API_BASE}/admin/dashboard/overview`, {
+      headers: { Authorization: `Bearer ${token}` },
+    }),
+    fetch(`${API_BASE}/admin/rentals/active`, {
+      headers: { Authorization: `Bearer ${token}` },
+    }),
+    fetch(`${API_BASE}/admin/rentals/pending`, {
+      headers: { Authorization: `Bearer ${token}` },
+    }),
+    fetch(`${API_BASE}/rentals/admin/pending-release`, {
+      headers: { Authorization: `Bearer ${token}` },
+    }),
+    fetch(`${API_BASE}/payments/admin/disputes`, {
+      headers: { Authorization: `Bearer ${token}` },
+    }),
+  ]);
 
-      const overview = await overviewRes.json();
-      const active = await activeRes.json();
-      const pending = await pendingRes.json();
-      const releases = await releasesRes.json();
+const overview = await overviewRes.json();
+const active = await activeRes.json();
+const pending = await pendingRes.json();
+const releases = await releasesRes.json();
+const disputesData = await disputesRes.json();
 
       console.log("✅ Overview:", overview.success);
       console.log("✅ Active rentals:", active.data?.length || 0);
@@ -96,6 +101,7 @@ export default function AdminDashboard({ user, onLogout }) {
       if (overview.success) setStats(overview.data);
       if (active.success) setActiveRentals(active.data);
       if (pending.success) setPendingRentals(pending.data);
+      if (disputesData.success) setDisputes(disputesData.data || []);
       if (releases.success) {
         const newCount = releases.data.length;
 
@@ -280,6 +286,7 @@ export default function AdminDashboard({ user, onLogout }) {
 
             {/* Desktop Navigation */}
             {/* Desktop Navigation */}
+{/* Desktop Navigation */}
             <div className="hidden md:flex items-center gap-4">
               <button
                 onClick={() => navigate("/admin/escrow")}
@@ -288,19 +295,23 @@ export default function AdminDashboard({ user, onLogout }) {
                 💰 Escrow Management
               </button>
 
-              {/* ✅ ADD THIS DISPUTE BUTTON */}
               <button
                 onClick={() => navigate("/admin/disputes")}
                 className="px-4 py-2 bg-orange-500 hover:bg-orange-600 rounded-lg transition font-semibold relative"
               >
                 ⚠️ Disputes
-                {/* You can add a count badge here later if needed */}
+                {disputes?.length > 0 && (
+                  <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs font-bold rounded-full w-5 h-5 flex items-center justify-center">
+                    {disputes.length}
+                  </span>
+                )}
               </button>
 
               <div className="flex items-center gap-2 px-4 py-2 bg-white/10 rounded-lg">
                 <User size={20} />
                 <span className="font-semibold">{user?.email}</span>
               </div>
+              
               <button
                 onClick={handleLogoutClick}
                 className="flex items-center gap-2 px-4 py-2 bg-red-500 hover:bg-red-600 rounded-lg transition font-semibold"
@@ -320,6 +331,7 @@ export default function AdminDashboard({ user, onLogout }) {
           </div>
 
           {/* Mobile Menu */}
+{/* Mobile Menu */}
           {showMobileMenu && (
             <div className="md:hidden mt-4 pb-4 space-y-2">
               <button
@@ -331,20 +343,24 @@ export default function AdminDashboard({ user, onLogout }) {
               >
                 💰 Escrow Management
               </button>
+              
+              <button
+                onClick={() => {
+                  navigate("/admin/disputes");
+                  setShowMobileMenu(false);
+                }}
+                className="w-full px-4 py-2 bg-orange-500 hover:bg-orange-600 rounded-lg transition font-semibold text-left relative"
+              >
+                ⚠️ Disputes
+                {disputes?.length > 0 && (
+                  <span className="absolute top-2 right-2 bg-red-500 text-white text-xs font-bold rounded-full w-5 h-5 flex items-center justify-center">
+                    {disputes.length}
+                  </span>
+                )}
+              </button>
+              
               <div className="px-4 py-2 bg-white/10 rounded-lg">
-                // Add this to your admin navigation
-                <Link
-                  to="/admin/disputes"
-                  className="flex items-center gap-2 px-4 py-3 bg-orange-100 text-orange-800 rounded-xl font-semibold hover:bg-orange-200 transition"
-                >
-                  <span>⚠️</span>
-                  <span>Dispute Management</span>
-                  {disputeCount > 0 && (
-                    <span className="ml-auto bg-orange-500 text-white rounded-full w-6 h-6 flex items-center justify-center text-xs">
-                      {disputeCount}
-                    </span>
-                  )}
-                </Link>
+                <p className="text-sm font-semibold">{user?.email}</p>
               </div>
 
               <button

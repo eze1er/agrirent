@@ -286,34 +286,29 @@ const RentalActionsComponent = ({ rental, currentUser, onUpdate }) => {
       {/* ========================================
           WAITING STATES
           ======================================== */}
-
-      {/* Owner confirmed, waiting for renter */}
-      {isOwner &&
-        rental.status === "completed" &&
+      {isRenter &&
+        rental.status === "active" &&
         rental.ownerConfirmedCompletion &&
         !rental.renterConfirmedCompletion && (
           <div className="action-card waiting-state">
-            <h3>⏳ Waiting for Renter Confirmation</h3>
+            <h3>⏳ Renter Confirmation Needed</h3>
             <p>
-              You've marked the job as completed on{" "}
-              {rental.ownerConfirmedAt
-                ? new Date(rental.ownerConfirmedAt).toLocaleDateString()
-                : "today"}
-              .
+              The owner has marked this job as completed. Please review and confirm.
             </p>
-            <p>
-              The renter will confirm completion, then payment will be released
-              to you.
-            </p>
+            {rental.ownerConfirmedAt && (
+              <p className="highlight-box">
+                📋 <strong>Owner completed on:</strong>{" "}
+                {new Date(rental.ownerConfirmedAt).toLocaleDateString()}
+              </p>
+            )}
             {rental.ownerConfirmationNote && (
               <div className="info-box">
-                📝 <strong>Your note:</strong> {rental.ownerConfirmationNote}
+                📝 <strong>Owner's note:</strong> {rental.ownerConfirmationNote}
               </div>
             )}
-            <div className="info-box">
-              💰 <strong>Amount to receive:</strong> $
-              {rental.pricing?.totalPrice?.toFixed(2)}
-            </div>
+            <p style={{ marginTop: "15px", fontSize: "14px", color: "#6b7280" }}>
+              You'll be able to confirm once the status updates to "completed"
+            </p>
           </div>
         )}
 
