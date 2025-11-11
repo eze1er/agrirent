@@ -69,29 +69,29 @@ export default function AdminDashboard({ user, onLogout }) {
       console.log("🔍 Fetching dashboard data...");
 
       const [overviewRes, activeRes, pendingRes, releasesRes, disputesRes] =
-  await Promise.all([
-    fetch(`${API_BASE}/admin/dashboard/overview`, {
-      headers: { Authorization: `Bearer ${token}` },
-    }),
-    fetch(`${API_BASE}/admin/rentals/active`, {
-      headers: { Authorization: `Bearer ${token}` },
-    }),
-    fetch(`${API_BASE}/admin/rentals/pending`, {
-      headers: { Authorization: `Bearer ${token}` },
-    }),
-    fetch(`${API_BASE}/rentals/admin/pending-release`, {
-      headers: { Authorization: `Bearer ${token}` },
-    }),
-    fetch(`${API_BASE}/payments/admin/disputes`, {
-      headers: { Authorization: `Bearer ${token}` },
-    }),
-  ]);
+        await Promise.all([
+          fetch(`${API_BASE}/admin/dashboard/overview`, {
+            headers: { Authorization: `Bearer ${token}` },
+          }),
+          fetch(`${API_BASE}/admin/rentals/active`, {
+            headers: { Authorization: `Bearer ${token}` },
+          }),
+          fetch(`${API_BASE}/admin/rentals/pending`, {
+            headers: { Authorization: `Bearer ${token}` },
+          }),
+          fetch(`${API_BASE}/rentals/admin/pending-release`, {
+            headers: { Authorization: `Bearer ${token}` },
+          }),
+          fetch(`${API_BASE}/payments/admin/disputes`, {
+            headers: { Authorization: `Bearer ${token}` },
+          }),
+        ]);
 
-const overview = await overviewRes.json();
-const active = await activeRes.json();
-const pending = await pendingRes.json();
-const releases = await releasesRes.json();
-const disputesData = await disputesRes.json();
+      const overview = await overviewRes.json();
+      const active = await activeRes.json();
+      const pending = await pendingRes.json();
+      const releases = await releasesRes.json();
+      const disputesData = await disputesRes.json();
 
       console.log("✅ Overview:", overview.success);
       console.log("✅ Active rentals:", active.data?.length || 0);
@@ -101,7 +101,13 @@ const disputesData = await disputesRes.json();
       if (overview.success) setStats(overview.data);
       if (active.success) setActiveRentals(active.data);
       if (pending.success) setPendingRentals(pending.data);
-      if (disputesData.success) setDisputes(disputesData.data || []);
+      if (disputesData.success) {
+        // Only count rentals with status "disputed"
+        const activeDisputes = (disputesData.data || []).filter(
+          (rental) => rental.status === "disputed"
+        );
+        setDisputes(activeDisputes);
+      }
       if (releases.success) {
         const newCount = releases.data.length;
 
@@ -286,7 +292,7 @@ const disputesData = await disputesRes.json();
 
             {/* Desktop Navigation */}
             {/* Desktop Navigation */}
-{/* Desktop Navigation */}
+            {/* Desktop Navigation */}
             <div className="hidden md:flex items-center gap-4">
               <button
                 onClick={() => navigate("/admin/escrow")}
@@ -307,11 +313,6 @@ const disputesData = await disputesRes.json();
                 )}
               </button>
 
-              <div className="flex items-center gap-2 px-4 py-2 bg-white/10 rounded-lg">
-                <User size={20} />
-                <span className="font-semibold">{user?.email}</span>
-              </div>
-              
               <button
                 onClick={handleLogoutClick}
                 className="flex items-center gap-2 px-4 py-2 bg-red-500 hover:bg-red-600 rounded-lg transition font-semibold"
@@ -331,7 +332,7 @@ const disputesData = await disputesRes.json();
           </div>
 
           {/* Mobile Menu */}
-{/* Mobile Menu */}
+          {/* Mobile Menu */}
           {showMobileMenu && (
             <div className="md:hidden mt-4 pb-4 space-y-2">
               <button
@@ -343,7 +344,7 @@ const disputesData = await disputesRes.json();
               >
                 💰 Escrow Management
               </button>
-              
+
               <button
                 onClick={() => {
                   navigate("/admin/disputes");
@@ -358,7 +359,7 @@ const disputesData = await disputesRes.json();
                   </span>
                 )}
               </button>
-              
+
               <div className="px-4 py-2 bg-white/10 rounded-lg">
                 <p className="text-sm font-semibold">{user?.email}</p>
               </div>

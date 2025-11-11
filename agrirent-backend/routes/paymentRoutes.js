@@ -27,6 +27,12 @@ const requireStripe = (req, res, next) => {
   next();
 };
 
+// refundResult = await orangeMoneyService.refund({
+//   transactionId: payment.transactionId,
+//   amount: renterAmountValue,
+//   phone: rental.renterId.phone,
+//   reference: `REFUND-${rentalId}`,
+// });
 // TEST ROUTE
 router.get("/test", (req, res) => {
   res.json({
@@ -330,6 +336,11 @@ router.get(
 // ============================================
 // ADMIN: GET PENDING PAYMENTS FOR ESCROW DASHBOARD
 // ============================================
+// ============================================
+// ADMIN: GET PENDING PAYMENTS FOR ESCROW DASHBOARD - COMPLETE FIXED VERSION
+// ============================================
+// Replace your existing /admin/pending-payments route with this
+
 router.get("/admin/pending-payments", protect, async (req, res) => {
   try {
     // Check if user is admin
@@ -428,10 +439,19 @@ router.get("/admin/pending-payments", protect, async (req, res) => {
       }`
     );
 
+    // ✅ NEW: Calculate stats for frontend
+    const stats = calculateStats(rentalsWithPayments);
+    console.log("📤 Sending response:", {
+      success: true,
+      dataCount: rentalsWithPayments.length,
+      statsIncluded: !!stats,
+      statsKeys: stats ? Object.keys(stats) : [],
+    });
     res.json({
       success: true,
       data: rentalsWithPayments,
       count: rentalsWithPayments.length,
+      stats: stats, // ✅ ADD STATS
     });
   } catch (error) {
     console.error("❌ Error fetching pending payments:", error);
@@ -441,6 +461,235 @@ router.get("/admin/pending-payments", protect, async (req, res) => {
     });
   }
 });
+
+function calculateStats(rentals) {
+  const stats = {
+    totalInEscrow: 0,
+    pendingApproval: 0,
+    completedPayments: 0,
+    disputedPayments: 0,
+    totalRevenue: 0,
+    platformFees: 0,
+    ownerPayouts: 0,
+    renterRefunds: 0,
+  };
+
+  if (!rentals || !Array.isArray(rentals)) return stats;
+
+  rentals.forEach((rental) => {
+    const amount = Number(
+      rental.pricing?.totalPrice || rental.payment?.amount || 0
+    );
+
+    // For rentals in escrow
+    if (rental.payment?.status === "held_in_escrow") {
+      stats.totalInEscrow += amount;
+
+      if (
+        rental.status === "released" &&
+        rental.ownerConfirmedCompletion &&
+        rental.renterConfirmedCompletion
+      ) {
+        stats.pendingApproval += 1;
+      }
+    }
+
+    // ✅ CORRECTED: For completed/closed rentals
+    if (rental.payment?.status === "completed" || rental.status === "closed") {
+      stats.completedPayments += 1;
+      stats.totalRevenue += amount;
+
+      // ✅ FIXED: Check if this was a dispute resolution
+      if (rental.disputeResolution) {
+        // This rental had a dispute - use actual resolution amounts
+        console.log(`💰 Dispute resolution found for rental ${rental._id}`);
+
+        // Owner payout from dispute resolution
+        if (rental.disputeResolution.ownerPayout !== undefined) {
+          stats.ownerPayouts += rental.disputeResolution.ownerPayout;
+          console.log(
+            `   Owner payout: $${rental.disputeResolution.ownerPayout.toFixed(
+              2
+            )}`
+          );
+        }
+
+        // Renter refund from dispute resolution
+        if (rental.disputeResolution.renterAmount !== undefined) {
+          stats.renterRefunds += rental.disputeResolution.renterAmount;
+          console.log(
+            `   Renter refund: $${rental.disputeResolution.renterAmount.toFixed(
+              2
+            )}`
+          );
+        }
+
+        // Platform fee from dispute resolution
+        if (rental.disputeResolution.platformFee !== undefined) {
+          stats.platformFees += rental.disputeResolution.platformFee;
+          console.log(
+            `   Platform fee: $${rental.disputeResolution.platformFee.toFixed(
+              2
+            )}`
+          );
+        }
+      } else {
+        // Normal rental - no dispute
+        // Use stored values if available, otherwise calculate
+        if (rental.payment?.ownerPayout !== undefined) {
+          stats.ownerPayouts += rental.payment.ownerPayout;
+        } else {
+          // Default: 90% goes to owner
+          const platformFee = amount * 0.1;
+          const ownerPayout = amount - platformFee;
+          stats.ownerPayouts += ownerPayout;
+        }
+
+        // Platform fee
+        if (rental.payment?.platformFee !== undefined) {
+          stats.platformFees += rental.payment.platformFee;
+        } else {
+          stats.platformFees += amount * 0.1;
+        }
+      }
+    }
+
+    // Disputed payments
+    if (rental.status === "disputed") {
+      stats.disputedPayments += 1;
+    }
+  });
+
+  console.log("\n📊 ===== BACKEND CALCULATED STATS =====");
+  console.log(`   Total in Escrow: $${stats.totalInEscrow.toFixed(2)}`);
+  console.log(`   Owner Payouts: $${stats.ownerPayouts.toFixed(2)}`);
+  console.log(`   Renter Refunds: $${stats.renterRefunds.toFixed(2)}`);
+  console.log(`   Platform Fees: $${stats.platformFees.toFixed(2)}`);
+  console.log(`   Total Revenue: $${stats.totalRevenue.toFixed(2)}`);
+  console.log(`   Completed Payments: ${stats.completedPayments}`);
+  console.log(`   Pending Approval: ${stats.pendingApproval}`);
+  console.log(`   Disputed: ${stats.disputedPayments}`);
+  console.log("======================================\n");
+
+  return stats;
+}
+
+// ✅ NEW FUNCTION: Add this RIGHT AFTER the route above
+function calculateStats(rentals) {
+  const stats = {
+    totalInEscrow: 0,
+    pendingApproval: 0,
+    completedPayments: 0,
+    disputedPayments: 0,
+    totalRevenue: 0,
+    platformFees: 0,
+    ownerPayouts: 0,
+    renterRefunds: 0, // ✅ NEW
+    rentals: rentals,
+  };
+
+  if (!rentals || !Array.isArray(rentals)) return stats;
+
+  rentals.forEach((rental) => {
+    const amount = Number(
+      rental.pricing?.totalPrice || rental.payment?.amount || 0
+    );
+
+    // For rentals in escrow
+    if (rental.payment?.status === "held_in_escrow") {
+      stats.totalInEscrow += amount;
+
+      if (
+        rental.status === "released" &&
+        rental.ownerConfirmedCompletion &&
+        rental.renterConfirmedCompletion
+      ) {
+        stats.pendingApproval += 1;
+      }
+    }
+
+    // ✅ CORRECTED: For completed/closed rentals
+    if (rental.payment?.status === "completed" || rental.status === "closed") {
+      stats.completedPayments += 1;
+      stats.totalRevenue += amount;
+
+      // ✅ FIXED: Check if this was a dispute resolution
+      if (rental.disputeResolution) {
+        // This rental had a dispute - use actual resolution amounts
+        console.log(`💰 Dispute resolution found for rental ${rental._id}`);
+
+        // Owner payout from dispute resolution
+        if (rental.disputeResolution.ownerPayout !== undefined) {
+          stats.ownerPayouts += rental.disputeResolution.ownerPayout;
+          console.log(
+            `   Owner payout: $${rental.disputeResolution.ownerPayout.toFixed(
+              2
+            )}`
+          );
+        }
+
+        // Renter refund from dispute resolution
+        if (rental.disputeResolution.renterAmount !== undefined) {
+          stats.renterRefunds += rental.disputeResolution.renterAmount;
+          console.log(
+            `   Renter refund: $${rental.disputeResolution.renterAmount.toFixed(
+              2
+            )}`
+          );
+        }
+
+        // Platform fee from dispute resolution
+        if (rental.disputeResolution.platformFee !== undefined) {
+          stats.platformFees += rental.disputeResolution.platformFee;
+          console.log(
+            `   Platform fee: $${rental.disputeResolution.platformFee.toFixed(
+              2
+            )}`
+          );
+        }
+      } else {
+        // Normal rental - no dispute
+        // Use stored values if available, otherwise calculate
+        if (rental.payment?.ownerPayout !== undefined) {
+          stats.ownerPayouts += rental.payment.ownerPayout;
+        } else {
+          // Default: 90% goes to owner
+          const platformFee = amount * 0.1;
+          const ownerPayout = amount - platformFee;
+          stats.ownerPayouts += ownerPayout;
+        }
+
+        // Platform fee
+        if (rental.payment?.platformFee !== undefined) {
+          stats.platformFees += rental.payment.platformFee;
+        } else {
+          stats.platformFees += amount * 0.1;
+        }
+
+        // No refund for normal rentals
+        stats.renterRefunds += 0;
+      }
+    }
+
+    // Disputed payments
+    if (rental.status === "disputed") {
+      stats.disputedPayments += 1;
+    }
+  });
+
+  console.log("\n📊 ===== CALCULATED STATS =====");
+  console.log(`   Total in Escrow: $${stats.totalInEscrow.toFixed(2)}`);
+  console.log(`   Owner Payouts: $${stats.ownerPayouts.toFixed(2)}`);
+  console.log(`   Renter Refunds: $${stats.renterRefunds.toFixed(2)}`);
+  console.log(`   Platform Fees: $${stats.platformFees.toFixed(2)}`);
+  console.log(`   Total Revenue: $${stats.totalRevenue.toFixed(2)}`);
+  console.log(`   Completed Payments: ${stats.completedPayments}`);
+  console.log(`   Pending Approval: ${stats.pendingApproval}`);
+  console.log(`   Disputed: ${stats.disputedPayments}`);
+  console.log("================================\n");
+
+  return stats;
+}
 // Get all rentals (admin only)
 router.get("/admin/all", protect, async (req, res) => {
   try {
@@ -998,6 +1247,42 @@ router.get(
   authorize("admin"),
   async (req, res) => {
     try {
+      console.log("📊 Calculating admin dashboard stats...");
+
+      // ✅ CORRECTED: Calculate actual payouts and refunds
+      const payments = await Payment.find({
+        escrowStatus: "released",
+        status: "completed",
+      }).lean();
+
+      let ownerPayoutsTotal = 0;
+      let renterRefundsTotal = 0;
+      let platformFeesTotal = 0;
+      let completedCount = 0;
+
+      payments.forEach((payment) => {
+        completedCount++;
+
+        // ✅ Add owner payout (if exists)
+        if (payment.payout && payment.payout.amount) {
+          ownerPayoutsTotal += payment.payout.amount;
+        }
+
+        // ✅ Add renter refund (if exists)
+        if (payment.refund && payment.refund.amount) {
+          renterRefundsTotal += payment.refund.amount;
+        }
+
+        // ✅ Add platform fee (if exists)
+        if (payment.platformFee && payment.platformFee.amount) {
+          platformFeesTotal += payment.platformFee.amount;
+        }
+      });
+
+      console.log(`💰 Owner Payouts: $${ownerPayoutsTotal.toFixed(2)}`);
+      console.log(`💰 Renter Refunds: $${renterRefundsTotal.toFixed(2)}`);
+      console.log(`💰 Platform Fees: $${platformFeesTotal.toFixed(2)}`);
+
       // Total held in escrow
       const escrowStats = await Payment.aggregate([
         { $match: { escrowStatus: "held" } },
@@ -1010,19 +1295,6 @@ router.get(
         },
       ]);
 
-      // Total released
-      const releasedStats = await Payment.aggregate([
-        { $match: { escrowStatus: "released" } },
-        {
-          $group: {
-            _id: null,
-            totalReleased: { $sum: "$amount" },
-            totalFees: { $sum: "$platformFee.amount" },
-            count: { $sum: 1 },
-          },
-        },
-      ]);
-
       // Pending confirmations
       const pendingCount = await Payment.countDocuments({
         escrowStatus: "held",
@@ -1030,7 +1302,7 @@ router.get(
         "confirmations.adminVerified": { $ne: true },
       });
 
-      // All payments summary
+      // All payments summary by status
       const allPayments = await Payment.aggregate([
         {
           $group: {
@@ -1045,10 +1317,12 @@ router.get(
         success: true,
         data: {
           escrow: escrowStats[0] || { totalHeld: 0, count: 0 },
-          released: releasedStats[0] || {
-            totalReleased: 0,
-            totalFees: 0,
-            count: 0,
+          released: {
+            ownerPayouts: ownerPayoutsTotal,
+            renterRefunds: renterRefundsTotal,
+            platformFees: platformFeesTotal,
+            totalReleased: ownerPayoutsTotal + renterRefundsTotal,
+            count: completedCount,
           },
           pendingReleases: pendingCount,
           summary: allPayments,
@@ -2683,6 +2957,11 @@ router.get("/admin/disputes", protect, authorize("admin"), async (req, res) => {
 });
 
 // Admin resolves dispute
+// ============================================
+// ADMIN: RESOLVE DISPUTE - WITH ACTUAL REFUNDS
+// ============================================
+// Replace the existing /resolve-dispute/:rentalId route with this updated version
+
 router.post(
   "/resolve-dispute/:rentalId",
   protect,
@@ -2724,7 +3003,7 @@ router.post(
       // Get rental with all details
       const rental = await Rental.findById(rentalId)
         .populate("renterId", "firstName lastName email phone")
-        .populate("ownerId", "firstName lastName email phone")
+        .populate("ownerId", "firstName lastName email phone mobileMoneyInfo")
         .populate("machineId", "name");
 
       if (!rental) {
@@ -2755,8 +3034,9 @@ router.post(
         });
       }
 
-      // ✅ Calculate platform fee (10% of owner's amount)
+      // Calculate platform fee (10% of owner's amount)
       const ownerAmountValue = parseFloat(ownerAmount);
+      const renterAmountValue = parseFloat(renterAmount);
       const platformFeePercent = 10;
       const platformFeeAmount = (ownerAmountValue * platformFeePercent) / 100;
       const ownerPayout = ownerAmountValue - platformFeeAmount;
@@ -2764,7 +3044,7 @@ router.post(
       console.log(`💰 Owner amount: $${ownerAmountValue.toFixed(2)}`);
       console.log(`💰 Platform fee (10%): $${platformFeeAmount.toFixed(2)}`);
       console.log(`💰 Owner payout (90%): $${ownerPayout.toFixed(2)}`);
-      console.log(`💰 Renter refund: $${parseFloat(renterAmount).toFixed(2)}`);
+      console.log(`💰 Renter refund: $${renterAmountValue.toFixed(2)}`);
 
       // Get payment record
       const payment = await Payment.findOne({ rentalId });
@@ -2775,7 +3055,137 @@ router.post(
         });
       }
 
-      // ✅ FIXED: Use 'released' instead of 'resolved'
+      // ✅ CRITICAL: Process actual refund based on payment method
+      const paymentMethod =
+        payment.method || rental.payment?.method || "stripe";
+      console.log(`💳 Original payment method: ${paymentMethod}`);
+
+      let refundResult = null;
+      let refundError = null;
+
+      // ✅ Process refund to renter if amount > 0
+      if (renterAmountValue > 0) {
+        console.log(
+          `🔄 Processing $${renterAmountValue.toFixed(
+            2
+          )} refund via ${paymentMethod}...`
+        );
+
+        try {
+          switch (paymentMethod) {
+            case "stripe":
+              // ✅ STRIPE REFUND
+              if (!stripe) {
+                throw new Error("Stripe not configured");
+              }
+
+              const paymentIntentId =
+                payment.transactionId || rental.payment?.transactionId;
+              if (!paymentIntentId) {
+                throw new Error("No Stripe payment intent found");
+              }
+
+              console.log(`💳 Refunding Stripe payment: ${paymentIntentId}`);
+
+              refundResult = await stripe.refunds.create({
+                payment_intent: paymentIntentId,
+                amount: Math.round(renterAmountValue * 100), // Stripe uses cents
+                reason: "requested_by_customer",
+                metadata: {
+                  rentalId: rentalId,
+                  disputeResolution: "admin",
+                  resolutionType: resolutionType,
+                },
+              });
+
+              console.log(`✅ Stripe refund successful: ${refundResult.id}`);
+              break;
+
+            case "orange_money":
+              // ✅ ORANGE MONEY REFUND
+              console.log(`🟠 Processing Orange Money refund...`);
+
+              // TODO: Implement Orange Money refund API call
+              // Example:
+              // refundResult = await orangeMoneyService.refund({
+              //   transactionId: payment.transactionId,
+              //   amount: renterAmountValue,
+              //   phone: rental.renterId.phone,
+              //   reason: "Dispute resolved - refund"
+              // });
+
+              console.log(
+                `⚠️ Orange Money refund - manual processing required`
+              );
+              refundResult = {
+                status: "pending_manual",
+                message: "Orange Money refunds require manual processing",
+                method: "orange_money",
+                amount: renterAmountValue,
+              };
+              break;
+
+            case "mtn":
+            case "mtn_money":
+              // ✅ MTN MONEY REFUND
+              console.log(`📱 Processing MTN Money refund...`);
+
+              // TODO: Implement MTN Money refund API call
+              // Example:
+              // refundResult = await mtnMoneyService.refund({
+              //   transactionId: payment.transactionId,
+              //   amount: renterAmountValue,
+              //   phone: rental.renterId.phone,
+              // });
+
+              console.log(`⚠️ MTN Money refund - manual processing required`);
+              refundResult = {
+                status: "pending_manual",
+                message: "MTN Money refunds require manual processing",
+                method: "mtn_money",
+                amount: renterAmountValue,
+              };
+              break;
+
+            case "moov":
+            case "moov_money":
+              // ✅ MOOV MONEY REFUND
+              console.log(`💚 Processing Moov Money refund...`);
+
+              // TODO: Implement Moov Money refund API call
+              console.log(`⚠️ Moov Money refund - manual processing required`);
+              refundResult = {
+                status: "pending_manual",
+                message: "Moov Money refunds require manual processing",
+                method: "moov_money",
+                amount: renterAmountValue,
+              };
+              break;
+
+            default:
+              console.log(`⚠️ Unknown payment method: ${paymentMethod}`);
+              refundResult = {
+                status: "pending_manual",
+                message: `Unknown payment method: ${paymentMethod}. Manual refund required.`,
+                method: paymentMethod,
+                amount: renterAmountValue,
+              };
+          }
+        } catch (error) {
+          console.error(`❌ Refund error:`, error);
+          refundError = error.message;
+
+          // Don't fail the whole resolution, but mark refund as pending
+          refundResult = {
+            status: "failed",
+            error: error.message,
+            amount: renterAmountValue,
+            method: paymentMethod,
+          };
+        }
+      }
+
+      // ✅ Update payment record
       payment.escrowStatus = "released";
       payment.status = "completed";
       payment.dispute = payment.dispute || {};
@@ -2785,23 +3195,39 @@ router.post(
       payment.dispute.adminNotes = adminNotes.trim();
       payment.dispute.status = "resolved";
 
-      // ✅ Add platform fee
+      // ✅ Store refund info
+      if (renterAmountValue > 0) {
+        payment.refund = {
+          amount: renterAmountValue,
+          method: paymentMethod,
+          status:
+            refundResult?.status === "succeeded" ? "completed" : "pending",
+          refundedAt: refundResult?.status === "succeeded" ? new Date() : null,
+          transactionId: refundResult?.id || refundResult?.transactionId,
+          details: refundResult,
+          error: refundError,
+        };
+      }
+
+      // ✅ Store platform fee and payout
       payment.platformFee = {
         percentage: platformFeePercent,
         amount: platformFeeAmount,
         deductedAt: new Date(),
       };
 
-      // ✅ Add payout info
-      payment.payout = {
-        amount: ownerPayout,
-        status: "completed",
-        payoutAt: new Date(),
-      };
+      if (ownerPayout > 0) {
+        payment.payout = {
+          amount: ownerPayout,
+          status: "pending", // Will be processed by normal payout flow
+          method: rental.ownerId.mobileMoneyInfo?.provider || "manual",
+          payoutAt: null,
+        };
+      }
 
       payment.resolution = {
         ownerAmount: ownerAmountValue,
-        renterAmount: parseFloat(renterAmount),
+        renterAmount: renterAmountValue,
         platformFee: platformFeeAmount,
         ownerPayout: ownerPayout,
         resolvedAt: new Date(),
@@ -2822,10 +3248,12 @@ router.post(
         resolvedBy: req.user.id,
         resolutionType,
         ownerAmount: ownerAmountValue,
-        renterAmount: parseFloat(renterAmount),
+        renterAmount: renterAmountValue,
         platformFee: platformFeeAmount,
         ownerPayout: ownerPayout,
         adminNotes: adminNotes.trim(),
+        refundStatus: refundResult?.status || "pending",
+        refundMethod: paymentMethod,
       };
       await rental.save();
       console.log("✅ Rental updated to closed");
@@ -2837,22 +3265,23 @@ router.post(
       });
       console.log(`✅ Machine set back to available`);
 
-      // Prepare notification content
+      // ✅ Enhanced notifications with refund status
       const { sendEmail } = require("../utils/notifications");
       const { sendNotificationSMS } = require("../services/smsService");
 
-      const resolutionSummary = {
-        owner: `The owner will receive the full payment (minus 10% platform fee).`,
-        renter: "The renter will receive a full refund.",
-        split: `Payment split: Owner receives $${ownerPayout.toFixed(
-          2
-        )} (after 10% fee), Renter receives $${parseFloat(renterAmount).toFixed(
-          2
-        )} refund.`,
-      };
-
-      // ✅ Notify Owner
+      // Notify Owner
       try {
+        const ownerMessage =
+          ownerPayout > 0
+            ? `Your payout of $${ownerPayout.toFixed(
+                2
+              )} will be processed within 2-5 business days${
+                rental.ownerId.mobileMoneyInfo?.provider
+                  ? ` via ${rental.ownerId.mobileMoneyInfo.provider}`
+                  : ""
+              }.`
+            : "No payment will be released for this rental.";
+
         await sendEmail({
           to: rental.ownerId.email,
           subject: "✅ Dispute Resolved - AgriRent",
@@ -2861,17 +3290,19 @@ router.post(
             <p>Hello ${rental.ownerId.firstName},</p>
             <p>The dispute for <strong>${
               rental.machineId.name
-            }</strong> has been resolved by our admin team.</p>
+            }</strong> has been resolved.</p>
             
             <div style="background: #f3f4f6; padding: 20px; border-radius: 10px; margin: 20px 0;">
-              <h3 style="margin-top: 0;">💰 Resolution Details:</h3>
+              <h3 style="margin-top: 0;">💰 Your Payout:</h3>
               <p><strong>Total amount:</strong> $${ownerAmountValue.toFixed(
                 2
               )}</p>
               <p><strong>Platform fee (10%):</strong> -$${platformFeeAmount.toFixed(
                 2
               )}</p>
-              <p><strong>Your payout:</strong> $${ownerPayout.toFixed(2)}</p>
+              <p style="font-size: 20px; color: #059669;"><strong>You receive: $${ownerPayout.toFixed(
+                2
+              )}</strong></p>
             </div>
 
             <div style="background: #fef3c7; padding: 15px; border-left: 4px solid #f59e0b; margin: 20px 0;">
@@ -2879,44 +3310,45 @@ router.post(
               <p style="margin: 10px 0 0 0;">${adminNotes.trim()}</p>
             </div>
 
-            ${
-              ownerPayout > 0
-                ? `<p>Your payment of $${ownerPayout.toFixed(
-                    2
-                  )} will be processed within 2-5 business days.</p>`
-                : `<p>No payment will be released for this rental.</p>`
-            }
-
+            <p>${ownerMessage}</p>
             <p>Thank you for using AgriRent!</p>
-            <p>Best regards,<br>AgriRent Team</p>
           `,
-          text: `Dispute Resolved\n\nHello ${
-            rental.ownerId.firstName
-          },\n\nThe dispute for ${
-            rental.machineId.name
-          } has been resolved.\n\nYour payout: $${ownerPayout.toFixed(
-            2
-          )} (after 10% platform fee)\n\nAdmin Decision: ${adminNotes.trim()}\n\nThank you for using AgriRent!`,
         });
 
         if (sendNotificationSMS && rental.ownerId.phone) {
           await sendNotificationSMS(
             rental.ownerId.phone,
-            `AgriRent: Dispute resolved for ${
-              rental.machineId.name
-            }. You will receive $${ownerPayout.toFixed(
+            `AgriRent: Dispute resolved. You will receive $${ownerPayout.toFixed(
               2
-            )} (after 10% fee). Check your email for details.`
+            )} (after 10% fee). Check email for details.`
           );
         }
-
         console.log(`✅ Owner notified`);
       } catch (error) {
         console.error("❌ Owner notification error:", error.message);
       }
 
-      // ✅ Notify Renter
+      // Notify Renter with refund status
       try {
+        let renterMessage = "";
+        if (renterAmountValue > 0) {
+          if (refundResult?.status === "succeeded") {
+            renterMessage = `Your refund of $${renterAmountValue.toFixed(
+              2
+            )} has been processed to your ${paymentMethod.toUpperCase()} account and should appear within 5-10 business days.`;
+          } else if (refundResult?.status === "pending_manual") {
+            renterMessage = `Your refund of $${renterAmountValue.toFixed(
+              2
+            )} will be processed manually within 2-5 business days to your ${paymentMethod.toUpperCase()} account.`;
+          } else {
+            renterMessage = `Your refund of $${renterAmountValue.toFixed(
+              2
+            )} is being processed. You will receive it via ${paymentMethod.toUpperCase()}.`;
+          }
+        } else {
+          renterMessage = "No refund will be issued for this rental.";
+        }
+
         await sendEmail({
           to: rental.renterId.email,
           subject: "✅ Dispute Resolved - AgriRent",
@@ -2925,15 +3357,18 @@ router.post(
             <p>Hello ${rental.renterId.firstName},</p>
             <p>The dispute for <strong>${
               rental.machineId.name
-            }</strong> has been resolved by our admin team.</p>
+            }</strong> has been resolved.</p>
             
-            <div style="background: #f3f4f6; padding: 20px; border-radius: 10px; margin: 20px 0;">
-              <h3 style="margin-top: 0;">💰 Resolution Details:</h3>
-              <p><strong>Your refund:</strong> $${parseFloat(
-                renterAmount
-              ).toFixed(2)}</p>
-              <p><strong>Decision:</strong> ${
-                resolutionSummary[resolutionType]
+            <div style="background: #eff6ff; padding: 20px; border-radius: 10px; margin: 20px 0;">
+              <h3 style="margin-top: 0;">💰 Your Refund:</h3>
+              <p style="font-size: 20px; color: #2563eb;"><strong>$${renterAmountValue.toFixed(
+                2
+              )}</strong></p>
+              <p><strong>Refund method:</strong> ${paymentMethod.toUpperCase()}</p>
+              <p><strong>Status:</strong> ${
+                refundResult?.status === "succeeded"
+                  ? "✅ Processed"
+                  : "⏳ Processing"
               }</p>
             </div>
 
@@ -2942,50 +3377,36 @@ router.post(
               <p style="margin: 10px 0 0 0;">${adminNotes.trim()}</p>
             </div>
 
-            ${
-              parseFloat(renterAmount) > 0
-                ? `<p>Your refund of $${parseFloat(renterAmount).toFixed(
-                    2
-                  )} will be processed within 2-5 business days.</p>`
-                : `<p>No refund will be issued for this rental.</p>`
-            }
-
+            <p>${renterMessage}</p>
             <p>Thank you for using AgriRent!</p>
-            <p>Best regards,<br>AgriRent Team</p>
           `,
-          text: `Dispute Resolved\n\nHello ${
-            rental.renterId.firstName
-          },\n\nThe dispute for ${
-            rental.machineId.name
-          } has been resolved.\n\nYour refund: $${parseFloat(
-            renterAmount
-          ).toFixed(
-            2
-          )}\n\nAdmin Decision: ${adminNotes.trim()}\n\nThank you for using AgriRent!`,
         });
 
         if (sendNotificationSMS && rental.renterId.phone) {
-          await sendNotificationSMS(
-            rental.renterId.phone,
-            `AgriRent: Dispute resolved for ${
-              rental.machineId.name
-            }. You will receive $${parseFloat(renterAmount).toFixed(
-              2
-            )} refund. Check your email for details.`
-          );
-        }
+          const smsMessage =
+            renterAmountValue > 0
+              ? `AgriRent: Dispute resolved. $${renterAmountValue.toFixed(
+                  2
+                )} refund ${
+                  refundResult?.status === "succeeded"
+                    ? "processed"
+                    : "being processed"
+                } to your ${paymentMethod} account.`
+              : `AgriRent: Dispute resolved for ${rental.machineId.name}. Check email for details.`;
 
+          await sendNotificationSMS(rental.renterId.phone, smsMessage);
+        }
         console.log(`✅ Renter notified`);
       } catch (error) {
         console.error("❌ Renter notification error:", error.message);
       }
 
       console.log(`✅ Dispute resolved successfully`);
+      console.log(`💳 Refund status:`, refundResult?.status || "none");
 
       res.json({
         success: true,
-        message:
-          "Dispute resolved successfully. Both parties have been notified.",
+        message: "Dispute resolved successfully. Payments processed.",
         data: {
           rental,
           payment,
@@ -2993,9 +3414,17 @@ router.post(
             ownerAmount: ownerAmountValue,
             platformFee: platformFeeAmount,
             ownerPayout: ownerPayout,
-            renterAmount: parseFloat(renterAmount),
+            renterAmount: renterAmountValue,
             type: resolutionType,
           },
+          refund: refundResult
+            ? {
+                status: refundResult.status,
+                method: paymentMethod,
+                amount: renterAmountValue,
+                message: refundResult.message,
+              }
+            : null,
         },
       });
     } catch (error) {

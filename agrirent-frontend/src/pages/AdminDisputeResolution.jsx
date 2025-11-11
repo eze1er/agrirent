@@ -106,11 +106,17 @@ const AdminDisputeResolution = () => {
 
       if (response.data.success) {
         alert(
-          "✅ Dispute resolved successfully!\n\nBoth parties have been notified."
+          "✅ Dispute resolved successfully!\n\n" +
+            `Owner receives: $${parseFloat(ownerAmount).toFixed(2)}\n` +
+            `Renter refund: $${parseFloat(renterAmount).toFixed(2)}\n\n` +
+            "Both parties have been notified. Escrow updated."
         );
         setShowResolveModal(false);
         setSelectedDispute(null);
-        fetchDisputes(); // Refresh the list
+        fetchDisputes();
+        setTimeout(() => {
+          window.location.reload();
+        }, 2000);
       }
     } catch (error) {
       setError(error.response?.data?.message || "Failed to resolve dispute");
@@ -244,11 +250,14 @@ const AdminDisputeResolution = () => {
                   </p>
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                     {dispute.disputeImages.map((img, idx) => (
-                      <div 
-                        key={idx} 
+                      <div
+                        key={idx}
                         className="relative group cursor-pointer"
                         onClick={() => {
-                          console.log("🖼️ Image clicked, opening lightbox:", img);
+                          console.log(
+                            "🖼️ Image clicked, opening lightbox:",
+                            img
+                          );
                           setLightboxImage(img);
                           setSelectedDispute(dispute); // Important pour la navigation
                         }}
@@ -258,8 +267,10 @@ const AdminDisputeResolution = () => {
                           alt={`Evidence ${idx + 1}`}
                           className="w-full h-32 object-cover rounded-lg border-2 border-gray-300 group-hover:border-orange-500 transition-all duration-300 group-hover:scale-105 cursor-zoom-in"
                           onError={(e) => {
-                            e.target.src = "https://via.placeholder.com/200x150?text=Image+Not+Found";
-                            e.target.className = "w-full h-32 object-cover rounded-lg border-2 border-red-300 cursor-not-allowed";
+                            e.target.src =
+                              "https://via.placeholder.com/200x150?text=Image+Not+Found";
+                            e.target.className =
+                              "w-full h-32 object-cover rounded-lg border-2 border-red-300 cursor-not-allowed";
                           }}
                         />
                         <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-all duration-300 rounded-lg flex items-center justify-center">
@@ -539,8 +550,10 @@ const AdminDisputeResolution = () => {
               onClick={(e) => e.stopPropagation()}
               onError={(e) => {
                 e.target.onerror = null;
-                e.target.src = "https://via.placeholder.com/800x600?text=Image+Failed+to+Load";
-                e.target.className = "max-w-full max-h-full object-contain rounded-lg shadow-2xl bg-white p-8";
+                e.target.src =
+                  "https://via.placeholder.com/800x600?text=Image+Failed+to+Load";
+                e.target.className =
+                  "max-w-full max-h-full object-contain rounded-lg shadow-2xl bg-white p-8";
               }}
             />
           </div>
@@ -551,37 +564,46 @@ const AdminDisputeResolution = () => {
           </div>
 
           {/* Boutons de navigation si plusieurs images */}
-          {selectedDispute?.disputeImages && selectedDispute.disputeImages.length > 1 && (
-            <>
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  const currentIndex = selectedDispute.disputeImages.indexOf(lightboxImage);
-                  const prevIndex = (currentIndex - 1 + selectedDispute.disputeImages.length) % selectedDispute.disputeImages.length;
-                  setLightboxImage(selectedDispute.disputeImages[prevIndex]);
-                }}
-                className="absolute left-6 top-1/2 transform -translate-y-1/2 w-12 h-12 rounded-full bg-white/20 text-white flex items-center justify-center text-2xl font-bold hover:bg-white/30 transition-all duration-200 z-10"
-              >
-                ‹
-              </button>
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  const currentIndex = selectedDispute.disputeImages.indexOf(lightboxImage);
-                  const nextIndex = (currentIndex + 1) % selectedDispute.disputeImages.length;
-                  setLightboxImage(selectedDispute.disputeImages[nextIndex]);
-                }}
-                className="absolute right-6 top-1/2 transform -translate-y-1/2 w-12 h-12 rounded-full bg-white/20 text-white flex items-center justify-center text-2xl font-bold hover:bg-white/30 transition-all duration-200 z-10"
-              >
-                ›
-              </button>
-              
-              {/* Indicateur de position */}
-              <div className="absolute top-6 left-1/2 transform -translate-x-1/2 bg-black/70 text-white px-4 py-2 rounded-full text-sm">
-                {selectedDispute.disputeImages.indexOf(lightboxImage) + 1} / {selectedDispute.disputeImages.length}
-              </div>
-            </>
-          )}
+          {selectedDispute?.disputeImages &&
+            selectedDispute.disputeImages.length > 1 && (
+              <>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    const currentIndex =
+                      selectedDispute.disputeImages.indexOf(lightboxImage);
+                    const prevIndex =
+                      (currentIndex -
+                        1 +
+                        selectedDispute.disputeImages.length) %
+                      selectedDispute.disputeImages.length;
+                    setLightboxImage(selectedDispute.disputeImages[prevIndex]);
+                  }}
+                  className="absolute left-6 top-1/2 transform -translate-y-1/2 w-12 h-12 rounded-full bg-white/20 text-white flex items-center justify-center text-2xl font-bold hover:bg-white/30 transition-all duration-200 z-10"
+                >
+                  ‹
+                </button>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    const currentIndex =
+                      selectedDispute.disputeImages.indexOf(lightboxImage);
+                    const nextIndex =
+                      (currentIndex + 1) % selectedDispute.disputeImages.length;
+                    setLightboxImage(selectedDispute.disputeImages[nextIndex]);
+                  }}
+                  className="absolute right-6 top-1/2 transform -translate-y-1/2 w-12 h-12 rounded-full bg-white/20 text-white flex items-center justify-center text-2xl font-bold hover:bg-white/30 transition-all duration-200 z-10"
+                >
+                  ›
+                </button>
+
+                {/* Indicateur de position */}
+                <div className="absolute top-6 left-1/2 transform -translate-x-1/2 bg-black/70 text-white px-4 py-2 rounded-full text-sm">
+                  {selectedDispute.disputeImages.indexOf(lightboxImage) + 1} /{" "}
+                  {selectedDispute.disputeImages.length}
+                </div>
+              </>
+            )}
         </div>
       )}
     </div>

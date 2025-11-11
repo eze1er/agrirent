@@ -716,24 +716,34 @@ export default function Dashboard({ user: currentUser, onLogout }) {
       }
     }, [machines]);
 
-    const filteredMachines = machines.filter((m) => {
-      // Category filter
-      if (selectedFilter !== "All" && m.category !== selectedFilter)
-        return false;
+const filteredMachines = machines.filter((m) => {
+  // Category filter
+  if (selectedFilter !== "All" && m.category !== selectedFilter)
+    return false;
 
-      // Location filter
-      if (locationFilter.trim()) {
-        const locationText = `${m.address?.city || ""} ${
-          m.address?.commune || ""
-        } ${m.address?.quartier || ""} ${
-          m.address?.province || ""
-        }`.toLowerCase();
-        if (!locationText.includes(locationFilter.toLowerCase().trim()))
-          return false;
-      }
+  // Location filter - Search ALL possible location fields
+  if (locationFilter.trim()) {
+    const searchTerm = locationFilter.toLowerCase().trim();
+    
+    // ✅ Build location string from ALL possible fields
+    const locationText = `
+      ${m.address?.city || ""} 
+      ${m.address?.commune || ""} 
+      ${m.address?.quartier || ""} 
+      ${m.address?.province || ""}
+      ${m.city || ""} 
+      ${m.commune || ""} 
+      ${m.quartier || ""} 
+      ${m.province || ""}
+    `.toLowerCase();
+    
+    if (!locationText.includes(searchTerm)) {
+      return false;
+    }
+  }
 
-      return true;
-    });
+  return true;
+});
     // ✅ ADD THIS DEBUG CODE
     console.log("🔍 DEBUG INFO:");
     console.log("Total machines:", machines.length);
