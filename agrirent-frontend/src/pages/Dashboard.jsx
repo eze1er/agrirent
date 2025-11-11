@@ -338,8 +338,6 @@ export default function Dashboard({ user: currentUser, onLogout }) {
 
         const data = await response.json();
 
-        console.log("📧 Resend response:", data);
-
         if (data.success) {
           if (data.alreadyVerified) {
             // ✅ Email is verified, update state
@@ -473,7 +471,6 @@ export default function Dashboard({ user: currentUser, onLogout }) {
           )}
         </div>
 
-        {/* Quick Actions */}
         {/* Quick Actions */}
         <div className="mb-8">
           <h3 className="text-xl font-bold mb-4 text-gray-800">
@@ -1892,6 +1889,7 @@ const filteredMachines = machines.filter((m) => {
               {currentUser?.firstName} {currentUser?.lastName}
             </h3>
             <p className="text-gray-600">{currentUser?.email}</p>
+
             <p className="text-sm text-gray-500 capitalize mt-1">
               Role: {currentUser?.role}
             </p>
@@ -1907,7 +1905,6 @@ const filteredMachines = machines.filter((m) => {
     </div>
   );
 
-  // ============== ADD MACHINE FORM ==============
   // ============== ADD MACHINE FORM ==============
   const AddMachineForm = () => {
     const [formData, setFormData] = useState({
@@ -2339,6 +2336,7 @@ const filteredMachines = machines.filter((m) => {
                 <Plus size={32} className="mx-auto text-blue-400 mb-2" />
                 <p className="text-sm text-gray-600">Click to upload images</p>
               </label>
+
               {localUploadedImages.length > 0 && (
                 <div className="grid grid-cols-3 gap-2 mt-3">
                   {localUploadedImages.map((img, idx) => (
@@ -3521,7 +3519,6 @@ const filteredMachines = machines.filter((m) => {
         );
         return;
       }
-
       try {
         const response = await paymentAPI.confirmCompletion(
           confirmingRental._id,
@@ -3663,17 +3660,7 @@ const filteredMachines = machines.filter((m) => {
   // ============== MAIN RENDER ==============
   return (
     <div className="bg-gradient-to-br from-gray-50 to-blue-50 min-h-screen pb-20 max-w-md mx-auto">
-      {/* Debug Info - Remove in production */}
-      {process.env.NODE_ENV === "development" && (
-        <div className="bg-gray-800 text-white text-xs p-2">
-          User: {localUser?.email || currentUser?.email || "Not logged in"} |
-          Role: {localUser?.role || currentUser?.role} | Verified:{" "}
-          {localUser?.isEmailVerified || currentUser?.isEmailVerified
-            ? "✅"
-            : "❌"}{" "}
-          | View: {currentView}
-        </div>
-      )}
+
       {/* Header */}
       <div className="bg-gradient-to-r from-blue-600 via-cyan-600 to-teal-600 text-white p-5 shadow-xl">
         <h1 className="text-2xl font-bold">AgriRent</h1>

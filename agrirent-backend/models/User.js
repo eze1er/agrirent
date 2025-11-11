@@ -17,11 +17,11 @@ const userSchema = new mongoose.Schema(
 // In models/User.js, update the email field:
 email: {
   type: String,
-  required: false, // ✅ CHANGE from true to false
+  required: false, 
   unique: true,
   lowercase: true,
   trim: true,
-  sparse: true, // ✅ ADD this - allows multiple null values
+  sparse: true, 
 },
     username: {
       type: String,

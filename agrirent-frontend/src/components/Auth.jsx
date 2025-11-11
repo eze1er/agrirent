@@ -8,7 +8,8 @@ export default function Auth({ onLoginSuccess }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [phoneError, setPhoneError] = useState("");
-  const [selectedRole, setSelectedRole] = useState("renter"); // ✅ NEW: Track selected role
+  const [selectedRole, setSelectedRole] = useState("renter");
+  const [paymentMethod, setPaymentMethod] = useState("mobile_money");
 
   const firstNameRef = useRef(null);
   const lastNameRef = useRef(null);
@@ -22,6 +23,13 @@ export default function Auth({ onLoginSuccess }) {
   const mobileMoneyProviderRef = useRef(null);
   const mobileMoneyNumberRef = useRef(null);
   const mobileMoneyNameRef = useRef(null);
+
+  // ✅ NEW: Bank account refs
+  const bankNameRef = useRef(null);
+  const accountNumberRef = useRef(null);
+  const accountHolderNameRef = useRef(null);
+  const swiftCodeRef = useRef(null);
+  const routingNumberRef = useRef(null);
 
   useEffect(() => {
     const urlParams = new URLSearchParams(window.location.search);
@@ -177,6 +185,7 @@ export default function Auth({ onLoginSuccess }) {
     setError("");
     setPhoneError("");
     setSelectedRole("renter");
+    setPaymentMethod("mobile_money"); 
 
     if (firstNameRef.current) firstNameRef.current.value = "";
     if (lastNameRef.current) lastNameRef.current.value = "";
@@ -326,63 +335,175 @@ export default function Auth({ onLoginSuccess }) {
               </div>
 
               {/* Mobile Money - Only for owners */}
-              {(selectedRole === "owner" || selectedRole === "both") && (
-                <div className="bg-emerald-50 border-2 border-emerald-200 rounded-xl p-4 space-y-3">
-                  <div className="flex items-center gap-2 mb-2">
-                    <Wallet className="text-emerald-600" size={20} />
-                    <h3 className="font-semibold text-gray-800">
-                      Payment Information
-                    </h3>
-                  </div>
-                  <p className="text-xs text-gray-600 mb-3">
-                    We'll use this to send your rental earnings
-                  </p>
+{(selectedRole === "owner" || selectedRole === "both") && (
+  <div className="bg-emerald-50 border-2 border-emerald-200 rounded-xl p-4 space-y-3">
+    <div className="flex items-center gap-2 mb-2">
+      <Wallet className="text-emerald-600" size={20} />
+      <h3 className="font-semibold text-gray-800">
+        Payment Information
+      </h3>
+    </div>
+    <p className="text-xs text-gray-600 mb-3">
+      We'll use this to send your rental earnings
+    </p>
 
-                  <div>
-                    <label className="block text-sm font-semibold mb-2 text-gray-700">
-                      Mobile Money Provider *
-                    </label>
-                    <select
-                      ref={mobileMoneyProviderRef}
-                      required
-                      className="w-full border-2 border-gray-200 rounded-xl px-4 py-3 focus:border-emerald-500 focus:outline-none transition"
-                    >
-                      <option value="">Select provider</option>
-                      <option value="mtn">MTN Mobile Money</option>
-                      <option value="orange">Orange Money</option>
-                      <option value="moov">Moov Money</option>
-                      <option value="airtel">Airtel Money</option>
-                      <option value="other">Other</option>
-                    </select>
-                  </div>
+    {/* ✅ PAYMENT METHOD SELECTOR */}
+    <div>
+      <label className="block text-sm font-semibold mb-2 text-gray-700">
+        Payout Method *
+      </label>
+      <select
+        value={paymentMethod}
+        onChange={(e) => setPaymentMethod(e.target.value)}
+        required
+        className="w-full border-2 border-gray-200 rounded-xl px-4 py-3 focus:border-emerald-500 focus:outline-none transition"
+      >
+        <option value="mobile_money">Mobile Money (Orange, MTN, Moov, Airtel)</option>
+        <option value="bank_account">Bank Account / Debit Card (Visa/Mastercard)</option>
+      </select>
+    </div>
 
-                  <div>
-                    <label className="block text-sm font-semibold mb-2 text-gray-700">
-                      Mobile Money Number *
-                    </label>
-                    <input
-                      ref={mobileMoneyNumberRef}
-                      type="tel"
-                      required
-                      placeholder="+237123456789"
-                      className="w-full border-2 border-gray-200 rounded-xl px-4 py-3 focus:border-emerald-500 focus:outline-none transition"
-                    />
-                  </div>
+    {/* ✅ MOBILE MONEY FIELDS */}
+    {paymentMethod === "mobile_money" && (
+      <div className="space-y-3 animate-fade-in">
+        <div>
+          <label className="block text-sm font-semibold mb-2 text-gray-700">
+            Mobile Money Provider *
+          </label>
+          <select
+            ref={mobileMoneyProviderRef}
+            required
+            className="w-full border-2 border-gray-200 rounded-xl px-4 py-3 focus:border-emerald-500 focus:outline-none transition"
+          >
+            <option value="">Select provider</option>
+            <option value="mtn">MTN Mobile Money</option>
+            <option value="orange">Orange Money</option>
+            <option value="moov">Moov Money</option>
+            <option value="airtel">Airtel Money</option>
+            <option value="vodacom">Vodacom M-Pesa</option>
+            <option value="other">Other</option>
+          </select>
+        </div>
 
-                  <div>
-                    <label className="block text-sm font-semibold mb-2 text-gray-700">
-                      Account Name *
-                    </label>
-                    <input
-                      ref={mobileMoneyNameRef}
-                      type="text"
-                      required
-                      placeholder="Full name on account"
-                      className="w-full border-2 border-gray-200 rounded-xl px-4 py-3 focus:border-emerald-500 focus:outline-none transition"
-                    />
-                  </div>
-                </div>
-              )}
+        <div>
+          <label className="block text-sm font-semibold mb-2 text-gray-700">
+            Mobile Money Number *
+          </label>
+          <input
+            ref={mobileMoneyNumberRef}
+            type="tel"
+            required
+            placeholder="+243812345678"
+            className="w-full border-2 border-gray-200 rounded-xl px-4 py-3 focus:border-emerald-500 focus:outline-none transition"
+          />
+          <p className="text-xs text-gray-500 mt-1">
+            Enter the phone number linked to your mobile money account
+          </p>
+        </div>
+
+        <div>
+          <label className="block text-sm font-semibold mb-2 text-gray-700">
+            Account Name *
+          </label>
+          <input
+            ref={mobileMoneyNameRef}
+            type="text"
+            required
+            placeholder="Full name on mobile money account"
+            className="w-full border-2 border-gray-200 rounded-xl px-4 py-3 focus:border-emerald-500 focus:outline-none transition"
+          />
+        </div>
+      </div>
+    )}
+
+    {/* ✅ BANK ACCOUNT / CARD FIELDS */}
+    {paymentMethod === "bank_account" && (
+      <div className="space-y-3 animate-fade-in">
+        <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+          <p className="text-xs text-blue-800">
+            💳 Payouts via Stripe to your bank account or debit card (Visa/Mastercard)
+          </p>
+        </div>
+
+        <div>
+          <label className="block text-sm font-semibold mb-2 text-gray-700">
+            Bank Name *
+          </label>
+          <input
+            ref={bankNameRef}
+            type="text"
+            required
+            placeholder="e.g., Ecobank, Standard Bank, etc."
+            className="w-full border-2 border-gray-200 rounded-xl px-4 py-3 focus:border-emerald-500 focus:outline-none transition"
+          />
+        </div>
+
+        <div>
+          <label className="block text-sm font-semibold mb-2 text-gray-700">
+            Account Number / Debit Card Number *
+          </label>
+          <input
+            ref={accountNumberRef}
+            type="text"
+            required
+            placeholder="123456789 or 4242424242424242"
+            className="w-full border-2 border-gray-200 rounded-xl px-4 py-3 focus:border-emerald-500 focus:outline-none transition"
+          />
+          <p className="text-xs text-gray-500 mt-1">
+            Bank account number or debit card number (Visa/Mastercard only)
+          </p>
+        </div>
+
+        <div>
+          <label className="block text-sm font-semibold mb-2 text-gray-700">
+            Account Holder Name *
+          </label>
+          <input
+            ref={accountHolderNameRef}
+            type="text"
+            required
+            placeholder="Full name as on account/card"
+            className="w-full border-2 border-gray-200 rounded-xl px-4 py-3 focus:border-emerald-500 focus:outline-none transition"
+          />
+        </div>
+
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="block text-sm font-semibold mb-2 text-gray-700">
+              SWIFT/BIC Code
+            </label>
+            <input
+              ref={swiftCodeRef}
+              type="text"
+              placeholder="ECOCCDKX (optional)"
+              className="w-full border-2 border-gray-200 rounded-xl px-4 py-3 focus:border-emerald-500 focus:outline-none transition"
+            />
+            <p className="text-xs text-gray-500 mt-1">For international transfers</p>
+          </div>
+
+          <div>
+            <label className="block text-sm font-semibold mb-2 text-gray-700">
+              Routing Number
+            </label>
+            <input
+              ref={routingNumberRef}
+              type="text"
+              placeholder="123456789 (optional)"
+              className="w-full border-2 border-gray-200 rounded-xl px-4 py-3 focus:border-emerald-500 focus:outline-none transition"
+            />
+            <p className="text-xs text-gray-500 mt-1">For US banks</p>
+          </div>
+        </div>
+
+        <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
+          <p className="text-xs text-amber-800">
+            ⚠️ <strong>Important:</strong> We use Stripe for secure payouts. Bank transfers may take 3-7 business days. Debit card payouts are faster (1-2 days).
+          </p>
+        </div>
+      </div>
+    )}
+  </div>
+)}
 
               {/* Email - OPTIONAL for registration */}
               <div>
